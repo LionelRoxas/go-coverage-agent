@@ -147,7 +147,7 @@ Each unit has one purpose and a narrow interface, and it can be tested on its ow
 
 Pydantic `BaseSettings` from env:
 
-- `GROQ_API_KEY` (required to start jobs), `GROQ_MODEL`, `GROQ_REASONING_EFFORT` (default `low`)
+- `GROQ_API_KEY` (required to start jobs), `GROQ_MODEL`, `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `high`): the `reasoning_effort` sent for each role. The Fixer gets more effort because it must reason from observed failures. The former single `GROQ_REASONING_EFFORT` was removed; if it is still in a `.env`, it is ignored.
 - `GROQ_MAX_COMPLETION_TOKENS` (default 65536, sent as `max_completion_tokens`; set it empty to send no cap), `CALL_TOKEN_RESERVATION` (default 16,000: tokens reserved per call for daily-ledger checks and TPM pacing, never sent to Groq; for accurate pacing it should be at least `MAX_PROMPT_TOKENS` plus the expected answer, so free-trial keys set 8,000), `DAILY_TOKEN_BUDGET` (default 2,000,000 for a paid plan; free-tier keys should set `DAILY_TOKEN_BUDGET=190000`)
 - `MAX_PROMPT_TOKENS` (default 12,000: the estimated prompt cap per call; free-trial keys with 8K tokens/min should set 4,500 so prompt plus completion fit in one minute's allowance)
 - `REPOS_DIR=/repos`, `OUTPUT_DIR=/output`, `WORK_DIR=/work`
@@ -215,10 +215,10 @@ Formatting needs no separate step: `gohelper merge` writes `go/format` output, a
 
 ### 5.7 `llm`: Groq client wrapper
 
-- `complete(role, system, user, schema) -> (parsed, Usage)` with `response_format = json_schema, strict: true`, `reasoning_effort` from config, and an explicit `max_completion_tokens` (`GROQ_MAX_COMPLETION_TOKENS`, default 65536, the model maximum; omitting the field does not mean unlimited, because Groq then applies a smaller undocumented default that truncated long answers). A truncated answer (after the one lower-effort retry) or a persistent `json_validate_failed` raises `LLMOutputTooLarge`, which the orchestrator handles by retrying with the first half of the item's functions (§6.7). The prompt estimate is chars/3.5, conservative. If the prompt alone exceeds `MAX_PROMPT_TOKENS` (default 12,000; 4,500 for free-trial keys), the context builder must have trimmed it already (§6.1); the client asserts this. The completion allowance is fitted to the key's tokens-per-minute limit (`x-ratelimit-limit-tokens`): `min(configured, limit - prompt - 256)`, floor 1024, and a request-size rejection (413 / "Request too large") is retried once with the clamped value before failing with guidance to lower `GROQ_MAX_COMPLETION_TOKENS` (and, on a free-trial key, to set `MAX_PROMPT_TOKENS=4500`: with an 8K TPM limit, a prompt above about 6,700 tokens leaves less than the 1,024-token completion floor).
+- `complete(role, system, user, schema) -> (parsed, Usage)` with `response_format = json_schema, strict: true`, `reasoning_effort` from the role's setting (§5.1), and an explicit `max_completion_tokens` (`GROQ_MAX_COMPLETION_TOKENS`, default 65536, the model maximum; omitting the field does not mean unlimited, because Groq then applies a smaller undocumented default that truncated long answers). A truncated answer (after the lower-effort retries) or a persistent `json_validate_failed` raises `LLMOutputTooLarge`, which the orchestrator handles by retrying with the first half of the item's functions (§6.7). The prompt estimate is chars/3.5, conservative. If the prompt alone exceeds `MAX_PROMPT_TOKENS` (default 12,000; 4,500 for free-trial keys), the context builder must have trimmed it already (§6.1); the client asserts this. The completion allowance is fitted to the key's tokens-per-minute limit (`x-ratelimit-limit-tokens`): `min(configured, limit - prompt - 256)`, floor 1024, and a request-size rejection (413 / "Request too large") is retried once with the clamped value before failing with guidance to lower `GROQ_MAX_COMPLETION_TOKENS` (and, on a free-trial key, to set `MAX_PROMPT_TOKENS=4500`: with an 8K TPM limit, a prompt above about 6,700 tokens leaves less than the 1,024-token completion floor).
 - **Schema normalizer** `to_strict_schema(model) -> dict`: converts Pydantic JSON Schema to Groq strict rules. All properties go into `required`, `additionalProperties: false` on every object, Optional → `["T","null"]`, and unsupported keywords (`default`, `title`, `maxItems`, `minLength`) are stripped. Limits are enforced **after** parsing. It's unit tested.
 - **Failure handling:**
-  - `finish_reason == "length"` (truncated, often from reasoning tokens) → if the effort was above `low`, retry once at `low`. Otherwise fail the item, since an identical retry would just re-spend the tokens.
+  - `finish_reason == "length"` (truncated, often from reasoning tokens) → automatic step-down: retry one effort level lower (`high` → `medium` → `low`). A truncation at the bottom of that step-down fails the item, since an identical retry would just re-spend the tokens. The effort a call actually used is reported as `llm_call.reasoning_effort`.
   - **Cancellation:** the client receives the job's cancel event, so a cancel interrupts a rate-limit pause or an in-flight request immediately.
   - 400 schema errors → fail the item, log, continue the loop.
   - 5xx/network → exponential backoff, max 3.
@@ -231,7 +231,7 @@ Formatting needs no separate step: `gohelper merge` writes `go/format` output, a
 ### 5.8 `jobs` and `events`
 
 - `Job`: id, inputs, status (`running|completed|failed|cancelled`), ordered `events`, latest `CoverageReport`, `Summary`.
-- `Event`: `{seq, ts, type, data}`. Types: `job_started`, `workspace_ready`, `baseline_measured`, `iteration_started`, `plan_created`, `llm_call`, `rate_limited`, `candidate_generated`, `validation_result`, `tests_pruned`, `mechanical_repair` (`{index, file, repair, description}`), `fix_attempt`, `candidate_accepted`, `candidate_rejected`, `iteration_completed`, `job_completed`, `job_failed`, `job_cancelled`. `validation_result.kind` can be `llm_error`, with the LLM error text in `output`, or `prompt_too_large` when a Fixer prompt could not fit `MAX_PROMPT_TOKENS` even after degrading (§6.1; no model call was made; the UI says "Prompt too large (no model call)"). Either kind can also be a `candidate_rejected.reason`; older event logs with `llm_error` still render.
+- `Event`: `{seq, ts, type, data}`. Types: `job_started`, `workspace_ready`, `baseline_measured`, `iteration_started`, `plan_created`, `llm_call` (`{index, file, role, prompt_tokens, completion_tokens, total_tokens, reasoning_effort}`; `reasoning_effort` is the effort the answer was produced at, after any step-down; older logs lack it), `rate_limited`, `candidate_generated`, `validation_result`, `tests_pruned`, `mechanical_repair` (`{index, file, repair, description}`), `fix_attempt`, `candidate_accepted`, `candidate_rejected`, `iteration_completed`, `job_completed`, `job_failed`, `job_cancelled`. `validation_result.kind` can be `llm_error`, with the LLM error text in `output`, or `prompt_too_large` when a Fixer prompt could not fit `MAX_PROMPT_TOKENS` even after degrading (§6.1; no model call was made; the UI says "Prompt too large (no model call)"). Either kind can also be a `candidate_rejected.reason`; older event logs with `llm_error` still render.
 - `JobManager`: in-memory, **one running job at a time** (409 otherwise). Each job is an `asyncio.Task`. Cancel sets a flag checked before every LLM call and command, and kills the active process group.
 - On finish, write `OUTPUT_DIR/<job_id>/`: the accepted `_test.go` files (repo-relative paths), `report.json`, `events.jsonl`. The UI shows this host path (`./output/<job_id>`) so users can copy the tests into their repo.
 - **SSE:** `GET /api/jobs/{id}/events` always replays from seq 0, then tails. The client reducer ignores already-seen `seq`. That makes reconnects and refreshes safe without `Last-Event-ID`.
@@ -252,7 +252,7 @@ For one target file, it builds a prompt context in priority order. Items are tri
 
 **Rule:** if items 1–3 alone exceed the budget, the target is split (fewer functions per call). A single function too large to fit is marked `skipped_too_large`.
 
-**Fixer prompts degrade instead of failing.** The Fixer's task (rejected code plus validator output) is larger than the Writer's, so when it does not fit, it is shrunk in this order: items 4–5 are trimmed as usual, then the validator output is cut to its first lines, then the rejected code is cut to whole top-level declarations, never mid-function: those the validator pointed at (failed tests, the declarations enclosing the `file:line` positions of compile/vet errors, names in the output), or, when it pointed at none, the leading declarations that fit; and finally the code is omitted (the Fixer then writes a fresh replacement from the first error lines). Only if items 1–3 plus that minimal task still do not fit does the attempt end, recorded as `prompt_too_large` (no model call made).
+**Fixer prompts degrade instead of failing.** The Fixer's task (rejected code plus validator output) is larger than the Writer's, so when it does not fit, it is shrunk in this order: items 4–5 are trimmed as usual, then the attempt history (§6.4) is cut to its first and most recent failures with observed values, then the validator output is cut to its first lines, then the rejected code is cut to whole top-level declarations, never mid-function: those the validator pointed at (failed tests, the declarations enclosing the `file:line` positions of compile/vet errors, names in the output), or, when it pointed at none, the leading declarations that fit; and finally the code is omitted (the Fixer then writes a fresh replacement from the first error lines). Only if items 1–3 plus that minimal task still do not fit does the attempt end, recorded as `prompt_too_large` (no model call made).
 
 ### 6.2 Planner (deterministic)
 
@@ -278,7 +278,8 @@ The planner is a pure function, no LLM. This is a deliberate trade-off to save t
 
 ### 6.4 Fixer (LLM)
 
-- **Input:** the snippet that failed, the failure kind, trimmed tool output, and for `no_gain` the still-uncovered lines of the target functions.
+- **Input:** the snippet that failed, the failure kind, trimmed tool output, for `no_gain` the still-uncovered lines of the target functions, and the **attempt history** of this candidate.
+- **Attempt history.** The orchestrator keeps, per candidate, an ordered record of every check: its source (`writer`, `auto_fix: <description>`, `prune of [tests]`, `llm_fix <n>`), the check kind, the failed test names, and the key failure lines: for test failures each failing test's first assertion (or panic) lines with the observed values, prefixed with the subtest name and deduplicated across the `-count=2` repetition (at most 3 per test); for compile/vet errors the first error lines; for `no_gain` the fact. Each record renders to at most 400 characters and the whole history to at most 1,500 tokens; over that, the oldest records are dropped first, except the first and the most recent failures with observed values. The Fixer prompt shows the earlier records (the latest check is the validator output itself) as `## Earlier attempts for these functions` before the rejected snippet. In the shrink order (§6.1) the history is cut to those two pinned failures right after related declarations and before the validator output, the code, or the whole code is dropped; the most recent failure with observed values is never dropped. When the current result is `no_gain` and came from pruning tests that an earlier record shows failing, the task says: "Removing the failing tests left no new coverage: the tests that reached the uncovered lines were the ones that failed. Keep them and correct their expected values (observed values are in the history)." Reason: on `output/7ef641efb870` (semver `constraints.go`) the writer asserted wrong flags, pruning turned the failure into `no_gain`, and the Fixer, which saw only `no_gain`, repeated the wrong assertion twice before the item was rejected after 6 checks.
 - **Output:** the same `TestSnippet` schema (a full replacement for the *new* snippet only; accepted code is never sent back for editing).
 - **When it is used** (max `max_fix_attempts`, default 2, per candidate):
   - `compile_error` → first a **deterministic repair** (no LLM, no fix attempt used, at most 3 per candidate, re-validated through every gate): add a missing stdlib import for `undefined: <pkg>`, strip the package's own name used as a qualifier (code tokens only, never comments or literals), or, for `gohelper: duplicate declaration: <Name>` where `<Name>` is a top-level `Test…`/`Benchmark…`/`Fuzz…` function that `go test` runs (the prefix followed by the end of the name, an uppercase letter, a digit or `_`, so not `Testable`), declared in the snippet and not referenced elsewhere in it, rename that declaration to the first free `<Name>_2`, `<Name>_3`, … (free: not declared in the package's tests nor in the snippet). Duplicate helpers (e.g. `approxEqual`), methods and `Example…` functions still go to the Fixer (`ExampleX_2` is a malformed example name for `go vet`, and an Example without `// Output:` adds no coverage). If nothing is repairable, or the cap is hit → Fixer.
@@ -286,7 +287,7 @@ The planner is a pure function, no LLM. This is a deliberate trade-off to save t
   - `test_failure` → first **prune** the failing tests deterministically (`gohelper prune`) and re-validate the rest. The Fixer is called with the failure output only if pruning leaves nothing that adds coverage.
   - `no_gain` → Fixer once, with the uncovered lines.
   - `guard_rejected` → Fixer once, with the rule that was violated.
-- **Failing assertions:** the source code is the source of truth. The Fixer may correct an expected value from the observed output when that behavior is plausible for the function's documented intent. Otherwise it drops the case and adds a `suspected_bugs` entry. The README states plainly that floating-point expectations in generated tests are partly characterization tests.
+- **Failing assertions:** the source code is the source of truth. The observed value in the failure output is what the code does, so the Fixer trusts it over its own expectation and corrects the expected value, unless it contradicts the function's documentation; then it drops the case and adds a `suspected_bugs` entry. The README states plainly that floating-point expectations in generated tests are partly characterization tests.
 
 ### 6.5 Why separate roles
 
@@ -311,7 +312,7 @@ Each has its own context and contract, so prompts stay small, failures are attri
 **Documented limits for `gpt-oss-120b`** (Groq rate-limits page, verified 2026-10-08): **8K tokens/min, 200K tokens/day, 30 requests/min, 1K requests/day.** Free-tier numbers weren't published separately. The account's limits page is authoritative.
 
 - **Oversized answers:** if the Writer's answer is truncated or Groq cannot finish the JSON (`LLMOutputTooLarge`), the orchestrator retries with the first half of the item's functions, and a single function that still fails is skipped as `too_large`.
-- **Per call:** output capped at `GROQ_MAX_COMPLETION_TOKENS` (default 65,536); the prompt stays ≤ `MAX_PROMPT_TOKENS` (default 12K; free-trial keys with 8K tokens/min set 4,500, which leaves at least 3,244 completion tokens after the TPM clamp of §5.7). A 16K reservation (`CALL_TOKEN_RESERVATION`, the 12K prompt cap plus an expected answer) is used for TPM pacing and the daily-ledger check; a reservation below the real call size makes pacing optimistic (more 429 waits, which are retried). Free-trial keys set 8,000, one minute's allowance. Defaults assume a paid plan: 1M tokens per job and 2M per day; free-tier keys should set `DAILY_TOKEN_BUDGET=190000` (the README repeats this). `reasoning_effort=low` by default. On the free tier the effective cadence is about 1 call per minute.
+- **Per call:** output capped at `GROQ_MAX_COMPLETION_TOKENS` (default 65,536); the prompt stays ≤ `MAX_PROMPT_TOKENS` (default 12K; free-trial keys with 8K tokens/min set 4,500, which leaves at least 3,244 completion tokens after the TPM clamp of §5.7). A 16K reservation (`CALL_TOKEN_RESERVATION`, the 12K prompt cap plus an expected answer) is used for TPM pacing and the daily-ledger check; a reservation below the real call size makes pacing optimistic (more 429 waits, which are retried). Free-trial keys set 8,000, one minute's allowance. Defaults assume a paid plan: 1M tokens per job and 2M per day; free-tier keys should set `DAILY_TOKEN_BUDGET=190000` (the README repeats this). `reasoning_effort` is `medium` for the Writer and `high` for the Fixer by default (§5.1); a truncated answer steps down automatically (§5.7). On the free tier the effective cadence is about 1 call per minute.
 - **For `stats`** (about 60 small source files, no tests after deletion): 80% probably needs 20–35 Writer calls plus fixes. That's roughly 30–45 minutes and 120–190K tokens, close to the daily cap. Most `stats` functions are short, so per-call tokens will likely be lower than the cap. **Day 1 of the plan measures real per-call usage and updates these numbers.**
 - **Built-in mitigations:**
   - Compact context.
@@ -362,17 +363,21 @@ for iteration in 1..max_iterations:
         snap      = ws.snapshot([test_file, "go.mod", "go.sum"])
         snippet   = writer(item, build_context(item, ws, report))
         result    = validate(ws, test_file, snippet, report)
+        history   = [record("writer", result)]   # every check of this candidate (§6.4)
         attempts  = repairs = 0
         while not result.accepted and attempts < max_fix_attempts:
             if result.kind == compile_error and repairs < 3 and (fixed := mechanical_repair(snippet, result)):
                 snippet = fixed; repairs += 1       # deterministic, no LLM, attempts unchanged
-                ws.restore(snap); result = validate(ws, test_file, snippet, report); continue
+                ws.restore(snap); result = validate(ws, test_file, snippet, report)
+                history += [record("auto_fix: …", result)]; continue
             if result.kind == test_failure:
                 result = prune_and_revalidate(result)   # deterministic, no LLM
+                history += [record("prune of [tests]", result)]
                 if result.accepted: break
-            snippet = fixer(item, snippet, result); attempts += 1
+            snippet = fixer(item, snippet, result, history); attempts += 1
             ws.restore(snap)
             result  = validate(ws, test_file, snippet, report)
+            history += [record(f"llm_fix {attempts}", result)]
         if result.accepted:
             report = result.report                # coverage only ever goes up
             emit candidate_accepted
@@ -533,7 +538,7 @@ volumes: { gocache: {} }
 
 ### 10.4 `.env.example`
 
-`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_REASONING_EFFORT=low`, `HOST_REPOS_DIR=./repos`, and a commented `MAX_PROMPT_TOKENS=4500` for free-trial keys.
+`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_WRITER_REASONING_EFFORT=medium`, `GROQ_FIXER_REASONING_EFFORT=high`, `HOST_REPOS_DIR=./repos`, and a commented `MAX_PROMPT_TOKENS=4500` for free-trial keys.
 
 ---
 
@@ -603,4 +608,4 @@ volumes: { gocache: {} }
 
 ## 15. Open questions
 
-None blocking. Defaults that can be changed after review: target 80%, `openai/gpt-oss-120b`, `reasoning_effort=low`, one job at a time, deterministic planner.
+None blocking. Defaults that can be changed after review: target 80%, `openai/gpt-oss-120b`, `reasoning_effort` `medium` for the Writer and `high` for the Fixer, one job at a time, deterministic planner.

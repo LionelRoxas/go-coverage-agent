@@ -14,6 +14,7 @@
 
 - **Languages:** Python (backend), Go (`tools/gohelper`), TypeScript (frontend). Nothing else.
 - **Model:** default `GROQ_MODEL=openai/gpt-oss-120b`; fallback `openai/gpt-oss-20b`; `GROQ_REASONING_EFFORT=low` by default.
+  > Note (Task 32): `GROQ_REASONING_EFFORT` was replaced by the per-role settings `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `high`); see the spec §5.1.
 - **Token limits:** `MAX_TOKENS_PER_CALL=7000` (prompt + completion), `MAX_PROMPT_TOKENS=4500`, `DAILY_TOKEN_BUDGET=190000`, `MIN_DAILY_TOKENS_TO_START=20000`. Token estimate = `ceil(len(text) / 3.5)`.
 - **Groq API:** every call uses Structured Outputs `{"type":"json_schema","json_schema":{"name":…,"strict":true,"schema":…}}`, with no tools and no streaming. The SDK client is created with `max_retries=0` (our code owns retries).
 - **Generated Go tests:** always the internal package (same package name as the source), file `<source_basename>_test.go` next to the source, standard library only, no `t.Parallel()`, respect the `go` directive in `go.mod`.
@@ -178,6 +179,8 @@ GROQ_REASONING_EFFORT=low
 HOST_REPOS_DIR=./repos
 ```
 
+> Note (Task 32): `GROQ_REASONING_EFFORT` was replaced by the per-role settings `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `high`); see the spec §5.1.
+
 `Makefile` (the backend image is built directly, so these targets work before `docker-compose.yml` exists):
 ```make
 GO_IMAGE := golang:$(shell cat .go-version)
@@ -329,6 +332,8 @@ class Settings(BaseSettings):
     def llm_configured(self) -> bool:
         return bool(self.groq_api_key.strip())
 ```
+
+> Note (Task 32): `GROQ_REASONING_EFFORT` was replaced by the per-role settings `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `high`); see the spec §5.1.
 
 - [ ] **Step 7: Implement `backend/app/models.py`**
 
@@ -2993,6 +2998,8 @@ async def test_oversized_prompt_rejected(tmp_path):
         await llm.complete(role="writer", system="s", user="x" * 20_000, schema=Out)
 ```
 
+> Note (Task 32): `GROQ_REASONING_EFFORT` was replaced by the per-role settings `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `high`); see the spec §5.1.
+
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `uv run pytest tests/test_llm_client.py -q` → Expected: FAIL, `ModuleNotFoundError`.
@@ -3147,6 +3154,8 @@ class GroqLLM:
             except ValidationError as e:
                 raise LLMError(f"model output does not match {schema.__name__} ({e.error_count()} errors)") from e
 ```
+
+> Note (Task 32): `GROQ_REASONING_EFFORT` was replaced by the per-role settings `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `high`); see the spec §5.1.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -3993,6 +4002,7 @@ docker run --rm --env-file .env -v "$PWD/repos:/repos" -v "$PWD/output:/output" 
 
 Expected: a baseline of `0.0%`, one plan item, a usage line, Go code, and a validation result. Write the prompt/completion tokens and seconds into spec §6.7 under a new line "Measured on <date>: …".
 - If `completion_tokens` is above ~2,500, set `GROQ_REASONING_EFFORT=low` (already the default) and lower `targets_per_iteration`.
+  > Note (Task 32): `GROQ_REASONING_EFFORT` was replaced by the per-role settings `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `high`); see the spec §5.1.
 - If validation is `compile_error` on idiom issues, tighten `writer.md` and re-run. Each run costs ~5K tokens.
 
 - [ ] **Step 8: Commit**
