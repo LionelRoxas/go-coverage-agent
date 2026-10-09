@@ -149,7 +149,7 @@ async def test_cost_separates_the_run_and_the_summary_call(tmp_path):
     assert job.events[-1].data["cost_usd"] == {"run": 0.045, "summary": 0.0045, "input": 0.0165, "output": 0.033,
                                                "total": 0.0495}
     md = (tmp_path / job.id / "SUMMARY.md").read_text(encoding="utf-8")
-    assert "Run cost $0.04 · summary $0.0045 · total $0.05 (input $0.02, output $0.03)" in md
+    assert "Run cost $0.0450 · summary $0.0045 · total $0.0495 (input $0.0165, output $0.0330)" in md
     report = json.loads((tmp_path / job.id / "report.json").read_text(encoding="utf-8"))
     assert report["tokens"] == {"prompt_tokens": 100_000, "completion_tokens": 50_000}  # the run's own
     assert report["summary_tokens"] == {"prompt_tokens": 10_000, "completion_tokens": 5_000, "total_tokens": 15_000}
@@ -351,3 +351,30 @@ async def test_start_conflict_says_the_summary_is_being_written(tmp_path):
         assert (await client.post(f"/api/jobs/{job_id}/cancel")).status_code == 200
         await asyncio.wait_for(m.get(job_id).task, 1)
         assert m.get(job_id).events[-1].data["reason"] == "cancelled"
+
+
+async def test_a_summary_that_takes_too_long_fails_as_a_timeout(tmp_path, monkeypatch):
+    class HangingLLM(FakeLLM):
+        async def complete(self, **kw):
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(JobManager, "summary_deadline_s", 0.05)
+    m, _ = setup(tmp_path)
+    m._llm_factory = lambda emit, cancel: HangingLLM([])
+    job = await asyncio.wait_for(run(m), 2)
+    assert job.status is JobStatus.COMPLETED and job.finished
+    assert job.events[-1].data == {"reason": "timeout", "message": "The summary was not written within 0.05 s."}
+
+
+def test_the_deadline_covers_one_timed_out_request_and_its_retry():
+    m = JobManager(Settings(groq_api_key="k", groq_timeout_s=240))
+    assert m.summary_deadline_s == 510
+
+
+async def test_a_cancel_right_after_write_again_is_not_lost(tmp_path):
+    m, llms = setup(tmp_path)
+    job = await run(m, write_summary=False)
+    m.write_summary_again(job.id)
+    m.cancel(job.id)  # before the summary task has started
+    await job.summary_task
+    assert job.events[-1].data["reason"] == "cancelled" and llms == []

@@ -26,7 +26,7 @@ The 80% goal was reached.
 
 It took 5.2 minutes.
 
-Run cost $0.07 · summary $0.0014 · total $0.07 (input $0.01, output $0.06)
+Run cost $0.0674 · summary $0.0014 · total $0.0688 (input $0.0130, output $0.0558)
 
 **Risks**
 
@@ -65,7 +65,8 @@ def test_markdown_without_cost():
 
 
 def test_usd():
-    assert [usd(v) for v in (0, 0.0005, 0.01, 0.0674, 1.5)] == ["$0.00", "$0.0005", "$0.01", "$0.07", "$1.50"]
+    assert [usd(v) for v in (0, 0.0005, 0.0232, 0.9999, 1, 12.345)] == ["$0.0000", "$0.0005", "$0.0232", "$0.9999",
+                                                                     "$1.00", "$12.35"]
 
 
 def test_a_part_left_empty_by_the_grounding_check_says_so():

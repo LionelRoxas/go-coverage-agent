@@ -1,0 +1,51 @@
+{
+  "business": {
+    "headline": "Coverage rose from 1.43 % to 83.33 %, exceeding the 80 % goal.",
+    "outcome": "The run added 31 new tests across three files, raising the share of the code tested to 83.33 %. The target of 80 % was reached, so the process stopped after four rounds.",
+    "efficiency": "The whole effort took about 1.4 minutes and consumed 60,607 tokens. At a cost of $0.0232 the run spent roughly 740 tokens for each percentage point gained.",
+    "risks": [
+      "Version file still has 72 statements not covered.",
+      "Constraints file still has 21 statements not covered.",
+      "Generated tests capture existing behavior, so a review is needed to ensure they do not lock in any bugs."
+    ],
+    "recommendation": "Review the new tests to confirm they reflect the intended behavior and add further tests to cover the remaining statements in version.go and constraints.go."
+  },
+  "technical": {
+    "headline": "Coverage increased from 1.43 % to 83.33 % with 31 new tests in three test files.",
+    "what_was_tested": "The generated tests exercise collection.go (now fully covered), constraints.go (raised to 90.99 %) and version.go (raised to 77.64 %).",
+    "where_tests_live": "",
+    "gaps": [
+      {
+        "file": "version.go",
+        "detail": "72 statements remain uncovered."
+      },
+      {
+        "file": "constraints.go",
+        "detail": "21 statements remain uncovered."
+      }
+    ],
+    "suspected_bugs": [],
+    "rejected_or_failed": "No targets were rejected. One mechanical repair was applied. Seven tests were pruned. No LLM fixes, timeouts or rate‑limit waits occurred.",
+    "how_to_run": "Copy the contents of output/fc080d7fc500/tests into the module root (keeping sub‑folders), then run go test ./... and go test -cover ./... in the repository.",
+    "next_steps": [
+      "Review the generated tests for correctness.",
+      "Add tests to cover the remaining uncovered statements in version.go and constraints.go.",
+      "Include the new tests in the continuous integration pipeline."
+    ]
+  },
+  "dropped_sentences": 1,
+  "tokens": {
+    "prompt_tokens": 2072,
+    "completion_tokens": 1443,
+    "total_tokens": 3515
+  },
+  "cost_usd": {
+    "run": 0.0232,
+    "summary": 0.0012,
+    "input": 0.0047,
+    "output": 0.0196,
+    "total": 0.0243
+  },
+  "model": "openai/gpt-oss-120b",
+  "generated_at": 1791587537.146431
+}

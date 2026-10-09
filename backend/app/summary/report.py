@@ -15,7 +15,8 @@ EMPTY = "Nothing in this part could be checked against the run's data."
 
 
 def usd(value: float) -> str:
-    return f"${value:.2f}" if value >= 0.01 or value == 0 else f"${value:.4f}"
+    """One rule for every amount: 4 decimals below $1, 2 from $1 up."""
+    return f"${value:.4f}" if value < 1 else f"${value:.2f}"
 
 
 def cost_line(cost: dict[str, float]) -> str:

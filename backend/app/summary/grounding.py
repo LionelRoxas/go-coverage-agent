@@ -41,8 +41,12 @@ _MULT_WORDS = {"twice": 2, "double": 2, "doubled": 2, "triple": 3, "tripled": 3,
 _MULT = re.compile(rf"\b(?P<word>{'|'.join(_MULT_WORDS)})\b(?!-)", re.IGNORECASE)  # not "double-check"
 _ARTICLE_DURATION = re.compile(r"\b(?P<half>half\s+)?(?:an?|one)\s+(?P<unit>hour|minute|day|week)\b", re.IGNORECASE)
 _PERCENT_AFTER = re.compile(r"\s?%|\s+(?:percent|per\s+cent|percentage\s+points?|points?|pp)\b", re.IGNORECASE)
-_DURATION_AFTER = re.compile(r"\s+(?P<unit>seconds?|secs?|s|minutes?|mins?|hours?|hrs?|h|days?|weeks?)\b",
+# the first number of a range that ends in a percentage: "0 to 81%", "zero to 81%", "1.4-83.3%"
+_RANGE_TO_PERCENT = re.compile(r"\s*(?:to|-|–|—)\s*\d[\d.,]*\s?(?:%|percent\b)", re.IGNORECASE)
+_DURATION_AFTER = re.compile(r"[\s-]+(?P<unit>seconds?|secs?|s|minutes?|mins?|hours?|hrs?|h|days?|weeks?)\b",
                              re.IGNORECASE)
+_SCALE_AFTER = re.compile(r"\s+(?P<scale>thousand|million)\b", re.IGNORECASE)  # "175 thousand"
+_SPACED_PERCENT = re.compile(r"(\d)[ \u00a0\u202f]+%")
 _SECONDS = {"s": 1, "sec": 1, "second": 1, "min": 60, "minute": 60, "h": 3600, "hr": 3600, "hour": 3600,
             "day": 86400, "week": 604800}
 
@@ -67,7 +71,7 @@ def _seconds(unit: str) -> float:
 
 def _after(text: str, end: int) -> tuple[Kind, float] | None:
     """percent, or duration with seconds per unit, from the words right after a number."""
-    if _PERCENT_AFTER.match(text, end):
+    if _PERCENT_AFTER.match(text, end) or _RANGE_TO_PERCENT.match(text, end):
         return "percent", 1.0
     if m := _DURATION_AFTER.match(text, end):
         return "duration", _seconds(m["unit"])
@@ -88,9 +92,16 @@ def number_tokens(text: str) -> Iterator[NumberToken]:
             kind, scale = "duration", _seconds(tail)
         elif suffix:
             kind, scale = "tokens", 1e3 if suffix.lower() == "k" else 1e6
+        elif big := _SCALE_AFTER.match(text, m.end()):
+            scale = _SCALES[big["scale"].lower()]  # a count in thousands or millions
         elif after := _after(text, m.end()):
             kind, scale = after
-        decimals = len(digits.split(".")[1]) if "." in digits else 0
+        if "." in digits:
+            decimals = len(digits.split(".")[1])
+        else:  # "175,000" is rounded to the thousand, "2,200" to the hundred (at most 3 places)
+            whole = digits.replace(",", "")
+            zeros = len(whole) - len(whole.rstrip("0")) if len(whole) >= 4 else 0
+            decimals = -min(zeros, 3)
         found.append((m.start(), NumberToken(m.group(0).strip(), float(digits.replace(",", "")), decimals, kind, scale)))
     for m in _PREFIX_MULT.finditer(text):
         found.append((m.start(), NumberToken(m.group(0), float(m["num"]), 0, "multiplier")))
@@ -100,6 +111,8 @@ def number_tokens(text: str) -> Iterator[NumberToken]:
         elif m["unit"]:
             value = _UNITS[m["unit"].lower()]
         else:
+            if re.search(r"\d\s+$", text[:m.start()]):
+                continue  # "175 thousand": read with its digits above
             value = _SCALES[m["scale"].lower()]
         if m["times"] and not m["scale"]:
             value *= _SCALES[m["times"].lower()]
@@ -136,21 +149,30 @@ def _numbers(node: Any, out: set[float]) -> set[float]:
 class _Checker:
     def __init__(self, facts: RunFacts):
         f = facts
-        in_text = _numbers([f.repo, f.module, f.model, f.stop_message], set())
+        # numbers inside fact strings ("Reached the 80% coverage target.") count for their own kind only
+        in_text: dict[str, set[float]] = {}
+        for t in (t for text in (f.repo, f.module or "", f.model, f.stop_message) for t in number_tokens(text)):
+            in_text.setdefault(t.kind, set()).add(t.value * t.scale)
         tokens = _numbers(f.tokens.model_dump(), set()) | ({float(f.tokens_per_point)} if f.tokens_per_point else set())
-        percents = ({f.goal_percent, f.baseline_percent, f.final_percent, f.gain_points}
+        # the share still untested and the margin over the goal are exact, so they may be stated too
+        derived = {round(100 - f.final_percent, 2)} | (
+            {round(f.final_percent - f.goal_percent, 2)} if f.final_percent >= f.goal_percent else set())
+        percents = ({f.goal_percent, f.baseline_percent, f.final_percent, f.gain_points} | derived
                     | {x for p in f.per_file for x in (p.before, p.after, round(p.after - p.before, 2))}
                     | {p.percent for p in f.lowest_files})
-        # counts: everything except money and the coverage percentages (a count must not match "81.07")
-        counts = _numbers(f.model_dump(mode="json", exclude={"cost_usd", "per_file"}), set())
-        counts -= {f.goal_percent, f.final_percent, f.gain_points} | {p.percent for p in f.lowest_files}
+        # counts: the count fields themselves (never a percentage or a dollar amount), plus the token facts
+        counts = {float(n) for n in (
+            f.rounds, f.targets_accepted, f.targets_rejected, f.first_check_passes, f.llm_fixes, f.mechanical_repairs,
+            f.pruned_tests, f.llm_timeouts, f.rate_limit_waits, f.tests_added_count, f.test_files_count,
+            len(f.lowest_files), *f.rejected_reasons.values(), *(c.calls for c in f.llm_calls),
+            *(low.uncovered_statements for low in f.lowest_files))} | tokens
         self.pools: dict[Kind, set[float]] = {
             "currency": set() if f.cost_usd is None else _numbers(f.cost_usd.model_dump(), set()),
-            "percent": percents | in_text,
+            "percent": percents | in_text.get("percent", set()),
             "duration": {f.duration_s, f.rate_limit_wait_s},  # seconds
             "multiplier": set(),
             "tokens": tokens,
-            "count": counts | in_text,
+            "count": counts | in_text.get("count", set()),
         }
         self.files = {p.file for p in f.per_file} | set(f.test_files) | {p.file for p in f.lowest_files}
         self.exported = {f"{f.tests_dir}/{t}" for t in f.test_files}
@@ -166,8 +188,11 @@ class _Checker:
         return path in self.files or path in self.exported
 
     def ok(self, text: str) -> bool:
+        # "each _test.go file" and "*_test.go" name no file, so they are not checked
+        named = [m.group(0) for m in _GO_FILE.finditer(text)
+                 if m.group(0).rsplit("/", 1)[-1] not in ("_test.go", ".go") and text[max(0, m.start() - 1)] != "*"]
         return (all(self._number_ok(t) for t in number_tokens(text))
-                and all(self.file_ok(m.group(0)) for m in _GO_FILE.finditer(text))
+                and all(self.file_ok(name) for name in named)
                 and all(m.group(0) in self.tests for m in _TEST_NAME.finditer(text)))
 
 
@@ -183,6 +208,11 @@ def _items(items: list[str], check: _Checker) -> tuple[list[str], int]:
     return kept, len(items) - len(kept)
 
 
+def tidy(text: str) -> str:
+    """Writes "83.33 %" (also with a no-break space) as "83.33%"."""
+    return _SPACED_PERCENT.sub(r"\1%", text)
+
+
 def ground(summary: RunSummary, facts: RunFacts) -> tuple[RunSummary, int]:
     """The summary without the sentences and list items that state something absent from the facts, and how many
     were dropped. Suspected bugs are not the model's: they are the facts' own, as "Function: description"."""
@@ -191,18 +221,19 @@ def ground(summary: RunSummary, facts: RunFacts) -> tuple[RunSummary, int]:
 
     def para(text: str) -> str:
         nonlocal dropped
-        kept, n = _paragraph(text, check)
+        kept, n = _paragraph(tidy(text), check)
         dropped += n
         return kept
 
     def items(values: list[str]) -> list[str]:
         nonlocal dropped
-        kept, n = _items(values, check)
+        kept, n = _items([tidy(v) for v in values], check)
         dropped += n
         return kept
 
     b, t = summary.business, summary.technical
-    gaps = [g for g in t.gaps if check.file_ok(g.file) and check.ok(g.detail)]
+    gaps = [SummaryGap(file=g.file, detail=tidy(g.detail)) for g in t.gaps]
+    gaps = [g for g in gaps if check.file_ok(g.file) and check.ok(g.detail)]
     dropped += len(t.gaps) - len(gaps)
     business = BusinessSummary(headline=para(b.headline), outcome=para(b.outcome), efficiency=para(b.efficiency),
                                risks=items(b.risks), recommendation=para(b.recommendation))

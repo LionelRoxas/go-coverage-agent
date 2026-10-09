@@ -1,7 +1,9 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 from app.models import BusinessSummary, RunSummary, SummaryGap, SuspectedBug, TechnicalSummary
 from app.summary.facts import CostFacts, FileFact, LowFile, RunFacts, TokenFacts
-from app.summary.grounding import ground, number_tokens
+from pathlib import Path
+
+from app.summary.grounding import _Checker, ground, number_tokens, tidy
 
 
 def facts(**kw) -> RunFacts:
@@ -155,7 +157,7 @@ def test_percentages_and_counts_do_not_stand_in_for_each_other():
     assert kept("Coverage reached 81 percent, past the goal of 80%; it gained 81.07 points.")
     assert not kept("3% of the targets were rejected.")  # 3 is a count (pruned tests), not a percentage
     assert not kept("It took 81 rounds.")  # 81 is a percentage, not a count
-    assert not kept("Coverage rose by 19 percent.")
+    assert not kept("Coverage rose by 25 percent.")
 
 
 def test_commands_and_ordinary_words_pass():
@@ -175,3 +177,82 @@ def test_suspected_bugs_come_from_the_facts():
     assert out.technical.suspected_bugs == ["Mean: empty input"]
     out, _ = ground(s, facts(suspected_bugs=[]))
     assert out.technical.suspected_bugs == []
+
+
+
+# --- Real facts: run e2de1ca387cb (stats, 0% -> 81.07%) and the live run fc080d7fc500 (semver, 1.43% -> 83.33%) ---
+LIVE = Path(__file__).parent / "fixtures" / "run_fc080d7fc500"
+
+
+def live_facts():
+    from app.models import Event, Summary
+    from app.summary.facts import build_facts
+
+    events = [Event.model_validate_json(line) for line in (LIVE / "events.jsonl").read_text("utf-8").splitlines() if line]
+    summary = Summary.model_validate(next(e.data for e in events if e.type == "job_completed"))
+    return build_facts(summary, events, repo="semver", model="openai/gpt-oss-120b", job_id="fc080d7fc500",
+                       price_input_per_m=0.15, price_output_per_m=0.60)
+
+
+def stats_facts():
+    from tests.test_summary_facts import facts as run_facts
+    return run_facts(price_input_per_m=0.15, price_output_per_m=0.60)
+
+
+def test_zero_counts_are_kept_on_the_real_run():
+    check = _Checker(stats_facts())  # its lowest files sit at 0%, which used to remove every 0 from the counts
+    for true in ("All 31 targets were accepted and 0 were rejected.",
+                 "There were 0 rejected targets, 0 timeouts and 0 rate-limit waits.", "There were zero rejected targets.",
+                 "Rejected targets: 0.", "Coverage rose from zero to 81%.", "Coverage rose from 0 to 81.07%."):
+        assert check.ok(true), true
+    assert not check.ok("There were 2 rejected targets.")
+
+
+def test_counts_do_not_match_percentages_or_durations():
+    check = _Checker(stats_facts())
+    assert not check.ok("It wrote 80 tests.")  # 80 is the goal, a percentage
+    assert not check.ok("It took 310 rounds.")  # 310.1 is a duration in seconds
+    assert check.ok("Five files are still at 0%.")  # five lowest files
+    assert check.ok("A five-minute run.") and check.ok("About five minutes.")
+
+
+def test_test_file_patterns_name_no_file():
+    check = _Checker(live_facts())
+    # the prompt's own wording: the sentence the live run dropped from "Where the tests live" (see the report)
+    assert check.ok("The 3 test files are in output/fc080d7fc500/tests; copy the contents into the module root of "
+                    "semver, keeping sub-folders, so each `_test.go` file sits next to its source file.")
+    assert check.ok("Copy the `*_test.go` files into the module root.")
+    assert check.ok("Copy output/fc080d7fc500/tests/version_test.go next to version.go.")
+    assert not check.ok("Copy helpers_test.go too.")
+
+
+def test_round_thousands_and_hundreds_match_like_k():
+    check = _Checker(stats_facts())
+    for true in ("Roughly 175,000 tokens.", "About 2,200 tokens per point.", "About 175 thousand tokens.",
+                 "Roughly 175K tokens."):
+        assert check.ok(true), true
+    for invented in ("Roughly 180,000 tokens.", "About 2,300 tokens per point.", "About 200 thousand tokens."):
+        assert not check.ok(invented), invented
+
+
+def test_the_untested_share_and_the_margin_over_the_goal_are_allowed():
+    check = _Checker(stats_facts())
+    assert check.ok("The remaining 19% is untested.") and check.ok("That is 18.93% of the code.")
+    assert check.ok("Coverage ended 1.07 points above the 80% goal.")
+    assert not check.ok("Coverage ended 2 points above the goal.")
+    assert not check.ok("It took 19 rounds.")  # a percentage is not a count
+
+
+def test_spaced_percent_signs_are_tidied():
+    assert tidy("From 1.43 % to 83.33\u202f% (80\u00a0% goal), +81.9 pp.") == "From 1.43% to 83.33% (80% goal), +81.9 pp."
+
+
+def test_the_live_summary_is_grounded_and_tidied():
+    """report.json of the live run holds the summary as grounded then (1 sentence dropped); it passes again."""
+    import json
+    data = json.loads((LIVE / "ai_summary.json").read_text("utf-8"))
+    written = RunSummary.model_validate({"business": data["business"], "technical": data["technical"]})
+    out, dropped = ground(written, live_facts())
+    assert dropped == 0
+    assert out.business.headline == "Coverage rose from 1.43% to 83.33%, exceeding the 80% goal."
+    assert "\u202f%" not in out.model_dump_json()

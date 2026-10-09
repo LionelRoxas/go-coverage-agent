@@ -132,6 +132,11 @@ class JobManager:
         llm = GroqLLM(self.settings, self.ledger, self.limiter, emit=emit, cancel=cancel)
         return await run_job(job.id, job.request, self.settings, llm, emit, cancel, lambda: job.events)
 
+    @property
+    def summary_deadline_s(self) -> float:
+        """The whole summary call, retries and waits included: one timed-out request and its retry, plus 30 s."""
+        return 2 * self.settings.groq_timeout_s + 30
+
     def running(self) -> Job | None:
         """The busy job: running, or writing its summary. One job uses Groq at a time."""
         return next((j for j in self.jobs.values() if j.status is JobStatus.RUNNING or not j.finished), None)
@@ -190,6 +195,7 @@ class JobManager:
             # After job_completed / job_cancelled, so the result shows at once; the stream stays open meanwhile.
             # Setup failures have no Summary and get no summary.
             if job.request.options.write_summary:
+                job.summary_cancel = asyncio.Event()  # before the summary starts, so no Cancel is lost
                 await self._write_summary(job)
         finally:
             try:
@@ -211,6 +217,7 @@ class JobManager:
         if not self.settings.llm_configured:
             raise JobRejected(400, "llm_not_configured", "Set GROQ_API_KEY in .env and restart the app.")
         job.finished = False
+        job.summary_cancel = asyncio.Event()  # now, not in the task: a Cancel before it starts must count
         job.summary_task = asyncio.create_task(self._summary_again(job))
         return job
 
@@ -245,7 +252,10 @@ class JobManager:
             raise SummaryFailed("cancelled", "Cancelled before the summary was written.")
         llm = self._llm_factory(job.emit, job.summary_cancel)
         try:
-            written, usage = await Agents(llm, s.max_prompt_tokens).summarize(facts, on_request=on_request)
+            written, usage = await asyncio.wait_for(
+                Agents(llm, s.max_prompt_tokens).summarize(facts, on_request=on_request), self.summary_deadline_s)
+        except TimeoutError as e:  # retries and rate-limit waits must not keep the job busy for many minutes
+            raise SummaryFailed("timeout", f"The summary was not written within {self.summary_deadline_s:g} s.") from e
         except LLMError as e:
             job.summary_tokens = job.summary_tokens.add(e.spent)  # e.g. truncated answers before the failure
             raise SummaryFailed(*_failure(e)) from e
@@ -269,7 +279,6 @@ class JobManager:
         """Emit summary_generated or summary_failed (never raises; the run itself has already ended) and save it
         next to the run's other files."""
         assert job.summary is not None
-        job.summary_cancel = asyncio.Event()
         out = self.settings.output_dir / job.id
         try:
             payload = await self._summarize(job)
