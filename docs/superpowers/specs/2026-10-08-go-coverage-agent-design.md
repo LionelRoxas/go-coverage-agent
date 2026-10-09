@@ -262,7 +262,7 @@ For one target file, it builds a prompt context in priority order. Items are tri
 The planner is a pure function, no LLM. This is a deliberate trade-off to save the scarce token budget (§6.7). Every turn it does the following:
 
 1. It ranks functions by uncovered statements, descending, skipping keys in `failed_targets` (two failed attempts) or `skipped_too_large`.
-2. It groups the top functions by **source file**, so one Writer call covers one source file. It packs functions from that file up to a statement cap (default 100 uncovered statements per call; first function always included) and a function cap (default 8 functions per call), so a file of many tiny functions cannot become one oversized request; the rest are planned in later iterations.
+2. It groups the top functions by **source file**, so one Writer call covers one source file. It packs functions from that file up to a statement cap (default 100 uncovered statements per call; first function always included) and a function cap (default 5 functions per call), so a file of many tiny functions cannot become one oversized request; the rest are planned in later iterations.
 3. It ranks the files by packed total and returns the top `targets_per_iteration` (default 3) `PlanItem{file, functions: [FuncKey], uncovered_statements}`.
 
 "What to test" judgment (edge cases, error paths, scenarios) comes from the Writer's `test_plan` field. The UI shows it as the agent's plan for each target. The interface (`Planner` protocol) allows an LLM planner to be added later without touching the loop.

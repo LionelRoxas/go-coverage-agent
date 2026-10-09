@@ -59,13 +59,19 @@ def test_item_never_exceeds_max_functions_and_rest_is_planned_later():
     fns = [fc("data.go", f"F{i:02d}", 1) for i in range(36)]
     r = report(*fns)
     items = plan(r, {}, set())
-    assert len(items) == 1 and len(items[0].functions) == 8
-    assert [k.name for k in items[0].functions] == [f"F{i:02d}" for i in range(8)]  # deterministic order
+    assert len(items) == 1 and len(items[0].functions) == 5
+    assert [k.name for k in items[0].functions] == [f"F{i:02d}" for i in range(5)]  # deterministic order
     done = set(items[0].functions)
     later = plan(r, {}, done)
-    assert len(later[0].functions) == 8 and not done & set(later[0].functions)
+    assert len(later[0].functions) == 5 and not done & set(later[0].functions)
 
 
 def test_max_functions_is_configurable():
     r = report(*[fc("a.go", f"F{i}", 1) for i in range(5)])
     assert len(plan(r, {}, set(), max_functions=2)[0].functions) == 2
+
+
+def test_file_with_seven_uncovered_functions_yields_first_target_of_at_most_five():
+    r = report(*[fc("a.go", f"F{i}", 1) for i in range(7)])
+    items = plan(r, {}, set())
+    assert len(items[0].functions) <= 5
