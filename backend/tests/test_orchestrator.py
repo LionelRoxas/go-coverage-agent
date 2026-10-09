@@ -135,9 +135,10 @@ async def test_fixer_then_rejection_rolls_back_and_eventually_gives_up(ws):
 
 
 async def test_marginal_gains_stop(ws):
-    v = FakeValidator(ws, [accepted({"A:1"})])
-    orch, _ = run(ws, v, FakeAgents([GOOD]), min_gain=60, patience=1, targets_per_iteration=1)
-    summary = await orch.run(report(set()))
+    funcs10 = tuple((f"f{i}.go", f"F{i}") for i in range(10))  # one accepted block = 5% gain
+    v = FakeValidator(ws, [accepted({"F0:1"}, funcs=funcs10)])
+    orch, _ = run(ws, v, FakeAgents([GOOD]), min_gain=10, patience=1, targets_per_iteration=1)
+    summary = await orch.run(report(set(), funcs=funcs10))
     assert summary.stop_reason is StopReason.MARGINAL_GAINS
 
 
