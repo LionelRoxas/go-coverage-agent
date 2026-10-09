@@ -186,9 +186,10 @@ const STOP_RULES = [
 ];
 
 const MEASURED = [
-  { repo: "montanaflynn/stats", job: "26598ee5c57b", cov: "0.0% → 80.75%", rounds: 12, time: "248 s", tokens: "182,494", kept: "34 / 1" },
-  { repo: "montanaflynn/stats", job: "89eb53b5907e", cov: "0.0% → 80.51%", rounds: 15, time: "287 s", tokens: "184,926", kept: "41 / 4" },
-  { repo: "Masterminds/semver", job: "736baa413b5d", cov: "1.4% → 84.6%", rounds: 4, time: "114 s", tokens: "82,606", kept: "8 / 0" },
+  { repo: "montanaflynn/stats, goal 80%", job: "e2de1ca387cb", cov: "0.0% → 81.07%", rounds: 11, time: "310 s", tokens: "175,023", kept: "31 / 0" },
+  { repo: "montanaflynn/stats, goal 100%", job: "0e1f8bf7442a", cov: "0.0% → 100.0%", rounds: 22, time: "612 s", tokens: "403,322", kept: "64 / 1" },
+  { repo: "google/btree, goal 100%", job: "80a576a4d3ad", cov: "0.0% → 87.09%", rounds: 11, time: "350 s", tokens: "306,562", kept: "6 / 5" },
+  { repo: "montanaflynn/stats, goal 80%", job: "89eb53b5907e", cov: "0.0% → 80.51%", rounds: 15, time: "287 s", tokens: "184,926", kept: "41 / 4" },
 ];
 
 const GLOSSARY: { term: string; def: ReactNode }[] = [
@@ -381,7 +382,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
 {"seq": 8, "type": "candidate_accepted",  "data": {"index": 1, "file": "load.go", "test_file": "load_test.go",
                                                   "tests": ["TestLoadRawData"], "percent": 3.69, "gain": 3.69}}`}</Pre>
           <H3>Measured results</H3>
-          <p>Developer-plan Groq key, target 80%, default options, each project’s own tests deleted first.</p>
+          <p>Developer-plan Groq key, default options, each project’s own tests deleted first, so every run starts at 0.0%. The goal is in the first column. The btree run stopped with <C>marginal_gains</C>: the last 2 rounds each added less than 0.5 percentage points. The last row is the run whose tests were re-checked below.</p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[34rem] text-left text-sm">
               <thead className="text-xs text-muted">
@@ -409,6 +410,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
             </table>
           </div>
           <p>The tests from run 89eb53b5907e were copied into a fresh clone of stats with its tests deleted; <C>go vet</C> was clean, every test passed, and plain Go measured 80.5%. An earlier run on a free-trial key (8K tokens per minute) reached 69.0% in about 28 minutes, mostly waiting on rate limits.</p>
+          <p>Why the semver sample starts at 1.4% and not 0%: a package’s <C>init()</C> functions run when the package loads, so their statements (version.go:83 and constraints.go:206) count as covered before any test exists. That is true and measured, not an error. For this reason the results above use runs that started at exactly 0%.</p>
           <Where code={["backend/app/engine/run.py", "frontend/src/app/jobs/[id]/page.tsx", "README.md"]} events={["job_completed"]} />
         </Section>
 

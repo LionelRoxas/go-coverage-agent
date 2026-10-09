@@ -128,6 +128,8 @@ Developer-plan key, 2026-10-09, target 80%, defaults. Writer at `medium` reasoni
 | `736baa413b5d` | after the Fixer-history fixes, Fixer `medium` | 1.4% → **84.6%**, target reached | 4 / 114 s | 8 / 0 | 82.6K |
 | `d247037efdb2` | same, Fixer `low` | 1.4% → **84.4%**, target reached | 3 / 88 s | 7 / 0 | 69.2K |
 
+The 1.4% baseline is not an error: semver's two `init()` functions (`version.go:83`, `constraints.go:206`) run when the package loads, so their statements count as covered before any test exists. The "How it works" and Walkthrough pages therefore report runs that started at exactly 0%.
+
 Each of the last two runs needed only one LLM fix, and both fixes were accepted (12.8 s at `medium`, 9.6 s at `low`), so the two runs are too close to rank the Fixer's effort. A Fixer call at `high` was still waiting after about 114 s, which is why both roles default to `medium`.
 
 ### Cap of 5 functions per target (2026-10-09)
@@ -187,7 +189,7 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <tr>
 <td valign="top">
 <a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page: the five steps of a run side by side, each with a Read more link, with steps 2 to 5 marked as one round and an arrow from step 5 back to step 2"></a>
-<br><b>How it works page</b><br>A two-minute, plain-language explanation for non-developers: what tests and coverage are (8 of 10 lines = 80%), the five steps of a run side by side (step 1 once at the start, steps 2 to 5 as one round with an arrow from step 5 back to step 2), each with a Read more link to its Walkthrough section, when it stops, why the number can be trusted, and compact measured results for <code>montanaflynn/stats</code> (0% to 80.75% in 12 rounds, about 4 minutes) and <code>Masterminds/semver</code> (1.4% to 84.6% in 4 rounds, about 2 minutes).
+<br><b>How it works page</b><br>A two-minute, plain-language explanation for non-developers: what tests and coverage are (8 of 10 lines = 80%), the five steps of a run side by side (step 1 once at the start, steps 2 to 5 as one round with an arrow from step 5 back to step 2), each with a Read more link to its Walkthrough section, when it stops, why the number can be trusted, and compact measured results for runs that started at 0%: <code>montanaflynn/stats</code> with an 80% goal (0% to 81.1% in 11 rounds, about 5 minutes) and a 100% goal (0% to 100% in 22 rounds, about 10 minutes), and <code>google/btree</code> with a 100% goal (0% to 87.1%, stopped when new rounds added very little).
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-howitworks-mobile.png"><img src="docs/screenshots/gallery-howitworks-mobile.png" width="100%" alt="How it works page on a phone-width screen"></a>

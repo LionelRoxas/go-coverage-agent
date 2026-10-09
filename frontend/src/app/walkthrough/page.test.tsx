@@ -78,7 +78,7 @@ describe("WalkthroughPage", () => {
   it("shows the outputs, an event example, the coverage profile line and the safety notes", () => {
     render(<WalkthroughPage />);
     const results = section("results");
-    for (const t of ["./output/<job id>/", "events.jsonl", "report.json", "tests/", "candidate_accepted", "80.75%", "84.6%"]) {
+    for (const t of ["./output/<job id>/", "events.jsonl", "report.json", "tests/", "candidate_accepted", "81.07%", "100.0%", "87.09%", "e2de1ca387cb", "0e1f8bf7442a", "80a576a4d3ad", "init()", "1.4%"]) {
       expect(results).toHaveTextContent(t);
     }
     const coverage = section("coverage");

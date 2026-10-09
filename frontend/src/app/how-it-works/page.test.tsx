@@ -85,13 +85,19 @@ describe("HowItWorksPage", () => {
     expect(screen.getByText(/at least one piece of code that no earlier test ran/)).toBeInTheDocument();
     expect(screen.getByText(/re-run in a fresh copy of the project/)).toBeInTheDocument();
     const stats = screen.getByTestId("result-stats");
-    expect(stats).toHaveTextContent("0% → 80.75%");
-    expect(stats).toHaveTextContent("12 rounds");
-    expect(stats).toHaveTextContent("about 4 minutes");
-    const semver = screen.getByTestId("result-semver");
-    expect(semver).toHaveTextContent("1.4% → 84.6%");
-    expect(semver).toHaveTextContent("4 rounds");
-    expect(semver).toHaveTextContent("about 2 minutes");
+    expect(stats).toHaveTextContent("goal 80%");
+    expect(stats).toHaveTextContent("0% → 81.1%");
+    expect(stats).toHaveTextContent("11 rounds, about 5 minutes");
+    const stats100 = screen.getByTestId("result-stats-100");
+    expect(stats100).toHaveTextContent("goal 100%");
+    expect(stats100).toHaveTextContent("0% → 100%");
+    expect(stats100).toHaveTextContent("22 rounds, about 10 minutes");
+    const btree = screen.getByTestId("result-btree");
+    expect(btree).toHaveTextContent("0% → 87.1%");
+    expect(btree).toHaveTextContent("stopped when new rounds added very little");
+    expect(screen.getByText(/each starts at 0%/)).toBeInTheDocument();
+    expect(screen.queryByText(/at or near 0%/)).toBeNull();
+    expect(screen.queryByText(/semver/i)).toBeNull();
   });
 
   it("ends with Start a run and an internal link to the full walkthrough, and no external artifact link", () => {

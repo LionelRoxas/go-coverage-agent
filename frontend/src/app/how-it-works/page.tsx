@@ -45,8 +45,9 @@ const STOPS = [
 ];
 
 const RESULTS = [
-  { id: "stats", repo: "montanaflynn/stats", what: "Ready-made code for statistics", from: 0, to: 80.75, label: "0% → 80.75%", rounds: 12, time: "about 4 minutes" },
-  { id: "semver", repo: "Masterminds/semver", what: "Ready-made code for comparing version numbers", from: 1.43, to: 84.59, label: "1.4% → 84.6%", rounds: 4, time: "about 2 minutes" },
+  { id: "stats", name: "stats", what: "a statistics library", goal: 80, from: 0, to: 81.07, label: "0% → 81.1%", detail: "11 rounds, about 5 minutes" },
+  { id: "stats-100", name: "stats", what: "a statistics library", goal: 100, from: 0, to: 100, label: "0% → 100%", detail: "22 rounds, about 10 minutes" },
+  { id: "btree", name: "btree", what: "a data-structure library", goal: 100, from: 0, to: 87.09, label: "0% → 87.1%", detail: "stopped when new rounds added very little (11 rounds, about 6 minutes)" },
 ];
 
 // Ten "lines of code", eight of them run by a test. Widths vary so it reads as code, not a progress bar.
@@ -201,20 +202,20 @@ export default function HowItWorksPage() {
       <section aria-labelledby="result-heading" className="space-y-4">
         <div className="space-y-2">
           <h2 id="result-heading" className={h2}>Measured results</h2>
-          <p className="leading-relaxed text-muted">Two real open-source Go projects, with their own tests removed first, so they start at or near 0%. Goal: 80%.</p>
+          <p className="leading-relaxed text-muted">Real open-source Go projects with their own tests removed first, so each starts at 0%.</p>
         </div>
         <ul className="divide-y divide-border rounded-md border border-border bg-surface">
           {RESULTS.map((r) => (
             <li key={r.id} data-testid={`result-${r.id}`} className="grid gap-x-6 gap-y-2 p-4 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center">
               <div className="min-w-0">
-                <p className="font-mono text-sm">{r.repo}</p>
-                <p className="text-sm text-muted">{r.what}: {r.rounds} rounds, {r.time}</p>
+                <p className="font-mono text-sm">{r.name} <span className="font-sans text-muted">({r.what}), goal {r.goal}%</span></p>
+                <p className="text-sm text-muted">{r.detail}</p>
               </div>
               <div className="space-y-1.5">
                 <p className="font-mono font-semibold tabular-nums sm:text-right">{r.label}</p>
                 <div aria-hidden className="relative h-1.5 rounded-full bg-border">
                   <span className="absolute inset-y-0 rounded-full bg-accent" style={{ left: `${r.from}%`, width: `${r.to - r.from}%` }} />
-                  <span className="absolute -inset-y-1 left-[80%] w-0.5 bg-text" title="80% goal" />
+                  <span className="absolute -inset-y-1 w-0.5 bg-text" style={{ left: `${r.goal}%` }} title={`${r.goal}% goal`} />
                 </div>
               </div>
             </li>
