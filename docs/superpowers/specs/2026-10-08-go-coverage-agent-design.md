@@ -256,8 +256,8 @@ For one target file, it builds a prompt context in priority order. Items are tri
 The planner is a pure function, no LLM. This is a deliberate trade-off to save the scarce token budget (§6.7). Every turn it does the following:
 
 1. It ranks functions by uncovered statements, descending, skipping keys in `failed_targets` (two failed attempts) or `skipped_too_large`.
-2. It groups the top functions by **source file**, so one Writer call covers one source file. It packs functions from that file up to a statement cap (default 60 uncovered statements per call).
-3. It returns up to `targets_per_iteration` (default 3) `PlanItem{file, functions: [FuncKey], uncovered_statements}`.
+2. It groups the top functions by **source file**, so one Writer call covers one source file. It packs functions from that file up to a statement cap (default 100 uncovered statements per call; first function always included).
+3. It ranks the files by packed total and returns the top `targets_per_iteration` (default 3) `PlanItem{file, functions: [FuncKey], uncovered_statements}`.
 
 "What to test" judgment (edge cases, error paths, scenarios) comes from the Writer's `test_plan` field. The UI shows it as the agent's plan for each target. The interface (`Planner` protocol) allows an LLM planner to be added later without touching the loop.
 
@@ -324,6 +324,12 @@ Each has its own context and contract, so prompts stay small, failures are attri
   - A Groq Developer plan removes the waiting.
   - Expected duration, so reviewers aren't surprised.
 - **Measured end-to-end on 2026-10-08:** job `a46c5a902f70` on `stats` via the HTTP API (defaults: 10 iterations, 3 targets per iteration). Coverage went from 0.0% to 68.97% of 1247 statements in 1677.7 s over 10 iterations and stopped with `max_iterations`; the 80% target was not reached. Independent verification (fresh clone, existing tests deleted, generated tests copied in, `go vet` clean, `go test -count=1`) measured 69.0%. Tokens: 182,173 (122,218 prompt + 59,955 completion) over 43 LLM calls. 29 candidates accepted, 1 rejected (`llm_error`: 1), 14 fix attempts, 8 prune events. Gains were 3–12 pp per iteration early on, about 3 pp by iteration 10, so the default of 10 iterations was too low for `stats` and was raised to 20. Observed Groq limits for this key: 8,000 tokens per minute (`x-ratelimit-limit-tokens`) and 200,000 tokens per day. The job logged 46 `rate_limited` events (tpm and 429) totalling about 1,457 s of the 1,678 s, so rate-limit waiting dominated the duration. Two follow-up runs with `max_iterations=20` were stopped immediately with `budget_exhausted` because the daily token cap was already used.
+- **Token efficiency changes (2026-10-08).** Measured on run `a46c5a902f70` (events.jsonl): 182,173 tokens for 68.97 pp = 2,641 tokens per pp. Writer: 30 calls, avg 2,600 prompt + 1,454 completion; Fixer: 13 calls (33% of all tokens, 60,525), avg 3,400 + 1,255. Prompt size is flat across iterations (about 2.0-3.7K), so optional context sections are not the cost driver and were not trimmed. Findings and the changes they justify:
+  - *Fixer calls were mostly mechanical.* 12 of 14 fix attempts were compile errors; 10 of the 13 fixer calls (about 46K tokens) answered a forgotten import (`undefined: errors|math|sort`) or the package qualifying its own identifiers (`undefined: stats`). New `app/agents/repair.py` repairs both deterministically (up to 3 times per candidate, no LLM call, no fix attempt consumed), and the repaired snippet goes through the normal guard, compile, vet, test and strict-superset gates. `writer.md` now also says to call the package's own functions unqualified.
+  - *Fixer remains worth keeping at 2 attempts.* Fixed candidates produced 30.6 of the 68.97 pp; the 2 second attempts both succeeded (2/2) and first attempts succeeded 10/12 for compile errors. No `vet_error`, `no_gain` or `guard_rejected` occurred, so there is no data to skip the fixer for any kind. `max_fix_attempts` stays 2.
+  - *Prune is free and effective:* 8 prunes, 8 ended accepted.
+  - *Bigger items are cheaper per point.* Tokens per pp by plan-item size: 3,702 (<=20 statements, 11 items), 2,738 (21-40, 11 items), 1,918 (>40, 7 items). The 60-statement cap left `load.go` (107 uncovered) needing three iterations and `norm.go` two. The cap is raised to 100 and the planner now ranks files by the statements it can pack into one prompt (not by their single biggest function), so each call buys as many statements as possible. The writer prompt asks for a few broad table-driven tests covering every `// UNCOVERED` branch (about 200 lines, was 150).
+  - *Projection (not measured).* Removing the 10 mechanical fixer calls would have cut run 1 to about 135.6K tokens for the same 68.97 pp (1,966 tokens per pp). The last 11 pp costs 34-51K (iteration 9-10 writer-only rate of 3.1K per pp, up to the 4.6K per pp that iteration 10 cost including its fixer call), so a full run is projected at roughly 170-187K tokens, inside the 200K daily cap but with a thin margin. The larger item cap and planner ranking should lower this further but are not quantified until a new run.
 - **Fallback if day-1 measurements show 80% isn't reachable within one day's budget:** lower the default target in the README example to the measured reachable value, and say so honestly. Don't hide it.
 
 ---
@@ -401,7 +407,7 @@ This guarantees coverage never regresses, the suite is never redundant, and the 
 | `min_gain` (percentage points per iteration) | 1.0 | 0–10 |
 | `patience` | 2 | 1–5 |
 | `targets_per_iteration` | 3 | 1–5 |
-| `max_fix_attempts` | 2 | 0–4 |
+| `max_fix_attempts` | 2 (unchanged after the 2026-10-08 token analysis, §6.7; mechanical import repairs do not consume attempts) | 0–4 |
 | `delete_existing_tests` | true | bool |
 | `max_llm_tokens` (per job) | 1,000,000 | 10K–2M |
 | `exclude_patterns` (module-relative path globs) | `["examples/**", "testdata/**"]` | list |

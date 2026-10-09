@@ -36,9 +36,10 @@ def accepted(covered, tests=("TestA",), funcs=(("a.go", "A"), ("b.go", "B"))):
 class FakeValidator:
     def __init__(self, ws, results, prune_results=()):
         self.ws, self.results, self.prune_results = ws, list(results), list(prune_results)
-        self.pruned = []
+        self.pruned, self.snips = [], []
 
     async def validate(self, test_file, package, snip, prev):
+        self.snips.append(snip)
         self.ws.write_test(test_file, "package p\n// merged\n")  # simulate gohelper merge
         return self.results.pop(0)
 
@@ -230,3 +231,25 @@ async def test_job_token_budget_stops_run(ws):
     summary = await orch.run(report(set()))
     assert summary.stop_reason is StopReason.BUDGET_EXHAUSTED
     assert ws.read("a_test.go") is None
+
+
+async def test_missing_import_is_repaired_without_calling_fixer(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "./a_test.go:5:2: undefined: errors")
+    v = FakeValidator(ws, [bad, accepted({"A:1", "A:2"})])
+    agents = FakeAgents([GOOD])
+    orch, events = run(ws, v, agents, target=50, max_fix_attempts=0)
+    summary = await orch.run(report(set()))
+    assert agents.fix_kinds == [] and summary.tests_added == ["TestA"]
+    assert v.snips[1].imports == ["testing", "errors"]
+    assert ("mechanical_repair", {"index": 1, "file": "a.go", "repair": 1}) in events
+    assert sum(1 for t, _ in events if t == "llm_call") == 1
+
+
+async def test_mechanical_repair_is_bounded_and_falls_back_to_fixer(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "./a_test.go:5:2: undefined: errors")
+    other = ValidationResult(ValidationKind.COMPILE_ERROR, "./a_test.go:9:1: undefined: foo")
+    v = FakeValidator(ws, [bad, other, accepted({"A:1", "A:2"})])
+    agents = FakeAgents([GOOD], fixes=[GOOD])
+    orch, _ = run(ws, v, agents, target=50, max_fix_attempts=1)
+    summary = await orch.run(report(set()))
+    assert agents.fix_kinds == [ValidationKind.COMPILE_ERROR] and summary.tests_added == ["TestA"]

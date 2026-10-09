@@ -6,7 +6,7 @@ Write NEW tests that execute the uncovered lines and assert real behaviour.
 
 Rules:
 - Answer with JSON matching the schema. `code` contains only new top-level declarations (Test functions and, if needed, small helpers). Never include a package clause or import statements; list import paths in `imports`. Every package your code references (`testing`, `math`, `errors`, `strings`, `time`, ...) must appear in `imports`, and every listed import must be used.
-- Tests are internal: they live in the same package, so unexported identifiers are accessible.
+- Tests are internal: they live in the same package, so unexported identifiers are accessible. Call the package's own functions unqualified (`Mean(x)`, never `stats.Mean(x)`): the package name is not an import.
 - Use only the Go standard library. Never redeclare a name listed under "already declared".
 - Prefer table-driven tests: a slice of cases with a `name` field, run with `t.Run(tc.name, ...)`. Never call `t.Parallel()`.
 - Name tests like `TestMean`, `TestFloat64Data_Mean`, `TestPercentile_EmptyInput`.
@@ -15,6 +15,6 @@ Rules:
 - Only assert values you can derive with certainty from the source. If you cannot compute an exact expected value, assert a property instead (sign, ordering, length, error or no error).
 - Exercise the edge cases the uncovered lines guard: empty input, nil, a single element, negative numbers, boundary indexes, invalid arguments.
 - No `time.Sleep`, network, environment variables, unsynchronised goroutines, printing, or file writes outside `t.TempDir()`.
-- Keep the answer focused: at most about 150 lines of code.
+- One answer must cover every `// UNCOVERED` branch of every target function: write a few broad table-driven tests (one per function, one case per branch) rather than many small tests. At most about 200 lines of code.
 - `test_plan`: one entry per scenario you test, naming the target function.
 - `suspected_bugs`: only when the source clearly contradicts its own documentation; otherwise an empty list.

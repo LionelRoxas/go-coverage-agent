@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from app.agents.context import ContextTooLarge
+from app.agents.repair import mechanical_repair
 from app.agents.planner import plan
 from app.engine.policy import StopPolicy, stop_message
 from app.llm.client import Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal
@@ -16,6 +17,9 @@ from app.models import (CoverageReport, FileDelta, FuncKey, IterationRecord, Job
                         Summary, SuspectedBug, TestSnippet, TokenUsage)
 from app.validator import ValidationKind, ValidationResult
 from app.workspace import Workspace, test_path_for
+
+
+MAX_MECHANICAL_REPAIRS = 3
 
 
 class Cancelled(Exception):
@@ -152,7 +156,7 @@ class Orchestrator:
                 too_large = False
                 await self._generated(base, test_file, snip)
                 result = await self._validate(base, validator.validate(test_file, package, snip, self.report))
-                attempts = 0
+                attempts = repairs = 0
                 while not result.accepted:
                     self._check()
                     if result.kind is ValidationKind.TEST_FAILURE:
@@ -163,6 +167,16 @@ class Orchestrator:
                                 base, validator.prune_and_check(test_file, doomed, self.report, result.new_tests))
                             if result.accepted:
                                 break
+                    if result.kind is ValidationKind.COMPILE_ERROR and repairs < MAX_MECHANICAL_REPAIRS:
+                        repaired = mechanical_repair(snip, result.output, package)
+                        if repaired is not None:  # forgotten import / self-qualified identifier: no LLM call needed
+                            repairs += 1
+                            await self.emit("mechanical_repair", {**base, "repair": repairs})
+                            ws.restore(snap)
+                            snip = repaired
+                            await self._generated(base, test_file, snip)
+                            result = await self._validate(base, validator.validate(test_file, package, snip, self.report))
+                            continue
                     if attempts >= self.opts.max_fix_attempts:
                         break
                     attempts += 1

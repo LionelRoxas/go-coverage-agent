@@ -40,3 +40,16 @@ def test_skips_failed_and_skipped():
 
 def test_empty_when_nothing_left():
     assert plan(report(fc("a.go", "A", 3, covered=3)), {}, set()) == []
+
+
+def test_ranks_files_by_packed_total_not_biggest_function():
+    r = report(fc("a.go", "A", 30), fc("b.go", "B1", 25), fc("b.go", "B2", 25), fc("b.go", "B3", 25))
+    items = plan(r, {}, set(), max_items=2, max_statements=100)
+    assert [i.file for i in items] == ["b.go", "a.go"]
+    assert items[0].uncovered_statements == 75
+
+
+def test_default_cap_packs_up_to_100_statements():
+    r = report(fc("a.go", "A1", 60), fc("a.go", "A2", 30), fc("a.go", "A3", 20))
+    item = plan(r, {}, set())[0]
+    assert [k.name for k in item.functions] == ["A1", "A2"] and item.uncovered_statements == 90
