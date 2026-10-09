@@ -5,11 +5,15 @@ import type { CostUsd, SummaryGenerated } from "./types";
 export const AI_NOTE = "AI-written from this run's measured data.";
 export const EMPTY_PART = "Nothing in this part could be checked against the run's data.";
 
-export const usd = (v: number) => `$${v >= 0.01 || v === 0 ? v.toFixed(2) : v.toFixed(4)}`;
+/** One rule for every amount: 4 decimals below $1, 2 from $1 up (as report.py). */
+export const usd = (v: number) => `$${v < 1 ? v.toFixed(4) : v.toFixed(2)}`;
 
 /** The run's cost (what the text talks about), the summary call's, and both together. */
 export const costLine = (c: CostUsd) =>
   `Run cost ${usd(c.run)} · summary ${usd(c.summary)} · total ${usd(c.total)} (input ${usd(c.input)}, output ${usd(c.output)})`;
+
+/** "83.33 %" (also with a no-break space) as "83.33%"; the backend already does this for new summaries. */
+export const tidy = (text: string) => text.replace(/(\d)[ \u00a0\u202f]+%/g, "$1%");
 
 /** False when the grounding check left nothing of this part. */
 export const hasText = (part: object) =>

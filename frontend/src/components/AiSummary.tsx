@@ -1,7 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
 import { useState, type ReactNode } from "react";
-import { AI_NOTE, costLine, EMPTY_PART, hasText, toMarkdown } from "@/lib/aiSummary";
+import { AI_NOTE, costLine, EMPTY_PART, hasText, tidy, toMarkdown } from "@/lib/aiSummary";
 import { api } from "@/lib/api";
 import type { AiSummaryView } from "@/lib/runState";
 import type { SummaryGenerated } from "@/lib/types";
@@ -17,7 +17,7 @@ const PREFIX = "summary-";
 
 /** `code` spans the model wrote in backticks, e.g. `go test ./...`. */
 function Prose({ text }: { text: string }) {
-  return text.split(/(`[^`]+`)/).map((part, i) =>
+  return tidy(text).split(/(`[^`]+`)/).map((part, i) =>
     part.length > 2 && part.startsWith("`") && part.endsWith("`")
       ? <code key={i} className="whitespace-nowrap rounded-sm border border-border bg-bg px-1 font-mono text-[0.8125rem]">{part.slice(1, -1)}</code>
       : part);
@@ -178,7 +178,7 @@ export function AiSummary({ view, jobId, repo, model, onRequested }: {
           )}
           {waiting ? (
             <Button size="sm" variant="danger" onClick={stop} disabled={stopping}>
-              {stopping ? "Stopping…" : "Stop"}
+              {stopping ? "Stopping…" : "Stop summary"}
             </Button>
           ) : (
             <Button size="sm" onClick={write} disabled={requesting}>
@@ -204,7 +204,7 @@ export function AiSummary({ view, jobId, repo, model, onRequested }: {
       )}
       {view.status === "off" && <p className="text-sm text-muted">Summary was turned off for this run.</p>}
       {view.status === "none" && <p className="text-sm text-muted">No summary was written for this run.</p>}
-      {cancelled && <p className="text-sm text-muted">The summary was stopped before it was written.</p>}
+      {cancelled && <p role="status" className="text-sm text-muted">The summary was stopped before it was written.</p>}
       {view.status === "failed" && view.error && !cancelled && (
         <p role="alert" className="text-sm text-danger">Couldn&apos;t write the summary: {view.error.message}</p>
       )}

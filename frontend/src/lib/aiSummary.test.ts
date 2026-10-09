@@ -1,7 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // Same payload and expected Markdown as backend/tests/test_summary_report.py: Copy as Markdown equals SUMMARY.md.
 import { describe, expect, it } from "vitest";
-import { EMPTY_PART, toMarkdown, usd } from "./aiSummary";
+import { EMPTY_PART, tidy, toMarkdown, usd } from "./aiSummary";
 import type { SummaryGenerated } from "./types";
 
 const PAYLOAD: SummaryGenerated = {
@@ -26,7 +26,7 @@ The 80% goal was reached.
 
 It took 5.2 minutes.
 
-Run cost $0.07 · summary $0.0014 · total $0.07 (input $0.01, output $0.06)
+Run cost $0.0674 · summary $0.0014 · total $0.0688 (input $0.0130, output $0.0558)
 
 **Risks**
 
@@ -78,6 +78,10 @@ _${EMPTY_PART}_
   });
 
   it("formats dollars like the backend", () => {
-    expect([0, 0.0005, 0.01, 0.0674, 1.5].map(usd)).toEqual(["$0.00", "$0.0005", "$0.01", "$0.07", "$1.50"]);
+    expect([0, 0.0005, 0.0232, 0.9999, 1, 12.345].map(usd)).toEqual(["$0.0000", "$0.0005", "$0.0232", "$0.9999", "$1.00", "$12.35"]);
+  });
+
+  it("tidies a space before % like the backend, and leaves pp alone", () => {
+    expect(tidy("From 1.43 % to 83.33\u202f% (80\u00a0% goal), +81.9 pp.")).toBe("From 1.43% to 83.33% (80% goal), +81.9 pp.");
   });
 });

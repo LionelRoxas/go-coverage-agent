@@ -174,7 +174,9 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
       )}
       {running.length > 0 && (
         <ul className="space-y-2" aria-label="Running">
-          {running.map((j) => <RunningCard key={j.id} job={j} now={now} onChanged={() => void load()} />)}
+          {/* A new card once the run ends and its summary is being written, so "Cancelling…" does not stick. */}
+          {running.map((j) => <RunningCard key={`${j.id}-${j.writing_summary ? "summary" : "run"}`} job={j} now={now}
+                                           onChanged={() => void load()} />)}
         </ul>
       )}
       {past.length > 0 && (

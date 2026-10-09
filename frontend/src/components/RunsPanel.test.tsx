@@ -188,4 +188,16 @@ describe("RunsPanel", () => {
     await user.click(screen.getByRole("button", { name: "Stop summary" }));
     expect(api.cancel).toHaveBeenCalledWith("w");
   });
+
+  it("after Cancel, the card of a run now writing its summary offers Stop summary again", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const running = job({ id: "r", status: "running", percent: 40 });
+    vi.mocked(api.jobs).mockResolvedValueOnce([running])
+      .mockResolvedValue([{ ...running, status: "cancelled", writing_summary: true }]);
+    vi.mocked(api.cancel).mockResolvedValue({} as never);
+    render(<RunsPanel />);
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(await screen.findByRole("button", { name: "Stop summary" })).toBeEnabled();
+    expect(screen.getByRole("list", { name: "Running" })).toHaveTextContent("Writing summary…");
+  });
 });

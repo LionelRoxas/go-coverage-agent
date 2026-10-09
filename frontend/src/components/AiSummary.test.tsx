@@ -41,7 +41,7 @@ describe("AiSummary", () => {
     expect(panel).toHaveTextContent(statsSummary.business.headline);
     expect(within(panel).getByText("Recommendation")).toBeInTheDocument();
     expect(within(panel).getAllByRole("listitem")).toHaveLength(2);
-    expect(panel).toHaveTextContent("Run cost $0.07 · summary $0.0013 · total $0.07 (input $0.01, output $0.06)");
+    expect(panel).toHaveTextContent("Run cost $0.0674 · summary $0.0013 · total $0.0688 (input $0.0130, output $0.0558)");
     expect(panel).toHaveAttribute("tabindex", "0");
   });
 
@@ -84,13 +84,13 @@ describe("AiSummary", () => {
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(screen.queryByRole("button", { name: "Write again" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy as Markdown" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Stop" }));
+    await user.click(screen.getByRole("button", { name: "Stop summary" }));
     expect(api.cancel).toHaveBeenCalledWith("e2de1ca387cb");
   });
 
   it("after Stop: says the summary was stopped and offers Try again, without an error", () => {
     show({ status: "failed", error: { reason: "cancelled", message: "Cancelled while the summary was being written." } });
-    expect(screen.getByText("The summary was stopped before it was written.")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("The summary was stopped before it was written.");
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
   });
@@ -124,5 +124,11 @@ describe("AiSummary", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't start the summary: This run is still running or writing its summary.");
     expect(onRequested).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Write summary" })).toBeEnabled();
+  });
+
+  it("shows percentages without the space the model sometimes puts before %", () => {
+    const business = { ...statsSummary.business, headline: "Coverage rose from 1.43\u202f% to 83.33 %." };
+    show({ ...done, result: { ...statsSummary, business } });
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Coverage rose from 1.43% to 83.33%.");
   });
 });
