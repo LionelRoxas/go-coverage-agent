@@ -48,7 +48,7 @@ function RunningCard({ job, now, onChanged }: { job: JobSnapshot; now: number; o
   }
 
   return (
-    <li className="space-y-3 rounded-sm border border-border border-l-4 border-l-accent bg-surface p-3">
+    <li className="space-y-3 rounded-sm border border-border border-l-4 border-l-accent bg-bg p-3">
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 break-all font-mono text-sm font-medium">{job.request.repo_path}</span>
         <Chip status="running" />
@@ -87,7 +87,7 @@ function PastRow({ job, now }: { job: JobSnapshot; now: number }) {
   const result = s ? `${pct(s.baseline_percent)} → ${pct(s.final_percent)}` : "—";
   return (
     <li>
-      <Link href={`/jobs/${job.id}`} className="block space-y-1 rounded-sm border border-border bg-surface px-3 py-2 hover:border-accent">
+      <Link href={`/jobs/${job.id}`} className="block space-y-1 rounded-sm border border-border bg-bg px-3 py-2 hover:border-accent">
         <span className="flex items-start justify-between gap-2">
           <span className="min-w-0 break-all font-mono text-sm">{job.request.repo_path}</span>
           <Chip status={job.status} />
@@ -157,8 +157,12 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
   const past = sorted.filter((j) => j.status !== "running");
 
   return (
-    <aside aria-labelledby="runs-heading" className="space-y-3">
-      <h2 id="runs-heading" className="text-sm font-semibold">Runs</h2>
+    <aside aria-labelledby="runs-heading"
+           className="space-y-3 self-start rounded-md border border-border bg-surface p-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6.5rem)] lg:overflow-y-auto">
+      <h2 id="runs-heading" className="flex items-baseline justify-between gap-2 border-b border-border pb-3 text-sm font-semibold">
+        Run history
+        {jobs && <span aria-label={`${jobs.length} runs`} className="font-mono text-xs font-normal tabular-nums text-muted">{jobs.length}</span>}
+      </h2>
       {error && <p role="alert" className="text-xs text-danger">Couldn&apos;t load runs: {error}</p>}
       {jobs && jobs.length === 0 && !error && (
         <p className="rounded-sm border border-dashed border-border px-3 py-4 text-sm text-muted">

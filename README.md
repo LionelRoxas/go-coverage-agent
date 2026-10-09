@@ -43,9 +43,31 @@ If `.env` is missing or has no key, the stack still starts and the UI shows a "N
 
 ## Using your own repository
 
-Put the Go module under `./repos/<name>` (or set `HOST_REPOS_DIR` in `.env` to an **absolute** path whose subfolders are Go modules,
-e.g. `/Users/you/code`; compose does not expand `~`), restart, and pick it in the UI. Your repository is never modified: the agent
-works on a copy, and the generated tests are written to `./output/<job-id>/tests/`.
+The Repository section of the setup page has two tabs.
+
+**Sample repos** lists six small, dependency-free Go libraries. Click one and it is downloaded into `./repos/<id>` (shallow clone of a pinned release tag, no submodules), then selected. Nothing else is fetched.
+
+| Sample | What it is | Licence |
+|---|---|---|
+| `montanaflynn/stats` | Statistics functions | MIT |
+| `Masterminds/semver` | Semantic version parsing and constraints | MIT |
+| `huandu/xstrings` | String utilities | MIT |
+| `dustin/go-humanize` | Human-friendly numbers, sizes and times | MIT |
+| `google/btree` | In-memory B-tree (generics) | Apache-2.0 |
+| `shopspring/decimal` | Arbitrary-precision decimals | MIT |
+
+**Your folders** lists every Go module (a folder with a `go.mod`, up to two levels deep) in the mounted folder, apart from the samples. To add your own, either:
+
+1. Copy or clone it into the mounted folder (`./repos` by default; the tab shows the real host path), then press Refresh; or
+2. Set `HOST_REPOS_DIR` in `.env` to any parent folder and run `make up` again. Compose needs an absolute path (it does not expand `~`) or one relative to this repository:
+
+   | OS | Example |
+   |---|---|
+   | Windows | `HOST_REPOS_DIR=C:\Users\you\code` |
+   | macOS | `HOST_REPOS_DIR=/Users/you/code` |
+   | Linux | `HOST_REPOS_DIR=/home/you/code` |
+
+Your repository is never modified: the agent works on a copy, and the generated tests are written to `./output/<job-id>/tests/`.
 
 ## How it works
 
@@ -105,19 +127,23 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 | "max completion tokens" / JSON errors, and `norm.go` stuck at 32.7% | Plan items with 12 to 37 functions asked the model for answers too large to finish | The planner caps a plan item at 8 functions / 100 statements; an over-size answer splits the item in half and retries | Run `ca1beb9a1fdb` to `26598ee5c57b`: 4 model errors to 0, `norm.go` 32.74% to 90.27%, 80.75% overall |
 | I worried that failing tests were counted toward coverage | Not a bug. A candidate is accepted only if `go test -count=2` passes and coverage is a strict superset; rejected candidates are rolled back | Verified, no change | Final tests of run `ca1beb9a1fdb` re-run in a fresh clone: all pass, 80.1% |
 | `make test` failed in PowerShell | The Makefile used `cat` and `VAR=x cmd`, which `cmd.exe` lacks | Shell-independent Makefile (`$(file <.go-version)`, exported `MSYS_NO_PATHCONV`) with a fallback for macOS make 3.81 | `make test` passes in PowerShell, Git Bash and CI |
-| No way to switch light/dark, no way back to the start page, the running job was only a one-line banner, the navbar looked unfinished, and the app did not explain the loop | UI gaps | System / Light / Dark toggle in the header (remembered per browser), "← All runs" on the job page, a Runs panel on the setup page (live running card with Cancel, past runs with before to after coverage), a redesigned navbar and a How it works page | Screenshots below |
+| No way to switch light/dark, no way back to the start page, the running job was only a one-line banner, the navbar looked unfinished, and the app did not explain the loop | UI gaps | System / Light / Dark toggle in the header (remembered per browser), "← All runs" on the job page, a Run history panel on the setup page (live running card with Cancel, past runs with before to after coverage), a redesigned navbar and a How it works page | Screenshots below |
 
 ## Screenshots
 
 <table>
 <tr>
 <td valign="top">
-<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with the new navbar, theme toggle and Runs panel"></a>
-<br><b>Setup page and Runs panel</b><br>The redesigned navbar (Spectro Cloud logo, Runs, How it works, model name, System/Light/Dark toggle), the stats repository selected at an 80% target, and the Runs panel listing a completed run, 0.0% to 80.8%.
+<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with the Sample repos tab, one sample selected, and the Run history panel"></a>
+<br><b>Setup page: sample repos and Run history</b><br>The Sample repos tab with six cards (Ready or Download, licence, pinned tag), one selected, the one-line Selected summary, a closed Advanced options row, and the separate Run history panel on the right. The navbar link is New run.
 </td>
 <td valign="top">
-<a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="Setup page and Runs panel in the dark theme"></a>
-<br><b>Dark theme</b><br>The same page with the toggle set to Dark.
+<a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Your folders tab with a user module, the mounted folder path and the Add your own repository note with a HOST_REPOS_DIR line"></a>
+<br><b>Your folders</b><br>Modules found in the mounted folder, a Refresh button, and the steps for adding your own repository, with a copyable <code>HOST_REPOS_DIR</code> line.
+</td>
+<td valign="top">
+<a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="Setup page and Run history panel in the dark theme"></a>
+<br><b>Dark theme</b><br>The same page in the dark theme.
 </td>
 </tr>
 <tr>
@@ -273,7 +299,7 @@ I used Claude Code as a pair programmer and implementation team. I set the direc
 - **Cutting plan item size.** I saw `norm.go` stuck at 32.7% with model errors, traced it to plan items asking for answers too large to finish, and decided to cap items at 8 functions / 100 statements and split over-size answers.
 - **Proof that failing tests are not counted.** I asked for evidence, not an assurance. The final tests were re-run in a fresh clone and passed with 80.1%.
 - **Fixing `make` for PowerShell.** `make test` failed on my machine, so I had the Makefile made shell-independent.
-- **The UI gaps.** I found no theme switch, no way back to the start page, a one-line running banner, an unfinished navbar and no in-app explanation, and decided on the toggle, Runs panel, "← All runs", navbar and How it works page.
+- **The UI gaps.** I found no theme switch, no way back to the start page, a one-line running banner, an unfinished navbar and no in-app explanation, and decided on the toggle, Run history panel, "← All runs", navbar and How it works page.
 - **Publishing and disclosure.** The wording of the per-file disclosure line and the pull-request workflow.
 
 ### What Claude did

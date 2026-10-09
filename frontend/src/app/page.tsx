@@ -2,15 +2,28 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { RepoPicker } from "@/components/RepoPicker";
+import { RepoPicker, type PickerTab } from "@/components/RepoPicker";
 import { RunsPanel } from "@/components/RunsPanel";
 import { api, ApiError } from "@/lib/api";
 import { tokens } from "@/lib/format";
-import type { Health, JobOptions, JobSnapshot, RepoInfo } from "@/lib/types";
+import type { Health, JobOptions, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
 
 const DEFAULTS: Pick<JobOptions, "max_iterations" | "min_gain" | "targets_per_iteration" | "max_fix_attempts"> = {
   max_iterations: 20, min_gain: 1, targets_per_iteration: 3, max_fix_attempts: 2,
 };
+
+const TAB_KEY = "gca-repo-tab";
+
+function pickTab(folders: RepoInfo[]): PickerTab {
+  if (folders.length === 0) return "samples";
+  try {
+    const t = localStorage.getItem(TAB_KEY);
+    if (t === "samples" || t === "folders") return t;
+  } catch {
+    // storage unavailable: fall through to the default
+  }
+  return "folders";
+}
 
 const inputCls = "rounded-sm border border-border bg-surface px-2 py-1.5 font-mono text-sm";
 
@@ -24,32 +37,48 @@ export default function SetupPage() {
   const [opts, setOpts] = useState(DEFAULTS);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [cloning, setCloning] = useState(false);
+  const [samples, setSamples] = useState<Sample[]>([]);
+  const [tab, setTab] = useState<PickerTab>("samples");
+
+  const sampleIds = new Set(samples.map((s) => s.id));
+  const folders = repos.filter((r) => !sampleIds.has(r.path));
+  const selected = repos.find((r) => r.path === repo);
 
   useEffect(() => {
-    Promise.all([api.health(), api.repos()])
-      .then(([h, r]) => {
+    Promise.all([api.health(), api.repos(), api.samples()])
+      .then(([h, r, s]) => {
+        const ids = new Set(s.map((x) => x.id));
+        const own = r.filter((x) => !ids.has(x.path));
         setHealth(h);
         setRepos(r);
-        setRepo((cur) => cur || r[0]?.path || "");
+        setSamples(s);
+        setTab(pickTab(own));
+        setRepo((cur) => cur || own[0]?.path || r[0]?.path || "");
       })
       .catch((e) => setError(e.message));
   }, []);
 
+  function changeTab(t: PickerTab) {
+    setTab(t);
+    try {
+      localStorage.setItem(TAB_KEY, t);
+    } catch {
+      // remembering the tab is a convenience only
+    }
+  }
+
+  async function reload() {
+    const [r, s] = await Promise.all([api.repos(), api.samples()]);
+    setRepos(r);
+    setSamples(s);
+  }
+
   const onJobs = useCallback((jobs: JobSnapshot[]) => setRunning(jobs.some((j) => j.status === "running")), []);
 
-  async function useSample() {
-    setCloning(true);
-    setError(null);
-    try {
-      const info = await api.cloneSample();
-      setRepos(await api.repos());
-      setRepo(info.path);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setCloning(false);
-    }
+  async function download(id: string) {
+    const info = await api.downloadSample(id);
+    await reload();
+    setRepo(info.path);
   }
 
   async function start(e: React.FormEvent) {
@@ -68,8 +97,8 @@ export default function SetupPage() {
   const targetValid = Number.isFinite(target) && target >= 1 && target <= 100;
 
   return (
-    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12">
-      <form onSubmit={start} className="min-w-0 space-y-8">
+    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_23rem] lg:gap-14">
+      <form onSubmit={start} className="min-w-0 max-w-2xl space-y-8">
         <section>
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Raise Go test coverage, autonomously</h1>
           <p className="mt-3 max-w-prose text-sm leading-relaxed text-muted">
@@ -83,7 +112,13 @@ export default function SetupPage() {
             No Groq API key configured. Add <code className="font-mono">GROQ_API_KEY</code> to <code className="font-mono">.env</code> and restart <code className="font-mono">docker compose</code>.
           </div>
         )}
-        <RepoPicker repos={repos} value={repo} onChange={setRepo} onUseSample={useSample} cloning={cloning} />
+        <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
+                    onDownload={download} onRefresh={reload} hostDir={health?.host_repos_dir ?? null} />
+        <p className="text-sm text-muted">
+          {selected ? (
+            <>Selected: <span className="font-mono text-text">{selected.path}</span> · <span className="font-mono">{selected.module}</span> · {selected.go_files} source files</>
+          ) : "Nothing selected yet. Pick a repository above."}
+        </p>
 
         <div className="space-y-2">
           <label htmlFor="target" className="text-sm font-medium">Target coverage</label>
@@ -100,17 +135,20 @@ export default function SetupPage() {
           {!targetValid && <p className="text-xs text-danger">Enter a target between 1 and 100.</p>}
         </div>
 
-        <details className="rounded-sm border border-border bg-surface px-4 py-3">
-          <summary className="cursor-pointer text-sm font-medium">Advanced</summary>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <details className="group max-w-xl">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm text-muted hover:text-text [&::-webkit-details-marker]:hidden">
+            <svg aria-hidden viewBox="0 0 12 12" className="h-3 w-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2l4 4-4 4" /></svg>
+            Advanced options
+          </summary>
+          <div className="mt-3 grid gap-x-6 gap-y-4 rounded-sm border border-border bg-surface/60 p-4 sm:grid-cols-2">
             {([
               ["max_iterations", "Max iterations", 1, 30, 1],
               ["min_gain", "Stop when an iteration gains less than (pp)", 0, 10, 0.5],
               ["targets_per_iteration", "Files per iteration", 1, 5, 1],
               ["max_fix_attempts", "Fix attempts per file", 0, 4, 1],
             ] as const).map(([key, label, min, max, step]) => (
-              <label key={key} className="space-y-1 text-sm">
-                <span className="block text-muted">{label}</span>
+              <label key={key} className="flex flex-col justify-between gap-1.5 text-sm">
+                <span className="block text-xs leading-snug text-muted">{label}</span>
                 <input type="number" min={min} max={max} step={step} value={opts[key]}
                        onChange={(e) => setOpts({ ...opts, [key]: Number(e.target.value) })}
                        className={`w-24 ${inputCls}`} />
@@ -132,7 +170,7 @@ export default function SetupPage() {
                 className="rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-40">
           {busy ? "Starting…" : "Start"}
         </button>
-        {running && <p className="text-xs text-muted">A run is in progress. Follow it in the Runs panel.</p>}
+        {running && <p className="text-xs text-muted">A run is in progress. Follow it in Run history.</p>}
       </form>
       <RunsPanel onJobs={onJobs} />
     </div>

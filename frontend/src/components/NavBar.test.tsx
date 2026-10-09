@@ -22,15 +22,21 @@ describe("NavBar", () => {
     render(<NavBar />);
     expect(screen.getByRole("img", { name: "Spectro Cloud" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Go Coverage Agent" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("link", { name: "Runs" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "New run" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "How it works" })).toHaveAttribute("href", "/how-it-works");
     expect(await screen.findByText("llama-x")).toBeInTheDocument();
   });
 
-  it.each([["/"], ["/jobs/abc"]])("marks Runs current on %s", (p) => {
-    path = p;
+  it("marks New run current on /", () => {
     render(<NavBar />);
-    expect(screen.getByRole("link", { name: "Runs" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "New run" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "How it works" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks no link current on a job page", () => {
+    path = "/jobs/abc";
+    render(<NavBar />);
+    expect(screen.getByRole("link", { name: "New run" })).not.toHaveAttribute("aria-current");
     expect(screen.getByRole("link", { name: "How it works" })).not.toHaveAttribute("aria-current");
   });
 
@@ -38,13 +44,13 @@ describe("NavBar", () => {
     path = "/how-it-works";
     render(<NavBar />);
     expect(screen.getByRole("link", { name: "How it works" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Runs" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "New run" })).not.toHaveAttribute("aria-current");
   });
 
   it("hides the model badge when health is unavailable", async () => {
     vi.mocked(api.health).mockRejectedValue(new Error("down"));
     render(<NavBar />);
-    await screen.findByRole("link", { name: "Runs" });
+    await screen.findByRole("link", { name: "New run" });
     expect(screen.queryByTitle("Model")).not.toBeInTheDocument();
   });
 });

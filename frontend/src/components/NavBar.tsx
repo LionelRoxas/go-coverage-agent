@@ -8,7 +8,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { api } from "@/lib/api";
 
 const LINKS = [
-  { href: "/", label: "Runs", active: (p: string) => p === "/" || p.startsWith("/jobs/") },
+  { href: "/", label: "New run", active: (p: string) => p === "/" },
   { href: "/how-it-works", label: "How it works", active: (p: string) => p === "/how-it-works" },
 ];
 

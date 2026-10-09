@@ -1,5 +1,5 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-import type { Health, JobSnapshot, RepoInfo, StartJobBody } from "./types";
+import type { Health, JobSnapshot, RepoInfo, Sample, StartJobBody } from "./types";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -33,7 +33,8 @@ const encodePath = (p: string) => p.split("/").map(encodeURIComponent).join("/")
 export const api = {
   health: () => request<Health>("/api/health"),
   repos: () => request<RepoInfo[]>("/api/repos"),
-  cloneSample: () => request<RepoInfo>("/api/repos/sample", { method: "POST" }),
+  samples: () => request<Sample[]>("/api/repos/samples"),
+  downloadSample: (id: string) => request<RepoInfo>(`/api/repos/samples/${encodeURIComponent(id)}`, { method: "POST" }),
   startJob: (body: StartJobBody) =>
     request<{ job_id: string }>("/api/jobs", { method: "POST", body: JSON.stringify(body) }),
   jobs: () => request<JobSnapshot[]>("/api/jobs"),

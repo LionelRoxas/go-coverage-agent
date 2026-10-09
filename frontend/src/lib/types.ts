@@ -56,6 +56,16 @@ export type JobEvent = { seq: number; ts: number; type: string; data: Record<str
 
 export type RepoInfo = { path: string; module: string; go_files: number; test_files: number };
 
+export type Sample = {
+  id: string;
+  name: string;
+  description: string;
+  license: string;
+  ref: string | null;
+  path: string;
+  downloaded: boolean;
+};
+
 export type Health = {
   status: string;
   go_version: string;
@@ -63,6 +73,7 @@ export type Health = {
   llm_configured: boolean;
   tokens_left_today: number;
   storage_writable: boolean;
+  host_repos_dir?: string | null;
 };
 
 export type JobSnapshot = {
