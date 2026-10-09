@@ -323,6 +323,7 @@ Each has its own context and contract, so prompts stay small, failures are attri
   - `GROQ_MODEL=openai/gpt-oss-20b` for cheaper runs.
   - A Groq Developer plan removes the waiting.
   - Expected duration, so reviewers aren't surprised.
+- **Measured on 2026-10-08:** one Writer call on `stats` (target `LoadRawData`, baseline 0.0% of 1247 statements) used prompt=3169 and completion=995 tokens (about 4.2K total) in 2.7 s. The first smoke run was accepted and raised coverage to 3.77% (tokens not captured); a second run was rejected with `compile_error` (missing `math` import), after which `writer.md` was tightened to require every referenced package in `imports`. Calls are well under the 7K cap, but a single function target yields only about 4% coverage, so the call count above remains the main risk.
 - **Fallback if day-1 measurements show 80% isn't reachable within one day's budget:** lower the default target in the README example to the measured reachable value, and say so honestly. Don't hide it.
 
 ---
