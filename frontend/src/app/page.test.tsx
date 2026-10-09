@@ -18,8 +18,8 @@ vi.mock("@/lib/api", async (orig) => {
 });
 
 const mocked = vi.mocked(api);
-const health = (llm: boolean): Health => ({
-  status: "ok", go_version: "1.27", model: "m", llm_configured: llm, tokens_left_today: 5000, storage_writable: true,
+const health = (llm: boolean, left = 1_600_000): Health => ({
+  status: "ok", go_version: "1.27", model: "m", llm_configured: llm, tokens_left_today: left, storage_writable: true,
 });
 const repo: RepoInfo = { path: "stats", module: "github.com/x/stats", go_files: 3, test_files: 1 };
 const sampleList = (downloaded: string[] = ["stats"]): Sample[] =>
@@ -31,9 +31,9 @@ const runningJob = {
   created_at: 0, percent: 10, event_count: 1, summary: null,
 } as unknown as JobSnapshot;
 
-function setup(opts: { llm?: boolean; repos?: RepoInfo[]; jobs?: JobSnapshot[]; samples?: Sample[] } = {}) {
+function setup(opts: { llm?: boolean; left?: number; repos?: RepoInfo[]; jobs?: JobSnapshot[]; samples?: Sample[] } = {}) {
   mocked.samples.mockResolvedValue(opts.samples ?? sampleList());
-  mocked.health.mockResolvedValue(health(opts.llm ?? true));
+  mocked.health.mockResolvedValue(health(opts.llm ?? true, opts.left));
   mocked.repos.mockResolvedValue(opts.repos ?? [repo]);
   mocked.jobs.mockResolvedValue(opts.jobs ?? []);
 }
@@ -52,11 +52,42 @@ describe("SetupPage", () => {
     expect(startButton()).toBeDisabled();
   });
 
-  it("names the model that writes the tests", async () => {
+  it("says under the selection that code goes to Groq, which model writes the tests, and that the repo is untouched", async () => {
     setup();
     render(<SetupPage />);
     expect(await screen.findByText("m")).toBeInTheDocument();
-    expect(screen.getByText(/Tests are written by/)).toHaveTextContent("Tests are written by m on Groq.");
+    const note = screen.getByText(/is sent to Groq/);
+    expect(note).toHaveTextContent(
+      "Its source code is sent to Groq, where m writes the tests. The agent works on a copy with the existing _test.go files removed; your repository is never modified.",
+    );
+    // the note follows the selection summary and comes before the Start button
+    const selected = screen.getByText(/Selected:/);
+    expect(selected.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.compareDocumentPosition(startButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows the token budget beside Start", async () => {
+    setup();
+    render(<SetupPage />);
+    expect(await screen.findByText(/tokens left today/)).toHaveTextContent("About 1.6M tokens left today");
+    expect(screen.getByRole("button", { name: "About the token budget" })).toBeInTheDocument();
+    await waitFor(() => expect(startButton()).toBeEnabled());
+  });
+
+  it("disables Start with the reason when the budget is below the 20K minimum", async () => {
+    setup({ left: 12_000 });
+    render(<SetupPage />);
+    const reason = await screen.findByText(/A run needs at least 20k/);
+    expect(startButton()).toBeDisabled();
+    expect(startButton()).toHaveAttribute("aria-describedby", reason.id);
+  });
+
+  it("keeps Start enabled with a softer note when the budget is low", async () => {
+    setup({ left: 150_000 });
+    render(<SetupPage />);
+    expect(await screen.findByText(/Running low/)).toBeInTheDocument();
+    await waitFor(() => expect(startButton()).toBeEnabled());
+    expect(startButton()).not.toHaveAttribute("aria-describedby");
   });
 
   it("enables Start with a key and a repo, and disables it for an invalid target", async () => {

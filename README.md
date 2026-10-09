@@ -150,7 +150,7 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <tr>
 <td valign="top">
 <a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with the Sample repos tab, one sample selected, and the Run history panel"></a>
-<br><b>Setup page: sample repos and Run history</b><br>The Sample repos tab with six cards (two Ready, four Download), <code>montanaflynn/stats</code> selected, the one-line Selected summary, a closed Advanced options row, and the Run history panel on the right: stats 0.0% to 80.3%, semver 1.4% to 80.1%, and a cancelled stats run at 8.6%.
+<br><b>Setup page: sample repos and Run history</b><br>The Sample repos tab with six cards (two Ready, four Download), <code>montanaflynn/stats</code> selected, the Selected summary with a short note under it (the code is sent to Groq, where <code>openai/gpt-oss-120b</code> writes the tests; the agent works on a copy and your repository is never modified), a closed Advanced options row, the Start button with "About 1.6M tokens left today" and an ⓘ button beside it, and the Run history panel on the right: stats 0.0% to 80.3%, semver 1.4% to 80.1%, and a cancelled stats run at 8.6%.
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="Setup page and Run history panel in the dark theme"></a>
@@ -164,7 +164,7 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="Setup page on a phone-width screen"></a>
-<br><b>Setup page on mobile</b><br>The setup page at 390 px wide: the navbar collapses to a short title and S / L / D theme buttons, and the sample cards stack in one column.
+<br><b>Setup page on mobile</b><br>The setup page at 390 px wide: the navbar collapses to a short title and S / L / D theme buttons, the sample cards stack in one column, the token budget line wraps under Start, and Run history follows below.
 </td>
 </tr>
 <tr>

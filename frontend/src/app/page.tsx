@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { RepoPicker, type PickerTab } from "@/components/RepoPicker";
 import { RunsPanel } from "@/components/RunsPanel";
+import { TokenBudget, budgetBlocked } from "@/components/TokenBudget";
 import { api, ApiError } from "@/lib/api";
-import { tokens } from "@/lib/format";
 import type { Health, JobOptions, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
 
 const DEFAULTS: Pick<JobOptions, "max_iterations" | "min_gain" | "targets_per_iteration" | "max_fix_attempts"> = {
@@ -103,6 +103,7 @@ export default function SetupPage() {
   }
 
   const targetValid = Number.isFinite(target) && target >= 1 && target <= 100;
+  const noBudget = health != null && budgetBlocked(health.tokens_left_today);
 
   return (
     <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_23rem] lg:gap-14">
@@ -122,11 +123,17 @@ export default function SetupPage() {
         )}
         <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
                     onDownload={download} onRefresh={reload} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
-        <p className="text-sm text-muted">
-          {selected ? (
-            <>Selected: <span className="font-mono text-text">{selected.path}</span> · <span className="font-mono">{selected.module}</span> · {selected.go_files} source files</>
-          ) : "Nothing selected yet. Pick a repository above."}
-        </p>
+        <div className="space-y-1.5">
+          <p className="text-sm text-muted">
+            {selected ? (
+              <>Selected: <span className="font-mono text-text">{selected.path}</span> · <span className="font-mono">{selected.module}</span> · {selected.go_files} source files</>
+            ) : "Nothing selected yet. Pick a repository above."}
+          </p>
+          <p className="max-w-prose text-xs leading-relaxed text-muted">
+            {selected ? "Its" : "The selected repository's"} source code is sent to Groq{health ? <>, where <span className="font-mono">{health.model}</span> writes the tests</> : " to write the tests"}.
+            {" "}The agent works on a copy with the existing <code className="font-mono">_test.go</code> files removed; your repository is never modified.
+          </p>
+        </div>
 
         <div className="space-y-2">
           <label htmlFor="target" className="text-sm font-medium">Target coverage</label>
@@ -165,20 +172,19 @@ export default function SetupPage() {
           </div>
         </details>
 
-        <ul className="max-w-prose space-y-1 text-xs leading-relaxed text-muted">
-          <li>Existing <code className="font-mono">_test.go</code> files are removed from a working copy. Your repository is never modified.</li>
-          <li>Source code of the selected repository is sent to Groq.</li>
-          {health && <li>Tests are written by <span className="font-mono">{health.model}</span> on Groq.</li>}
-          {health && <li>About <span className="font-mono">{tokens(health.tokens_left_today)}</span> tokens left in today&apos;s budget (<code className="font-mono">DAILY_TOKEN_BUDGET</code> in <code className="font-mono">.env</code>, resets at midnight UTC). This is the app&apos;s own cap, not a Groq limit.</li>}
-        </ul>
-
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
 
-        <button type="submit" disabled={busy || !repo || !targetValid || !health?.llm_configured || running}
-                className="rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-40">
-          {busy ? "Starting…" : "Start"}
-        </button>
-        {running && <p className="text-xs text-muted">A run is in progress. Follow it in Run history.</p>}
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <button type="submit" disabled={busy || !repo || !targetValid || !health?.llm_configured || running || noBudget}
+                    aria-describedby={noBudget ? "budget-reason" : undefined}
+                    className="shrink-0 rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-40">
+              {busy ? "Starting…" : "Start"}
+            </button>
+            {health && <TokenBudget left={health.tokens_left_today} id="budget-reason" />}
+          </div>
+          {running && <p className="text-xs text-muted">A run is in progress. Follow it in Run history.</p>}
+        </div>
       </form>
       <RunsPanel onJobs={onJobs} />
     </div>
