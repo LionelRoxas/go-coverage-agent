@@ -17,8 +17,10 @@
   color-scheme: light;
 }
 
+/* Dark values appear twice: for "system" when the OS prefers dark (unless the user forced light),
+   and for an explicit data-theme="dark". The theme toggle sets/removes data-theme on <html>. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0d1116;
     --surface: #141a21;
     --border: #28323c;
@@ -30,6 +32,19 @@
     --warn: #e3ab3b;
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1116;
+  --surface: #141a21;
+  --border: #28323c;
+  --text: #e5e9ed;
+  --muted: #8b97a5;
+  --accent: #3fcf9f;
+  --on-accent: #06251c;
+  --danger: #f2766c;
+  --warn: #e3ab3b;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -64,11 +79,17 @@ body {
   }
 }
 
-/* Shiki dual theme: follow the OS colour scheme like the rest of the UI. */
+/* Shiki dual theme: follow the same two dark selectors as the tokens. */
 @media (prefers-color-scheme: dark) {
-  .shiki,
-  .shiki span {
+  :root:not([data-theme="light"]) .shiki,
+  :root:not([data-theme="light"]) .shiki span {
     color: var(--shiki-dark) !important;
     background-color: var(--shiki-dark-bg) !important;
   }
+}
+
+:root[data-theme="dark"] .shiki,
+:root[data-theme="dark"] .shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
 }
