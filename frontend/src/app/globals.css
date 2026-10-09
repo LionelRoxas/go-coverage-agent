@@ -62,3 +62,12 @@ body {
     animation: none !important;
   }
 }
+
+/* Shiki dual theme: follow the OS colour scheme like the rest of the UI. */
+@media (prefers-color-scheme: dark) {
+  .shiki,
+  .shiki span {
+    color: var(--shiki-dark) !important;
+    background-color: var(--shiki-dark-bg) !important;
+  }
+}
