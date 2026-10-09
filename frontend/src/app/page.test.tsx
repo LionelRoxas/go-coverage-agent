@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SetupPage from "./page";
 import { api, ApiError } from "@/lib/api";
 import type { Health, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
+import { emptySkips } from "@/lib/upload";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
@@ -13,7 +14,7 @@ vi.mock("@/lib/api", async (orig) => {
   const real = await orig<typeof import("@/lib/api")>();
   return {
     ...real,
-    api: { health: vi.fn(), repos: vi.fn(), jobs: vi.fn(), startJob: vi.fn(), samples: vi.fn(), downloadSample: vi.fn() },
+    api: { health: vi.fn(), repos: vi.fn(), jobs: vi.fn(), startJob: vi.fn(), samples: vi.fn(), downloadSample: vi.fn(), uploadRepo: vi.fn() },
   };
 });
 
@@ -176,7 +177,7 @@ describe("SetupPage", () => {
       "Choose a repository", "Set a target", "Advanced options (optional)", "Start the run",
     ]);
     expect(within(steps[0]).getByText(/Pick a sample \(it downloads the first time\)/)).toHaveTextContent(
-      "Pick a sample (it downloads the first time) or a Go project from your ./repos folder (Your folders tab).");
+      "Pick a sample (it downloads the first time), or upload a Go project folder of your own (Your folders tab).");
     expect(within(steps[1]).getByText(/share of the code/)).toHaveTextContent(
       "The share of the code you want tests to run. 80% is a good start; higher takes longer.");
     expect(within(steps[2]).getByText(/defaults work/i)).toBeInTheDocument();
@@ -284,5 +285,21 @@ describe("SetupPage", () => {
     await waitFor(() => expect(mocked.downloadSample).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     expect(card).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("uploads a chosen folder, then lists and selects it", async () => {
+    setup({ repos: [repo, { ...repo, path: "mine", module: "example.com/mine" }] });
+    const uploaded = { path: "uploads/myproj", module: "example.com/myproj", go_files: 2, test_files: 1, skipped: emptySkips() };
+    mocked.uploadRepo.mockResolvedValue(uploaded);
+    const user = userEvent.setup();
+    render(<SetupPage />);
+    await screen.findByRole("tab", { name: "Your folders", selected: true });
+    mocked.repos.mockResolvedValue([repo, { ...repo, path: "mine", module: "example.com/mine" }, uploaded]);
+    const gomod = new File(["module example.com/myproj\n"], "go.mod");
+    Object.defineProperty(gomod, "webkitRelativePath", { value: "myproj/go.mod" });
+    await user.upload(screen.getByTestId("folder-input"), [gomod]);
+    await waitFor(() => expect(mocked.uploadRepo).toHaveBeenCalledWith([{ path: "myproj/go.mod", file: gomod }], undefined, expect.any(Function)));
+    await waitFor(() => expect(screen.getByRole("button", { name: /uploads\/myproj/ })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByText(/Selected:/)).toHaveTextContent("Selected: uploads/myproj · example.com/myproj · 2 source files");
   });
 });

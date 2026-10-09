@@ -9,6 +9,7 @@ import { Step } from "@/components/Step";
 import { MIN_TOKENS_TO_START, TokenBudget, budgetBlocked } from "@/components/TokenBudget";
 import { api, ApiError } from "@/lib/api";
 import type { Health, JobOptions, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
+import type { PickedFile } from "@/lib/upload";
 
 const DEFAULTS: Pick<JobOptions, "max_iterations" | "min_gain" | "targets_per_iteration" | "max_fix_attempts"> = {
   max_iterations: 20, min_gain: 1, targets_per_iteration: 3, max_fix_attempts: 2,
@@ -118,6 +119,17 @@ export default function SetupPage() {
     }
   }
 
+  async function upload(files: PickedFile[], name: string | undefined, onProgress: (fraction: number) => void) {
+    const info = await api.uploadRepo(files, name, onProgress);
+    setRepo(info.path);
+    try {
+      await reload();
+    } catch {
+      // the upload succeeded; the lists refresh on the next Refresh
+    }
+    return info;
+  }
+
   async function start(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -160,9 +172,9 @@ export default function SetupPage() {
           )}
           <ol aria-label="Steps to start a run">
             <Step n={1} title="Choose a repository" done={!!selected}
-                  hint="Pick a sample (it downloads the first time) or a Go project from your ./repos folder (Your folders tab).">
+                  hint="Pick a sample (it downloads the first time), or upload a Go project folder of your own (Your folders tab).">
               <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
-                          onDownload={download} onRefresh={reload} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
+                          onDownload={download} onRefresh={reload} onUpload={upload} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
               <div className="space-y-1.5">
                 <p className="text-sm text-muted">
                   {selected ? (

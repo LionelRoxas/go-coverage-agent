@@ -1,11 +1,13 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { RepoPicker, type PickerTab } from "./RepoPicker";
-import type { RepoInfo, Sample } from "@/lib/types";
+import { ApiError } from "@/lib/api";
+import type { RepoInfo, Sample, UploadResult } from "@/lib/types";
+import { emptySkips } from "@/lib/upload";
 
 const sample = (id: string, downloaded: boolean): Sample => ({
   id, name: `o/${id}`, description: `${id} description`, license: "MIT", ref: "v1.0.0", path: id, downloaded,
@@ -19,7 +21,7 @@ function Harness(p: Partial<React.ComponentProps<typeof RepoPicker>> & { start?:
     <>
       <RepoPicker tab={tab} onTabChange={setTab} samples={[sample("semver", true), sample("btree", false), sample("decimal", false)]}
                   folders={[]} value={value} onChange={setValue} onDownload={async () => {}} onRefresh={async () => {}}
-                  hostDir={null} {...p} />
+                  onUpload={vi.fn()} hostDir={null} {...p} />
       <output data-testid="value">{value}</output>
     </>
   );
@@ -89,13 +91,15 @@ describe("RepoPicker", () => {
     expect(samples).toHaveFocus();
   });
 
-  it("shows the empty state, mounted folder and the add-your-own note on Your folders", async () => {
+  it("shows the empty state, mounted folder, upload action and the HOST_REPOS_DIR note on Your folders", async () => {
     const onRefresh = vi.fn(async () => {});
     const user = userEvent.setup();
     render(<Harness start="folders" hostDir="C:\Users\me\code" onRefresh={onRefresh} />);
-    expect(screen.getByText(/No Go modules of your own found yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No Go modules of your own yet/)).toBeInTheDocument();
     expect(screen.getByText("C:\\Users\\me\\code", { selector: "code" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Add your own repository" })).toBeInTheDocument();
+    expect(screen.getByText("Choose a folder…")).toBeInTheDocument();
+    expect(screen.getByText(/your original folder is never changed. Re-upload to refresh./)).toBeInTheDocument();
+    expect(screen.getByText(/For large projects or to keep a folder in sync/)).toBeInTheDocument();
     expect(screen.getByText("HOST_REPOS_DIR=C:\\Users\\you\\code")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     expect(onRefresh).toHaveBeenCalled();
@@ -112,5 +116,148 @@ describe("RepoPicker", () => {
   it("has no free-text path input", () => {
     render(<Harness />);
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  describe("folder upload", () => {
+    const result = (over: Partial<UploadResult> = {}): UploadResult =>
+      ({ path: "uploads/myproj", module: "example.com/myproj", go_files: 30, test_files: 12, skipped: emptySkips(), ...over });
+    const picked = (path: string, size = 10) => {
+      const f = new File(["x".repeat(size)], path.split("/").pop()!);
+      Object.defineProperty(f, "webkitRelativePath", { value: path });
+      return f;
+    };
+    const project = () => [picked("myproj/go.mod"), picked("myproj/a.go"), picked("myproj/.git/HEAD"),
+      picked("myproj/.git/config"), picked("myproj/vendor/x/y.go"), picked("myproj/big.go", 1024 * 1024 + 1)];
+    type OnUpload = React.ComponentProps<typeof RepoPicker>["onUpload"];
+
+    function UploadHarness({ onUpload }: { onUpload: OnUpload }) {
+      const [value, setValue] = useState("");
+      const upload: OnUpload = async (files, name, progress) => {
+        const r = await onUpload(files, name, progress);
+        setValue(r.path);
+        return r;
+      };
+      return (
+        <>
+          <RepoPicker tab="folders" onTabChange={() => {}} samples={[]} folders={[]} value={value} onChange={setValue}
+                      onDownload={async () => {}} onRefresh={async () => {}} onUpload={upload} hostDir={null} />
+          <output data-testid="value">{value}</output>
+        </>
+      );
+    }
+
+    it("pre-filters the chosen folder, uploads relative paths and reports what was skipped", async () => {
+      const onUpload = vi.fn<OnUpload>(async (_files, _name, progress) => {
+        progress(0.5);
+        return result({ skipped: { ...emptySkips(), binary: 3 } });
+      });
+      const user = userEvent.setup();
+      render(<UploadHarness onUpload={onUpload} />);
+      const input = screen.getByTestId("folder-input") as HTMLInputElement;
+      expect(input.webkitdirectory).toBe(true);
+      await user.upload(input, project());
+      await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(1));
+      const [files, name] = onUpload.mock.calls[0];
+      expect(files.map((f) => f.path)).toEqual(["myproj/go.mod", "myproj/a.go"]);
+      expect(name).toBeUndefined();
+      expect(await screen.findByText("Uploaded myproj (42 Go files). Skipped: 2 files in .git, 1 in vendor, 1 file over 1 MB, 3 binaries."))
+        .toBeInTheDocument();
+      expect(screen.getByTestId("value")).toHaveTextContent("uploads/myproj");
+    });
+
+    it("shows upload progress while sending", async () => {
+      let progress!: (x: number) => void;
+      const onUpload = vi.fn<OnUpload>((_files, _name, p) => {
+        progress = p;
+        return new Promise<UploadResult>(() => {});
+      });
+      const user = userEvent.setup();
+      render(<UploadHarness onUpload={onUpload} />);
+      await user.upload(screen.getByTestId("folder-input"), project());
+      expect(await screen.findByText("Uploading 2 files (0.00 MB)…")).toBeInTheDocument();
+      expect(screen.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
+      progress(0.4);
+      await waitFor(() => expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "40"));
+    });
+
+    it("offers a rename when the name is taken and retries with the new name", async () => {
+      const onUpload = vi.fn<OnUpload>()
+        .mockRejectedValueOnce(new ApiError(409, "name_taken", "repos/uploads/myproj already exists and was not created by an upload."))
+        .mockResolvedValueOnce(result({ path: "uploads/myproj-new" }));
+      const user = userEvent.setup();
+      render(<UploadHarness onUpload={onUpload} />);
+      await user.upload(screen.getByTestId("folder-input"), project());
+      expect(await screen.findByRole("alert")).toHaveTextContent("already exists");
+      const box = screen.getByLabelText("Upload as");
+      expect(box).toHaveValue("myproj-2");
+      await user.clear(box);
+      await user.type(box, "myproj-new");
+      await user.click(screen.getByRole("button", { name: "Rename and upload" }));
+      await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(2));
+      expect(onUpload.mock.calls[1][0]).toEqual(onUpload.mock.calls[0][0]);
+      expect(onUpload.mock.calls[1][1]).toBe("myproj-new");
+      expect(await screen.findByText(/Uploaded myproj-new/)).toBeInTheDocument();
+      expect(screen.getByTestId("value")).toHaveTextContent("uploads/myproj-new");
+    });
+
+    it("stops a folder over the limit before uploading anything", async () => {
+      const onUpload = vi.fn<OnUpload>();
+      const user = userEvent.setup();
+      render(<UploadHarness onUpload={onUpload} />);
+      const many = [picked("big/go.mod"), ...Array.from({ length: 3000 }, (_, i) => picked(`big/f${i}.go`, 1))];
+      await user.upload(screen.getByTestId("folder-input"), many);
+      expect(await screen.findByRole("alert", {}, { timeout: 5000 })).toHaveTextContent(/3,001 files .*HOST_REPOS_DIR/);
+      expect(onUpload).not.toHaveBeenCalled();
+    });
+
+    it("shows the server's message for a rejected upload", async () => {
+      const onUpload = vi.fn<OnUpload>().mockRejectedValue(new ApiError(413, "upload_too_large", "This folder is too large to upload."));
+      const user = userEvent.setup();
+      render(<UploadHarness onUpload={onUpload} />);
+      await user.upload(screen.getByTestId("folder-input"), project());
+      expect(await screen.findByRole("alert")).toHaveTextContent("This folder is too large to upload.");
+      expect(screen.queryByLabelText("Upload as")).not.toBeInTheDocument();
+    });
+
+    const fileEntry = (path: string, size = 10) => ({
+      isFile: true, isDirectory: false, fullPath: `/${path}`,
+      file: (ok: (f: File) => void) => ok(new File(["x".repeat(size)], path.split("/").pop()!)),
+    });
+    const dirEntry = (path: string, children: unknown[]) => ({
+      isFile: false, isDirectory: true, fullPath: `/${path}`,
+      createReader: () => {
+        let sent = false;
+        return { readEntries: (ok: (e: unknown[]) => void) => { ok(sent ? [] : children); sent = true; } };
+      },
+    });
+    const drop = (...entries: unknown[]) => ({
+      dataTransfer: { items: entries.map((e) => ({ kind: "file", webkitGetAsEntry: () => e })) },
+    });
+
+    it("reads a dropped folder recursively and uploads it", async () => {
+      const onUpload = vi.fn<OnUpload>(async () => result());
+      render(<UploadHarness onUpload={onUpload} />);
+      const tree = dirEntry("myproj", [
+        fileEntry("myproj/go.mod"),
+        dirEntry("myproj/pkg", [fileEntry("myproj/pkg/b.go")]),
+        dirEntry("myproj/node_modules", [fileEntry("myproj/node_modules/z.js")]),
+      ]);
+      const zone = screen.getByTestId("folder-drop");
+      fireEvent.dragOver(zone);
+      expect(zone).toHaveAttribute("data-over", "true");
+      fireEvent.drop(zone, drop(tree));
+      await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(1));
+      expect(onUpload.mock.calls[0][0].map((f) => f.path)).toEqual(["myproj/go.mod", "myproj/pkg/b.go"]);
+      expect(await screen.findByText(/Skipped: 1 in node_modules\./)).toBeInTheDocument();
+      expect(zone).not.toHaveAttribute("data-over");
+    });
+
+    it("asks for one folder when files are dropped", async () => {
+      const onUpload = vi.fn<OnUpload>();
+      render(<UploadHarness onUpload={onUpload} />);
+      fireEvent.drop(screen.getByTestId("folder-drop"), drop(fileEntry("a.go"), fileEntry("b.go")));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Drop one project folder");
+      expect(onUpload).not.toHaveBeenCalled();
+    });
   });
 });

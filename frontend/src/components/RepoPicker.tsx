@@ -2,6 +2,7 @@
 "use client";
 import { useRef, useState } from "react";
 import type { RepoInfo, Sample } from "@/lib/types";
+import { FolderUpload, type UploadFn } from "./FolderUpload";
 
 export type PickerTab = "samples" | "folders";
 const TABS: { id: PickerTab; label: string }[] = [
@@ -21,6 +22,8 @@ type Props = {
   /** Downloads a sample and resolves once it can be selected. Rejects with a readable message. */
   onDownload: (id: string) => Promise<void>;
   onRefresh: () => Promise<void>;
+  /** Uploads a chosen folder's files; resolves once the new module is listed and selected. */
+  onUpload: UploadFn;
   hostDir: string | null;
   samplesFailed?: boolean;
 };
@@ -79,7 +82,7 @@ function CopyLine({ text }: { text: string }) {
   );
 }
 
-export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange, onDownload, onRefresh, hostDir, samplesFailed }: Props) {
+export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange, onDownload, onRefresh, onUpload, hostDir, samplesFailed }: Props) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
@@ -162,9 +165,10 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
 
       {tab === "folders" && (
         <div role="tabpanel" id="panel-folders" aria-labelledby="tab-folders" className="space-y-4">
+          <FolderUpload onUpload={onUpload} />
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted">
-              {hostDir ? <>Mounted folder: <code className="break-all font-mono text-text">{hostDir}</code></> : "Mounted folder: ./repos"}
+              {hostDir ? <>Go modules in <code className="break-all font-mono text-text">{hostDir}</code></> : <>Go modules in <code className="font-mono text-text">./repos</code></>}
             </p>
             <button type="button" onClick={() => void refresh()} disabled={refreshing}
                     className="shrink-0 rounded-sm border border-border px-2.5 py-1 text-xs hover:border-accent hover:text-accent disabled:opacity-50">
@@ -173,7 +177,7 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
           </div>
           {folders.length === 0 ? (
             <p className="rounded-sm border border-dashed border-border px-3 py-4 text-sm text-muted">
-              No Go modules of your own found yet. Add one using the steps below, then press Refresh.
+              No Go modules of your own yet. Upload a project folder above.
             </p>
           ) : (
             <ul className="grid gap-2 sm:grid-cols-2">
@@ -189,19 +193,12 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
               ))}
             </ul>
           )}
-          <div className="space-y-2 rounded-sm border border-border bg-surface p-3">
-            <h3 className="text-sm font-medium">Add your own repository</h3>
-            <ul className="list-disc space-y-2 pl-5 text-xs leading-relaxed text-muted">
-              <li>Copy or clone it into the mounted folder shown above.</li>
-              <li>
-                Or point <code className="font-mono">HOST_REPOS_DIR</code> in <code className="font-mono">.env</code> at any parent folder, then run{" "}
-                <code className="font-mono">make up</code> again. Modules up to two levels deep appear here.
-              </li>
-            </ul>
-            <CopyLine text={ENV_LINE} />
-            <p className="text-xs text-muted">
-              On macOS or Linux use a path like <code className="font-mono">/Users/you/code</code> or <code className="font-mono">/home/you/code</code>.
+          <div className="space-y-1.5">
+            <p className="text-xs leading-relaxed text-muted">
+              For large projects or to keep a folder in sync, point <code className="font-mono">HOST_REPOS_DIR</code> in{" "}
+              <code className="font-mono">.env</code> at its parent folder and run <code className="font-mono">make up</code> again.
             </p>
+            <CopyLine text={ENV_LINE} />
           </div>
         </div>
       )}

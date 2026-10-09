@@ -447,6 +447,7 @@ All under `/api`, JSON, Pydantic-validated. Errors: `{"error": {"code", "message
 | `GET /api/repos/samples` | The curated sample allowlist: `[{id, name, description, license, ref, path, downloaded}]` |
 | `POST /api/repos/samples/{id}` | Shallow-clones that sample (pinned release tags, no submodules; stats: default branch, the assessment's evaluation repo) into `/repos/<id>` if absent and returns the entry. Unknown id: 404 `unknown_sample`. Refuses a `go.mod` that has `require` lines |
 | `POST /api/repos/sample` | Alias for `POST /api/repos/samples/stats` |
+| `POST /api/repos/upload` | Multipart: one `files` part per file, whose filename is the path relative to the parent of the chosen folder (`myproj/pkg/a.go`), plus optional `name`. Saves the folder as `/repos/uploads/<name>` and returns `{path, module, go_files, test_files, skipped: {git, vendor, node_modules, hidden, too_large, binary}}`. 400 `invalid_path` / `mixed_folders` / `invalid_name` / `invalid_upload` / `no_files`, 400 `not_a_go_module` (no `go.mod` at the top), 409 `name_taken`, 413 `upload_too_large`; limits and safety rules in §10.3 |
 | `POST /api/jobs` | `{repo_path, target_coverage, options?}` → `201 {job_id}`. 400 for invalid input or missing key, 409 if a job is running, 429 if the daily budget is too low |
 | `GET /api/jobs` | Jobs in the current process |
 | `GET /api/jobs/{id}` | Snapshot: status, inputs, report, iterations, summary |
@@ -454,7 +455,7 @@ All under `/api`, JSON, Pydantic-validated. Errors: `{"error": {"code", "message
 | `POST /api/jobs/{id}/cancel` | Cooperative cancel + process-group kill |
 | `GET /api/jobs/{id}/files/{path}` | Content of one generated test file. The path must be in the job's generated-file list (no traversal) |
 
-**Repo path input:** containers can only see mounted paths. The user puts (or clones) repos into the host `./repos` folder, or sets `HOST_REPOS_DIR` to an **absolute** host path. Compose doesn't expand `~`, so the README shows `/Users/you/code`. The UI repo picker has two tabs: **Sample repos** (the six allowlisted libraries: stats, semver, xstrings, humanize, btree, decimal; click to download and select) and **Your folders** (modules found under the mount, with instructions for adding your own). There is no free-text path field.
+**Repo path input:** containers can only see mounted paths. The user puts (or clones) repos into the host `./repos` folder, or sets `HOST_REPOS_DIR` to an **absolute** host path. Compose doesn't expand `~`, so the README shows `/Users/you/code`. The UI repo picker has two tabs: **Sample repos** (the six allowlisted libraries: stats, semver, xstrings, humanize, btree, decimal; click to download and select) and **Your folders** (a Choose a folder… button and drop area that upload a project to `/repos/uploads/<name>` via `POST /api/repos/upload`, the modules found under the mount, and one line on `HOST_REPOS_DIR` for large projects). There is no free-text path field.
 
 **Data notice:** the UI and README state that the target repo's source code is sent to Groq.
 
@@ -538,11 +539,12 @@ volumes: { gocache: {} }
 - Timeouts at two levels (`-timeout=60s`, process 120s), with process-group kill and output caps.
 - Only fixed commands run; the LLM can't choose commands.
 - Ports bound to loopback only.
+- **Folder uploads** (`POST /api/repos/upload`) write user-supplied files that are later compiled and tested, so: writes are subject to the origin check like every other write; every part's path is checked before anything is written (`\` normalised to `/`; absolute paths, drive letters, `..`, `.`, empty segments, NUL and control characters rejected; all parts must share one top folder) and each target must resolve inside the temp directory; only regular files are created (exclusive create, no symlinks); `.git`, `vendor`, `node_modules`, hidden paths, files over `UPLOAD_MAX_FILE_BYTES` (1 MB) and files with a NUL byte in their first 8 KB are skipped; at most `UPLOAD_MAX_FILES` (3,000) files and `UPLOAD_MAX_BYTES` (25 MB) are kept, and the raw body is cut off at twice the byte limit plus multipart overhead and at twice the file limit in parts (413 `upload_too_large`). Files go to `/repos/uploads/.tmp-<random>` and replace `/repos/uploads/<name>` with a rename under the clone lock; a destination is replaced only if it holds the `.gca-upload` marker of an earlier upload (otherwise 409 `name_taken`), and the temp directory is removed on any failure. `<name>` is the top folder (or `name`) reduced to lowercase letters, digits, `-`, `_`, `.`, at most 64 characters.
 - **Documented residual risk:** a test could still read files inside the container via `os` (including the backend's environment via `/proc`) and start processes. The real fix is a per-job sandbox with a separate uid. Production hardening (a per-run sandbox with gVisor/Firecracker, no network) is in §11.
 
 ### 10.4 `.env.example`
 
-`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_WRITER_REASONING_EFFORT=medium`, `GROQ_FIXER_REASONING_EFFORT=medium`, `HOST_REPOS_DIR=./repos`, a commented `MAX_PROMPT_TOKENS=4500` for free-trial keys, and under Advanced the commented `GROQ_MAX_COMPLETION_TOKENS=65536` and `GROQ_TIMEOUT_S=240`.
+`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_WRITER_REASONING_EFFORT=medium`, `GROQ_FIXER_REASONING_EFFORT=medium`, `HOST_REPOS_DIR=./repos`, a commented `MAX_PROMPT_TOKENS=4500` for free-trial keys, and under Advanced the commented `GROQ_MAX_COMPLETION_TOKENS=65536`, `GROQ_TIMEOUT_S=240` and the upload limits `UPLOAD_MAX_FILES=3000`, `UPLOAD_MAX_BYTES=26214400`, `UPLOAD_MAX_FILE_BYTES=1048576`.
 
 ---
 

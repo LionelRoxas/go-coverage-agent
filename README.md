@@ -57,7 +57,13 @@ Step 1 of the setup page, **Choose a repository**, has two tabs.
 | `google/btree` | In-memory B-tree (generics) | Apache-2.0 |
 | `shopspring/decimal` | Arbitrary-precision decimals | MIT |
 
-**Your folders** lists every Go module (a folder with a `go.mod`, up to two levels deep) in the mounted folder, apart from the samples. To add your own, either:
+**Your folders** is where your own projects go. Press **Choose a folder…** (or drag the folder onto the box) and pick the folder that contains `go.mod`. The browser uploads the project's files and the backend saves them under `./repos/uploads/<name>`; the project then appears in the list, selected. Your original folder is never changed; upload it again to refresh the copy. What is sent and kept:
+
+- `.git`, `vendor`, `node_modules` and hidden files or folders are skipped, as are files over 1 MB and binary files.
+- At most 3,000 files and 25 MB in total after skipping (`UPLOAD_MAX_FILES`, `UPLOAD_MAX_BYTES`); a larger folder is stopped before anything is sent.
+- An upload only ever replaces a folder that an earlier upload created; any other folder with the same name is left untouched and you are asked for a different name.
+
+The tab also lists every other Go module (a folder with a `go.mod`, up to two levels deep) in the mounted folder, apart from the samples. For large projects, or to keep a folder in sync while you edit it, mount it instead:
 
 1. Copy or clone it into the mounted folder (`./repos` by default; the tab shows the real host path), then press Refresh; or
 2. Set `HOST_REPOS_DIR` in `.env` to any parent folder and run `make up` again. Compose needs an absolute path (it does not expand `~`) or one relative to this repository:
@@ -212,8 +218,8 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <br><b>Run summary</b><br>Header, coverage meter with the 80% target marker, and the Target reached card: coverage 0.0% to 80.3%, 108 tests added in 29 test files, 4m 13s, 186.1k tokens.
 </td>
 <td valign="top">
-<a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Your folders tab with a user module, the mounted folder path and the Add your own repository note with a HOST_REPOS_DIR line"></a>
-<br><b>Your folders</b><br>The module found in the mounted folder (<code>C:\Users\you\code</code>), a Refresh button, and the "Add your own repository" note with a copyable <code>HOST_REPOS_DIR</code> line.
+<a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Your folders tab with the Choose a folder button and drop area, an uploaded copy of stats selected, and a one-line HOST_REPOS_DIR note"></a>
+<br><b>Your folders</b><br>The upload area (Choose a folder… or drag the project folder in) after uploading a local copy of <code>montanaflynn/stats</code>: saved as <code>uploads/stats</code> and selected, 118 Go files kept, 29 files in <code>.git</code> and 8 hidden files skipped. Below it, the modules in the mounted folder with a Refresh button, and one line on <code>HOST_REPOS_DIR</code> for large projects with a copyable example.
 </td>
 </tr>
 <tr>
@@ -282,6 +288,8 @@ Environment variables (`.env`, same layout as `.env.example`). Only the key is r
 | `MAX_PROMPT_TOKENS` | 12000 | Prompt-size cap per call. Free trial: `4500` |
 | `CALL_TOKEN_RESERVATION` | 16000 | Tokens reserved per call for rate pacing. Free trial: `8000` |
 | **Advanced** | | |
+| `UPLOAD_MAX_FILES` / `UPLOAD_MAX_BYTES` | 3000 / 26214400 (25 MB) | Folder upload limits, counted after skipping `.git`, `vendor`, `node_modules`, hidden and binary files. Larger uploads are refused with 413 |
+| `UPLOAD_MAX_FILE_BYTES` | 1048576 (1 MB) | Single files larger than this are skipped in an upload |
 | `GROQ_MAX_COMPLETION_TOKENS` | 65536 | Output-token cap per call (the model maximum). Empty does not mean unlimited: Groq then applies a smaller default |
 | `GROQ_TIMEOUT_S` | 240 | Seconds one Groq request may take. A timed-out request is retried once at `low` reasoning effort; a second timeout fails the item as "Groq timed out" |
 

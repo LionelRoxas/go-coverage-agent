@@ -56,6 +56,11 @@ export type JobEvent = { seq: number; ts: number; type: string; data: Record<str
 
 export type RepoInfo = { path: string; module: string; go_files: number; test_files: number };
 
+export type SkipReason = "git" | "vendor" | "node_modules" | "hidden" | "too_large" | "binary";
+export type SkipCounts = Record<SkipReason, number>;
+/** POST /api/repos/upload: the saved module plus the files the backend skipped, by reason. */
+export type UploadResult = RepoInfo & { skipped: SkipCounts };
+
 export type Sample = {
   id: string;
   name: string;
