@@ -7,7 +7,7 @@ backend-image:
 	docker build -f backend/Dockerfile --build-arg GO_IMAGE=$(GO_IMAGE) -t gca-backend .
 test: test-go test-backend test-integration test-frontend
 test-go:
-	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR)/tools/gohelper:/src" -w /src $(GO_IMAGE) go test ./...
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR)/tools/gohelper:/src" -w /src $(GO_IMAGE) sh -c "go vet ./... && go test ./..."
 test-backend: backend-image
 	docker run --rm gca-backend uv run --no-sync pytest
 test-integration: backend-image
