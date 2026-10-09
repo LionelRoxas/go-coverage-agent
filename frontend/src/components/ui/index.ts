@@ -4,6 +4,6 @@ export { Button, buttonClass, type ButtonSize, type ButtonVariant } from "./Butt
 export { Card, cardClass, tileClass } from "./Card";
 export { actionLinkClass, backLinkClass, codeBlockClass, containerClass, cx, inlineLinkClass, inputClass } from "./classes";
 export { EmptyState } from "./EmptyState";
-export { ledeClass, PageHeader, pageTitleClass, readingHeadingClass, SectionHeading, sectionHeadingClass } from "./Heading";
+export { ledeClass, PageHeader, pageTitleClass, statementTitleClass, readingHeadingClass, SectionHeading, sectionHeadingClass } from "./Heading";
 export { LoadingStatus, Skeleton } from "./Skeleton";
 export { StatusPanel } from "./StatusPanel";

@@ -1,7 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import type { Metadata } from "next";
 import Link from "next/link";
-import { actionLinkClass, buttonClass, cardClass, pageTitleClass, readingHeadingClass } from "@/components/ui";
+import { actionLinkClass, buttonClass, cardClass, readingHeadingClass, statementTitleClass } from "@/components/ui";
 import { type SectionId, walkthroughHref } from "../walkthrough/sections";
 
 export const metadata: Metadata = {
@@ -101,7 +101,7 @@ export default function HowItWorksPage() {
         <p className="text-base leading-relaxed text-muted sm:text-lg">
           Software teams write small automatic checks, called tests, that prove their code works.
         </p>
-        <h1 className={pageTitleClass}>
+        <h1 className={statementTitleClass}>
           This tool writes those checks for a project written in Go (a programming language) by itself, keeps only the ones that actually work, and stops when enough of the code is checked.
         </h1>
       </section>

@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
   Badge, Button, buttonClass, Card, cardClass, codeBlockClass, cx, EmptyState, LoadingStatus, PageHeader,
-  SectionHeading, Skeleton, StatusChip, StatusPanel, tileClass,
+  pageTitleClass, SectionHeading, Skeleton, statementTitleClass, StatusChip, StatusPanel, tileClass,
 } from "./index";
 
 describe("Button", () => {
@@ -116,6 +116,11 @@ describe("headings", () => {
     render(<PageHeader title="New run" lede="Pick a project." />);
     expect(screen.getByRole("heading", { level: 1, name: "New run" })).toHaveClass("font-semibold", "tracking-tight");
     expect(screen.getByText("Pick a project.")).toHaveClass("text-muted");
+  });
+
+  it("the sentence-length title variant is one step below the page title", () => {
+    expect(statementTitleClass).toContain("text-2xl");
+    expect(pageTitleClass).toContain("text-[1.75rem]");
   });
 
   it("SectionHeading is an h2 at the app scale", () => {

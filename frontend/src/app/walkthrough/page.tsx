@@ -2,7 +2,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { actionLinkClass, buttonClass, cardClass, codeBlockClass, inlineLinkClass, ledeClass, pageTitleClass, readingHeadingClass } from "@/components/ui";
+import { actionLinkClass, buttonClass, cardClass, codeBlockClass, inlineLinkClass, PageHeader, readingHeadingClass } from "@/components/ui";
 import { type SectionId, SECTIONS } from "./sections";
 
 export const metadata: Metadata = {
@@ -217,13 +217,11 @@ const GLOSSARY: { term: string; def: ReactNode }[] = [
 export default function WalkthroughPage() {
   return (
     <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-x-14">
-      <header className="space-y-4 lg:col-start-2">
-        <h1 className={pageTitleClass}>What happens when you press Start</h1>
-        <p className={ledeClass}>
-          Every step of one run, in the order the code runs it: what it does, the file that does it, and the events the browser sees.
-          For the two-minute version, see <Link href="/how-it-works" className={inlineLinkClass}>How it works</Link>.
-        </p>
-      </header>
+      <PageHeader className="lg:col-start-2" title="What happens when you press Start"
+                  lede={<>
+                    Every step of one run, in the order the code runs it: what it does, the file that does it, and the events the browser sees.
+                    For the two-minute version, see <Link href="/how-it-works" className={inlineLinkClass}>How it works</Link>.
+                  </>} />
 
       <aside className="mt-8 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:mt-0">
         <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pb-6">
