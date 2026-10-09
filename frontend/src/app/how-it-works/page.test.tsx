@@ -42,7 +42,7 @@ describe("HowItWorksPage", () => {
     render(<HowItWorksPage />);
     const steps = screen.getAllByRole("listitem").filter((li) => li.hasAttribute("data-step"));
     expect(steps).toHaveLength(5);
-    expect(new Set(steps.map((li) => li.parentElement))).toEqual(new Set([steps[0].parentElement]));
+    expect(steps.every((li) => li.parentElement === steps[0].parentElement)).toBe(true);
     expect(steps[0].parentElement!.tagName).toBe("OL");
     expect(steps.map((li) => li.getAttribute("data-step"))).toEqual(["1", "2", "3", "4", "5"]);
   });
@@ -59,6 +59,8 @@ describe("HowItWorksPage", () => {
   it("shows the repeat connector from step 5 back to step 2, wide and narrow, hidden from screen readers", () => {
     render(<HowItWorksPage />);
     const wide = screen.getByTestId("repeat-connector");
+    // above the row, inside the phase labels, so an open detail cannot move it away from the cards
+    expect(screen.getByTestId("loop-phases")).toContainElement(wide);
     expect(wide).toHaveAttribute("aria-hidden");
     expect(wide).toHaveTextContent(/^repeat until the goal or a stop rule$/);
     const narrow = screen.getByTestId("repeat-connector-narrow");

@@ -136,14 +136,21 @@ export default function HowItWorksPage() {
           <p className="leading-relaxed text-muted">Five steps. Steps 2 to 5 form one round, and rounds repeat until it can stop.</p>
         </div>
         <div className="mx-auto max-w-3xl lg:max-w-none">
-          <div aria-hidden data-testid="loop-phases" className="mb-3 hidden grid-cols-5 gap-3 text-xs lg:grid">
+          {/* Drawn above the row so an open Technical detail (which only grows cards downward) never moves it. */}
+          <div aria-hidden data-testid="loop-phases" className="mb-1 hidden grid-cols-5 items-end gap-3 text-xs lg:grid">
             <div className="space-y-1.5 text-muted">
               <p className="text-center">Once at the start</p>
               <div className="mx-4 h-2 rounded-t-sm border-x-2 border-t-2 border-border" />
             </div>
-            <div className="col-span-4 space-y-1.5 text-accent">
-              <p className="text-center font-medium">Each round</p>
-              <div className="mx-4 h-2 rounded-t-sm border-x-2 border-t-2 border-accent/60" />
+            <div className="col-span-4 space-y-4">
+              <p className="text-center font-medium text-accent">Each round</p>
+              <div aria-hidden data-testid="repeat-connector" className="relative h-7">
+                <div className="absolute inset-y-0 rounded-t-md border-x-2 border-t-2 border-accent/60"
+                     style={{ left: "calc((100% - 2.25rem) / 8)", right: "calc((100% - 2.25rem) / 8)" }}>
+                  <svg viewBox="0 0 12 8" className="absolute -bottom-1 -left-[7px] h-2 w-3 text-accent" fill="currentColor"><path d="M0 0h12L6 8z" /></svg>
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-bg px-3 text-sm leading-5 text-muted">repeat until the goal or a stop rule</span>
+                </div>
+              </div>
             </div>
           </div>
           <ol className="lg:grid lg:grid-cols-5 lg:gap-x-3">
@@ -173,15 +180,6 @@ export default function HowItWorksPage() {
             })}
           </ol>
           <p className="sr-only">Step 1 happens once, at the start. After step 5 it starts again from step 2 with the new coverage, until it reaches the goal or a stop rule.</p>
-          <div aria-hidden data-testid="repeat-connector" className="hidden lg:block">
-            <div className="relative h-10">
-              <div className="absolute inset-y-0 rounded-b-md border-x-2 border-b-2 border-accent/60"
-                   style={{ left: "calc((100% - 3rem) / 5 * 1.5 + 0.75rem)", right: "calc((100% - 3rem) / 10)" }}>
-                <svg viewBox="0 0 12 8" className="absolute -left-[7px] -top-1 h-2 w-3 text-accent" fill="currentColor"><path d="M6 0 12 8H0z" /></svg>
-                <span className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-bg px-3 text-sm text-muted">repeat until the goal or a stop rule</span>
-              </div>
-            </div>
-          </div>
           <p aria-hidden data-testid="repeat-connector-narrow" className="mt-2 flex items-center justify-end gap-2 text-right text-sm text-muted lg:hidden">
             <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-accent" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 21v-5h5" />
