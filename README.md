@@ -6,7 +6,7 @@ An autonomous agent that raises unit-test coverage for Go repositories. Give it 
 percentage. It measures coverage, plans what to test, asks an LLM to write idiomatic Go tests, compiles and runs
 them, keeps only the tests that pass and add coverage, and repeats until it hits the target or gains flatten out.
 
-<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Results page for montanaflynn/stats showing 80.5% coverage against an 80% target and a Target reached summary card"></a>
+<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Results page for montanaflynn/stats showing 80.3% coverage against an 80% target and a Target reached summary card"></a>
 
 ## Quick start
 
@@ -136,47 +136,47 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <tr>
 <td valign="top">
 <a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with the Sample repos tab, one sample selected, and the Run history panel"></a>
-<br><b>Setup page: sample repos and Run history</b><br>The Sample repos tab with six cards (Ready or Download, licence, pinned tag), one selected, the one-line Selected summary, a closed Advanced options row, and the separate Run history panel on the right. The navbar link is New run.
+<br><b>Setup page: sample repos and Run history</b><br>The Sample repos tab with six cards (two Ready, four Download), <code>montanaflynn/stats</code> selected, the one-line Selected summary, a closed Advanced options row, and the Run history panel on the right: stats 0.0% to 80.3%, semver 1.4% to 80.1%, and a cancelled stats run at 8.6%.
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="Setup page and Run history panel in the dark theme"></a>
-<br><b>Dark theme</b><br>The same page in the dark theme.
+<br><b>Dark theme</b><br>The same setup page and Run history panel in the dark theme.
 </td>
 </tr>
 <tr>
 <td valign="top">
-<a href="docs/screenshots/gallery-job-nav.png"><img src="docs/screenshots/gallery-job-nav.png" width="100%" alt="Job page top with the All runs link"></a>
-<br><b>Job page</b><br>The "← All runs" link above the run header, the 80.8% coverage meter with the 80% target marker, and the Target reached card.
+<a href="docs/screenshots/gallery-job-nav.png"><img src="docs/screenshots/gallery-job-nav.png" width="100%" alt="Job page header with the navbar, the All runs link, the 80.3 percent coverage meter and the reached-target message"></a>
+<br><b>Job page</b><br>The navbar with New run, the "← All runs" link, the run header (stats, completed, 186.1k tokens) and the 80.3% coverage meter with its 80% target marker.
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="Setup page on a phone-width screen"></a>
-<br><b>Setup page on mobile</b><br>The setup page and navbar at phone width.
+<br><b>Setup page on mobile</b><br>The setup page at 390 px wide: the navbar collapses to a short title and S / L / D theme buttons, and the sample cards stack in one column.
 </td>
 </tr>
 <tr>
 <td valign="top">
 <a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page with the five-step loop"></a>
-<br><b>How it works page</b><br>The five-step loop, how the percentage is calculated, when a run stops, and the measured result for the newest run (0% to 80.75%, 12 iterations, 0 model errors).
+<br><b>How it works page</b><br>The five-step loop, how the percentage is calculated, when the run stops, and a measured result for <code>montanaflynn/stats</code> (0% to 80.75%, 12 iterations, about 4 min, 0 model errors).
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-howitworks-mobile.png"><img src="docs/screenshots/gallery-howitworks-mobile.png" width="100%" alt="How it works page on a phone-width screen"></a>
-<br><b>How it works on mobile</b><br>The same page at phone width, with the steps stacked.
+<br><b>How it works on mobile</b><br>The same page at 390 px wide, with the steps stacked.
 </td>
 </tr>
 <tr>
 <td valign="top">
-<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Header, coverage meter and summary card for the 80.5 percent run"></a>
-<br><b>Run summary</b><br>Header, coverage meter with the 80% target marker, and the summary card: stop reason, coverage 0.0% to 80.5%, 135 tests added in 34 test files, 4m 47s, 184.9k tokens.
+<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Header, coverage meter and summary card for the 80.3 percent run"></a>
+<br><b>Run summary</b><br>Header, coverage meter with the 80% target marker, and the Target reached card: coverage 0.0% to 80.3%, 108 tests added in 29 test files, 4m 13s, 186.1k tokens.
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Your folders tab with a user module, the mounted folder path and the Add your own repository note with a HOST_REPOS_DIR line"></a>
-<br><b>Your folders</b><br>Modules found in the mounted folder, a Refresh button, and the steps for adding your own repository, with a copyable <code>HOST_REPOS_DIR</code> line.
+<br><b>Your folders</b><br>The module found in the mounted folder (<code>C:\Users\you\code</code>), a Refresh button, and the "Add your own repository" note with a copyable <code>HOST_REPOS_DIR</code> line.
 </td>
 </tr>
 <tr>
 <td valign="top">
 <a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage per iteration rising to the 80 percent target line"></a>
-<br><b>Coverage by iteration</b><br>Coverage after each of the 15 iterations, rising steadily from the 0% baseline and crossing the dashed 80% target line at the end.
+<br><b>Coverage by iteration</b><br>Coverage after each of the 12 iterations, rising steadily from the 0% baseline to 80.3% and crossing the dashed 80% target line at iteration 12.
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for norm.go showing three numbered attempts: a compile failure, an auto-fix that left 3 of 8 tests failing, and a prune that passed"></a>
@@ -185,29 +185,25 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 </tr>
 <tr>
 <td valign="top">
-<a href="docs/screenshots/gallery-testfile.png"><img src="docs/screenshots/gallery-testfile.png" width="100%" alt="Generated tests section with clip_test.go selected and highlighted Go code"></a>
-<br><b>Generated tests</b><br>Every accepted test file is browsable with syntax-highlighted Go, here <code>clip_test.go</code>, so the output can be reviewed before use.
+<a href="docs/screenshots/gallery-testfile.png"><img src="docs/screenshots/gallery-testfile.png" width="100%" alt="Generated tests section with correlation_test.go selected and highlighted Go code"></a>
+<br><b>Generated tests</b><br>Every accepted test file is browsable with syntax-highlighted Go, here <code>correlation_test.go</code> (one of 29 files), so the output can be reviewed before use.
 </td>
 <td valign="top">
-<a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Cancelled run page showing 8.6 percent coverage and the cancelled summary"></a>
-<br><b>Cancelled run</b><br>A real run that was cancelled early: 8.6% coverage, 8 tests in 2 files, and the message that accepted tests were kept.
+<a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Run in progress at 31.5 percent coverage with a Cancel button and an Activity list ending in a running item"></a>
+<br><b>Run in progress</b><br>A run part-way through iteration 3: 31.5% against the 80% target, a Cancel button, the status line "Fixing compile error in moving.go (attempt 1)", and the Activity list with <code>moving.go</code> still Running.
 </td>
 </tr>
 <tr>
 <td valign="top">
 <a href="docs/screenshots/gallery-dark.png"><img src="docs/screenshots/gallery-dark.png" width="100%" alt="Summary and coverage chart in dark theme"></a>
-<br><b>Dark theme</b><br>The same summary and chart under a dark color scheme; the layout and target marker are unchanged.
+<br><b>Dark theme</b><br>The job page header, meter, summary card and coverage chart in the dark theme.
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-mobile.png"><img src="docs/screenshots/gallery-mobile.png" width="100%" alt="Results page on a 390 pixel wide phone screen"></a>
-<br><b>Mobile</b><br>The results page at 390 px wide: header, meter and summary reflow to fit a phone-width screen.
+<br><b>Mobile</b><br>The job page at 390 px wide: the summary card becomes two columns and the chart keeps every second iteration label.
 </td>
 </tr>
 </table>
-
-The summary, chart, timeline and cancelled-run shots were taken before the navbar redesign.
-
-Full-page captures: [setup (light)](docs/screenshots/setup-light.png), [setup (dark)](docs/screenshots/setup-dark.png), [setup (mobile)](docs/screenshots/setup-mobile.png), [results (light)](docs/screenshots/results-light.png), [results (dark)](docs/screenshots/results-dark.png), [results (mobile)](docs/screenshots/results-mobile.png), [live run](docs/screenshots/live-run.png).
 
 ## Configuration
 
