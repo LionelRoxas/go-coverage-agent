@@ -14,7 +14,7 @@ const STEPS = [
   { title: "Keep or roll back", body: <>Kept only if tests pass and covered blocks are a strict superset. Otherwise one mechanical repair or LLM fix, else rolled back to the snapshot.</> },
 ];
 
-const STOPS = ["Target reached", "Gains become marginal", "Iteration limit (20 by default)", "Token budget used"];
+const STOPS = ["Target reached", "Gains become marginal", "Iteration limit (20 by default)", "Token budget used", "No remaining targets"];
 
 const RESULT = [
   { label: "Coverage", value: "0% → 80.75%" },
@@ -27,12 +27,12 @@ const h2 = "text-lg font-semibold tracking-tight";
 
 export default function HowItWorksPage() {
   return (
-    <div className="mx-auto max-w-5xl space-y-14">
+    <div className="space-y-14">
       <section className="space-y-4">
         <h1 className="max-w-3xl text-2xl font-semibold leading-snug tracking-tight sm:text-3xl">
           Give it a Go repository and a target. It writes unit tests with an LLM, keeps only the ones that pass and add coverage, and stops at the target.
         </h1>
-        <a href={WALKTHROUGH} target="_blank" rel="noopener noreferrer" className="inline-block text-sm text-accent underline-offset-4 hover:underline">Full walkthrough</a>
+        <a href={WALKTHROUGH} target="_blank" rel="noopener noreferrer" className="inline-block text-sm text-accent underline-offset-4 hover:underline">Full walkthrough <span aria-hidden>↗</span></a>
       </section>
 
       <section aria-labelledby="loop-heading" className="space-y-5">
@@ -48,11 +48,21 @@ export default function HowItWorksPage() {
             </li>
           ))}
         </ol>
-        <p className="flex items-center gap-2 text-sm text-muted">
-          <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-accent" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <p className="sr-only">Then it repeats from step 2 with the new coverage, until the target or a stop rule is reached.</p>
+        <div aria-hidden data-testid="repeat-connector" className="hidden lg:block">
+          <div className="relative h-10">
+            <div className="absolute inset-y-0 rounded-b-md border-x-2 border-b-2 border-accent/60"
+                 style={{ left: "calc((100% - 48px) / 5 * 1.5 + 12px)", right: "calc((100% - 48px) / 10)" }}>
+              <svg viewBox="0 0 12 8" className="absolute -left-[7px] -top-1 h-2 w-3 text-accent" fill="currentColor"><path d="M6 0 12 8H0z" /></svg>
+              <span className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-bg px-3 text-xs text-muted">repeat until the target or a stop rule</span>
+            </div>
+          </div>
+        </div>
+        <p aria-hidden data-testid="repeat-connector-narrow" className="flex items-center gap-2 border-l-2 border-accent/60 pl-3 text-sm text-muted lg:hidden">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-accent" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 21v-5h5" />
           </svg>
-          Then it repeats from step 2 with the new coverage, until a stop condition is met.
+          Back to Plan (step 2) until the target or a stop rule
         </p>
       </section>
 

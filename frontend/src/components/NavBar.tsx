@@ -24,18 +24,21 @@ export function NavBar() {
 
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-bg/85 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-3 sm:gap-4 sm:px-4">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4 sm:gap-4">
         <SpectroCloudLogo className="h-[22px] w-auto shrink-0 sm:h-[26px]" />
-        <span aria-hidden className="hidden h-5 w-px bg-border sm:block" />
-        <Link href="/" className="hidden whitespace-nowrap text-sm font-semibold tracking-tight sm:block">Go Coverage Agent</Link>
-        <nav aria-label="Main" className="flex h-full items-stretch gap-0.5 sm:ml-2 sm:gap-1">
+        <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
+        <Link href="/" aria-label="Go Coverage Agent" className="whitespace-nowrap text-sm font-semibold tracking-tight">
+          <span className="sm:hidden">GCA</span>
+          <span className="hidden sm:inline">Go Coverage Agent</span>
+        </Link>
+        <nav aria-label="Main" className="flex h-full min-w-0 items-stretch gap-0.5 sm:ml-2 sm:gap-1">
           {LINKS.map((l) => {
             const active = l.active(pathname);
             return (
               <Link key={l.href} href={l.href} aria-current={active ? "page" : undefined}
-                    className={`relative flex items-center whitespace-nowrap px-2 text-sm transition-colors sm:px-3 ${active ? "font-medium text-text" : "text-muted hover:text-text"}`}>
+                    className={`relative flex items-center whitespace-nowrap px-1.5 text-sm transition-colors sm:px-3 ${active ? "font-medium text-text" : "text-muted hover:text-text"}`}>
                 {l.label}
-                {active && <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent sm:inset-x-3" />}
+                {active && <span aria-hidden className="absolute inset-x-1.5 bottom-0 h-0.5 rounded-full bg-accent sm:inset-x-3" />}
               </Link>
             );
           })}

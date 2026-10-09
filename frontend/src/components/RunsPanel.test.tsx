@@ -118,16 +118,26 @@ describe("RunsPanel", () => {
     expect(api.jobs).toHaveBeenCalledTimes(3);
   });
 
-  it("runs the 1 s ticker only while a job is running", async () => {
-    vi.mocked(api.jobs).mockResolvedValue([job({ id: "d1", status: "completed", summary })]);
+  it("stops the 1 s ticker once nothing is running", async () => {
+    vi.mocked(api.jobs).mockResolvedValue([job({ id: "r1", status: "running", percent: 5 })]);
     render(<RunsPanel />);
+    await screen.findByText("Running");
+    expect(vi.getTimerCount()).toBe(2); // 3 s poll + 1 s ticker
+    vi.mocked(api.jobs).mockResolvedValue([job({ id: "r1", status: "completed", summary })]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     await screen.findByText("Completed");
     expect(vi.getTimerCount()).toBe(0);
-    vi.mocked(api.jobs).mockResolvedValue([job({ id: "r1", status: "running", percent: 5 })]);
-    const { unmount } = render(<RunsPanel />);
-    await screen.findByText("Running");
-    expect(vi.getTimerCount()).toBeGreaterThanOrEqual(2);
+  });
+
+  it("drops a response that arrives after unmount", async () => {
+    let release!: (j: JobSnapshot[]) => void;
+    vi.mocked(api.jobs).mockImplementation(() => new Promise((r) => { release = r; }));
+    const onJobs = vi.fn();
+    const { unmount } = render(<RunsPanel onJobs={onJobs} />);
     unmount();
+    await act(async () => { release([job({ id: "r1", status: "running" })]); await vi.advanceTimersByTimeAsync(0); });
+    expect(onJobs).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("shows an inline error when loading fails", async () => {

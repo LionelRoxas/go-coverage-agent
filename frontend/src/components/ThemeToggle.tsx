@@ -47,9 +47,12 @@ export function ThemeToggle() {
   return (
     <div role="group" aria-label="Theme" className="inline-flex rounded-sm border border-border bg-surface p-0.5 text-xs">
       {OPTIONS.map((o) => (
-        <button key={o.value} type="button" aria-pressed={theme === o.value} onClick={() => choose(o.value)}
+        <button key={o.value} type="button" aria-label={o.label} aria-pressed={theme === o.value} onClick={() => choose(o.value)}
                 className="rounded-[3px] px-2 py-1 text-muted hover:text-text aria-pressed:bg-accent aria-pressed:text-on-accent">
-          {o.label}
+          <span aria-hidden>
+            <span className="sm:hidden">{o.label[0]}</span>
+            <span className="hidden sm:inline">{o.label}</span>
+          </span>
         </button>
       ))}
     </div>

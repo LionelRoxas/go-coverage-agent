@@ -11,9 +11,16 @@ describe("HowItWorksPage", () => {
     expect(items).toEqual(["Copy & measure", "Plan (no AI)", "Write (Groq)", "Validate (5 gates)", "Keep or roll back"]);
   });
 
+  it("shows the repeat connector from step 5 back to step 2", () => {
+    render(<HowItWorksPage />);
+    expect(screen.getByTestId("repeat-connector")).toHaveTextContent("repeat until the target or a stop rule");
+    expect(screen.getByTestId("repeat-connector-narrow")).toHaveTextContent("Back to Plan (step 2)");
+    expect(screen.getByText(/repeats from step 2/)).toBeInTheDocument();
+  });
+
   it("shows stop conditions, the measured result and the links", () => {
     render(<HowItWorksPage />);
-    for (const t of ["Target reached", "Gains become marginal", "Iteration limit (20 by default)", "Token budget used"]) {
+    for (const t of ["Target reached", "Gains become marginal", "Iteration limit (20 by default)", "Token budget used", "No remaining targets"]) {
       expect(screen.getByText(t)).toBeInTheDocument();
     }
     expect(screen.getByText("0% → 80.75%")).toBeInTheDocument();
