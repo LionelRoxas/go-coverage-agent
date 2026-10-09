@@ -6,7 +6,7 @@ An autonomous agent that raises unit-test coverage for Go repositories. Give it 
 percentage. It measures coverage, plans what to test, asks an LLM to write idiomatic Go tests, compiles and runs
 them, keeps only the tests that pass and add coverage, and repeats until it hits the target or gains flatten out.
 
-<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Results page for montanaflynn/stats showing 80.3% coverage against an 80% target and a Target reached summary card"></a>
+<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Results page for montanaflynn/stats showing 81.1% coverage against an 80% target and a Target reached summary card"></a>
 
 ## Quick start
 
@@ -174,83 +174,70 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 
 <table>
 <tr>
-<td valign="top">
-<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with four numbered steps, the Sample repos tab, one sample selected, and the Run history panel"></a>
-<br><b>Setup page: numbered steps and Run history</b><br>The header "Fill the gaps in a Go project’s tests" with one supporting line and a How it works link, and on the right a small chart of a measured run (coverage after each of 22 rounds on <code>montanaflynn/stats</code>, 0% to 100%). Below it, the form as four numbered steps on a rail (1 Choose a repository and 2 Set a target show filled markers once done; 3 Advanced options is marked optional), each with a one-line hint. Step 1 holds the Sample repos tab with six cards (all six downloaded, so each shows Ready), <code>montanaflynn/stats</code> selected, the Selected summary (stats, <code>github.com/montanaflynn/stats</code>, 58 source files) with a short note under it (the code is sent to Groq, where <code>openai/gpt-oss-120b</code> writes the tests; the agent works on a copy and your repository is never modified), the closed Advanced options step, step 4 with the Start button, the tokens left in today's budget with an ⓘ button beside it, and a short "What happens next" list (the run page, <code>./output/&lt;run id&gt;/tests</code>, How it works), and the Run history panel on the right: stats 0.0% to 80.3%, semver 1.4% to 80.1%, and a cancelled stats run at 8.6%.
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with the header, the Sample repos tab with montanaflynn/stats selected, and the Run history panel"></a>
+<br><b>Setup page</b><br>The header, a chart of a measured run (0% to 100% in 22 rounds), step 1 with the six sample repos (<code>montanaflynn/stats</code> selected) and the Run history panel with three past runs.
 </td>
-<td valign="top">
-<a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="Setup page and Run history panel in the dark theme"></a>
-<br><b>Dark theme</b><br>The same numbered setup steps and Run history panel in the dark theme.
-</td>
-</tr>
-<tr>
-<td valign="top">
-<a href="docs/screenshots/gallery-job-nav.png"><img src="docs/screenshots/gallery-job-nav.png" width="100%" alt="Job page header with the navbar, the All runs link, the 80.3 percent coverage meter and the reached-target message"></a>
-<br><b>Job page</b><br>The navbar with New run, the "← All runs" link, the run header (stats, completed, 186.1k tokens) and the 80.3% coverage meter with its 80% target marker.
-</td>
-<td valign="top">
-<a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="Setup page on a phone-width screen"></a>
-<br><b>Setup page on mobile</b><br>The setup page at 390 px wide: the navbar collapses to a short title and S / L / D theme buttons, the headline and supporting line stack above the measured-run chart, the numbered steps keep their rail, the sample cards stack in one column, the token budget line sits beside Start with "What happens next" under it, and Run history follows below.
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="The same setup page and Run history panel in the dark theme"></a>
+<br><b>Dark theme</b><br>The same setup page in the dark theme: stats 0.0% to 81.1%, semver 1.4% to 83.5% and stats 0.0% to 100.0% in Run history.
 </td>
 </tr>
 <tr>
-<td valign="top">
-<a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page: the five steps of a run side by side, each with a Read more link, with steps 2 to 5 marked as one round and an arrow from step 5 back to step 2"></a>
-<br><b>How it works page</b><br>A two-minute, plain-language explanation for non-developers: what tests and coverage are (8 of 10 lines = 80%), the five steps of a run side by side (step 1 once at the start, steps 2 to 5 as one round with an arrow from step 5 back to step 2), each with a Read more link to its Walkthrough section, when it stops, why the number can be trusted, and compact measured results for runs that started at 0%: <code>montanaflynn/stats</code> with an 80% goal (0% to 81.1% in 11 rounds, about 5 minutes) and a 100% goal (0% to 100% in 22 rounds, about 10 minutes), and <code>google/btree</code> with a 100% goal (0% to 87.1%, stopped when new rounds added very little).
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Your folders tab after uploading a copy of stats: the drop area, the upload result, the uploaded module selected and the HOST_REPOS_DIR note"></a>
+<br><b>Your folders</b><br>After uploading a local copy of <code>montanaflynn/stats</code>: "Uploaded stats (118 Go files). Skipped: 29 files in .git, 8 hidden files.", with <code>uploads/stats</code> selected under Go modules in <code>./repos</code> and the one-line <code>HOST_REPOS_DIR</code> note below it.
 </td>
-<td valign="top">
-<a href="docs/screenshots/gallery-howitworks-mobile.png"><img src="docs/screenshots/gallery-howitworks-mobile.png" width="100%" alt="How it works page on a phone-width screen"></a>
-<br><b>How it works on mobile</b><br>The same page at 390 px wide, with the steps stacked and the loop arrow beside them.
-</td>
-</tr>
-<tr>
-<td valign="top">
-<a href="docs/screenshots/gallery-walkthrough.png"><img src="docs/screenshots/gallery-walkthrough.png" width="100%" alt="Walkthrough page: a table of contents drawn as the run, with Plan, Write, Validate and Keep grouped under Each round, beside the Start a run section"></a>
-<br><b>Walkthrough page</b><br>The thorough version for technical readers at <code>/walkthrough</code>, linked from How it works. The table of contents follows the run in order (Start, Prepare, Measure, then Plan, Write, Validate and Keep, repair or undo grouped under Each round, then Stop), then reference sections: results and outputs, how the number is computed, safety and limits, and a glossary. Each section names the files that do the work and the events the browser sees, with the validation gates as a numbered chain, an event-stream sample and a coverage profile line.
-</td>
-<td valign="top">
-<a href="docs/screenshots/gallery-walkthrough-mobile.png"><img src="docs/screenshots/gallery-walkthrough-mobile.png" width="100%" alt="Walkthrough page on a phone-width screen with the table of contents in a box under the title"></a>
-<br><b>Walkthrough on mobile</b><br>The contents become a box under the title, in two columns from 640 px.
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Run in progress at 19.9 percent with a Cancel button and the Activity list ending in a running item"></a>
+<br><b>Run in progress</b><br>Iteration 2 of a stats run at 19.9% against the 80% target, with a Cancel button, the status "Compiling and running tests for ttest.go…" and <code>ttest.go</code> Running in the Activity list.
 </td>
 </tr>
 <tr>
-<td valign="top">
-<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Header, coverage meter and summary card for the 80.3 percent run"></a>
-<br><b>Run summary</b><br>Header, coverage meter with the 80% target marker, and the Target reached card: coverage 0.0% to 80.3%, 108 tests added in 29 test files, 4m 13s, 186.1k tokens.
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage after each of 11 iterations rising past the dashed 80 percent target line"></a>
+<br><b>Coverage by iteration</b><br>Coverage after each of the 11 iterations, rising from the 0% baseline to 81.1% and ending just above the dashed 80% target line.
 </td>
-<td valign="top">
-<a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Your folders tab with the Choose a folder button and drop area, an uploaded copy of stats selected, and a one-line HOST_REPOS_DIR note"></a>
-<br><b>Your folders</b><br>The upload area (Choose a folder… or drag the project folder in) after uploading a local copy of <code>montanaflynn/stats</code>: saved as <code>uploads/stats</code> and selected, 118 Go files kept, 29 files in <code>.git</code> and 8 hidden files skipped. Below it, the modules in the mounted folder with a Refresh button, and one line on <code>HOST_REPOS_DIR</code> for large projects with a copyable example.
-</td>
-</tr>
-<tr>
-<td valign="top">
-<a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage per iteration rising to the 80 percent target line"></a>
-<br><b>Coverage by iteration</b><br>Coverage after each of the 12 iterations, rising steadily from the 0% baseline to 80.3% and crossing the dashed 80% target line at iteration 12.
-</td>
-<td valign="top">
-<a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for norm.go showing three numbered attempts: a compile failure, an auto-fix that left 3 of 8 tests failing, and a prune that passed"></a>
-<br><b>Attempt trace, expanded</b><br>Every attempt for <code>norm.go</code> in iteration 1, numbered: ① written by the LLM, didn't compile (<code>undefined: strconv</code>); ② auto-fixed with no LLM call, 3 of 8 tests failed, each listed once with its first message (raw output behind a toggle); ③ the 3 failing tests removed, 5 kept, passed. Result: accepted at attempt 3, +4.9 pp.
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for ttest.go with two numbered attempts: one failing test, then the failing test removed and the rest passing"></a>
+<br><b>Attempt trace, expanded</b><br><code>ttest.go</code> in iteration 2: ① written by the LLM, 1 of 5 tests failed (with the failing assertion); ② the failing test removed, 4 kept, passed. Result: accepted at attempt 2, +2.7 pp.
 </td>
 </tr>
 <tr>
-<td valign="top">
+<td valign="top" width="50%">
 <a href="docs/screenshots/gallery-testfile.png"><img src="docs/screenshots/gallery-testfile.png" width="100%" alt="Generated tests section with correlation_test.go selected and highlighted Go code"></a>
-<br><b>Generated tests</b><br>Every accepted test file is browsable with syntax-highlighted Go, here <code>correlation_test.go</code> (one of 29 files), so the output can be reviewed before use.
+<br><b>Generated tests</b><br>Each of the 29 accepted test files can be read with syntax-highlighted Go, here <code>correlation_test.go</code>.
 </td>
-<td valign="top">
-<a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Run in progress at 31.5 percent coverage with a Cancel button and an Activity list ending in a running item"></a>
-<br><b>Run in progress</b><br>A run part-way through iteration 3: 31.5% against the 80% target, a Cancel button, the status line "Fixing compile error in moving.go (attempt 1)", and the Activity list with <code>moving.go</code> still Running.
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-dark.png"><img src="docs/screenshots/gallery-dark.png" width="100%" alt="Summary card, coverage chart and generated tests in the dark theme"></a>
+<br><b>Run page, dark theme</b><br>The Target reached card (0.0% to 81.1%, 109 tests in 29 files, 5m 10s, 175.0k tokens), the coverage chart and the generated tests in the dark theme.
 </td>
 </tr>
 <tr>
-<td valign="top">
-<a href="docs/screenshots/gallery-dark.png"><img src="docs/screenshots/gallery-dark.png" width="100%" alt="Summary and coverage chart in dark theme"></a>
-<br><b>Dark theme</b><br>The job page header, meter, summary card and coverage chart in the dark theme.
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page: the five steps of a run side by side, steps 2 to 5 marked as one round with an arrow back to step 2"></a>
+<br><b>How it works</b><br>The five steps of a run in plain words, with steps 2 to 5 marked as one round that repeats until the goal or a stop rule; each step links to its Walkthrough section.
 </td>
-<td valign="top">
-<a href="docs/screenshots/gallery-mobile.png"><img src="docs/screenshots/gallery-mobile.png" width="100%" alt="Results page on a 390 pixel wide phone screen"></a>
-<br><b>Mobile</b><br>The job page at 390 px wide: the summary card becomes two columns and the chart keeps every second iteration label.
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-walkthrough.png"><img src="docs/screenshots/gallery-walkthrough.png" width="100%" alt="Walkthrough page with a table of contents that follows the run beside the Start a run section"></a>
+<br><b>Walkthrough</b><br>The technical version at <code>/walkthrough</code>: the contents follow the run in order (Plan, Write, Validate and Keep grouped under Each round), beside the Start a run section and its request.
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td valign="top" width="33%">
+<a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="Setup page on a 390 pixel wide phone screen"></a>
+<br><b>New run on a phone</b><br>The header, the measured-run chart and step 1 at 390 px wide.
+</td>
+<td valign="top" width="33%">
+<a href="docs/screenshots/gallery-mobile.png"><img src="docs/screenshots/gallery-mobile.png" width="100%" alt="Run page on a 390 pixel wide phone screen"></a>
+<br><b>Run page on a phone</b><br>The 81.1% meter and the summary card in two columns.
+</td>
+<td valign="top" width="33%">
+<a href="docs/screenshots/gallery-howitworks-mobile.png"><img src="docs/screenshots/gallery-howitworks-mobile.png" width="100%" alt="How it works page on a 390 pixel wide phone screen"></a>
+<br><b>How it works on a phone</b><br>The opening lines and what coverage means.
 </td>
 </tr>
 </table>
