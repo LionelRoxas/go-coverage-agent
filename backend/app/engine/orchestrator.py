@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from app.agents.context import ContextTooLarge
-from app.agents.repair import mechanical_repair
 from app.agents.planner import plan
+from app.agents.repair import mechanical_repair
 from app.engine.policy import StopPolicy, stop_message
 from app.llm.client import Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal
 from app.models import (CoverageReport, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem, StopReason,

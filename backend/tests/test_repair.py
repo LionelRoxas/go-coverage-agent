@@ -26,3 +26,15 @@ def test_returns_none_when_nothing_is_mechanical():
     assert mechanical_repair(snippet("x"), "./a_test.go:3:1: undefined: RegIncBeta", "stats") is None
     assert mechanical_repair(snippet("x", imports=("testing", "errors")), "undefined: errors", "p") is None
     assert mechanical_repair(snippet("x"), "declared and not used: v", "p") is None
+
+
+def test_qualifier_stripping_preserves_comments_and_literals():
+    code = """func TestA(t *testing.T) {
+	s := "stats.Mean"
+	// stats.Mean here
+	r := 's'
+	_ = stats.Mean(x) /* stats.Mean */
+	_ = `stats.Mean`
+}"""
+    fixed = mechanical_repair(snippet(code), "undefined: stats", "stats")
+    assert fixed.code == code.replace("_ = stats.Mean(x)", "_ = Mean(x)")

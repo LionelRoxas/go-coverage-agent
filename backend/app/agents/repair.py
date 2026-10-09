@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+from app.guard import go_segments
 from app.models import TestSnippet
 
 STD_IMPORTS = {
@@ -28,7 +29,9 @@ def mechanical_repair(snippet: TestSnippet, output: str, package: str) -> TestSn
         if path and path not in imports and name != package:
             imports.append(path)
     if package in names:
-        code = re.sub(rf"(?<![\w.]){re.escape(package)}\.(?=[A-Za-z_])", "", code)
+        qualifier = re.compile(rf"(?<![\w.]){re.escape(package)}\.(?=[A-Za-z_])")
+        # only code tokens: comments and string/rune literals are left untouched
+        code = "".join(qualifier.sub("", text) if blank is None else text for text, blank in go_segments(code))
     if imports == snippet.imports and code == snippet.code:
         return None
     return snippet.model_copy(update={"imports": imports, "code": code})

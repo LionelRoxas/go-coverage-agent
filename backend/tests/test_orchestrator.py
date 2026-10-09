@@ -253,3 +253,15 @@ async def test_mechanical_repair_is_bounded_and_falls_back_to_fixer(ws):
     orch, _ = run(ws, v, agents, target=50, max_fix_attempts=1)
     summary = await orch.run(report(set()))
     assert agents.fix_kinds == [ValidationKind.COMPILE_ERROR] and summary.tests_added == ["TestA"]
+
+
+async def test_mechanical_repair_cap_then_fixer(ws):
+    from app.engine.orchestrator import MAX_MECHANICAL_REPAIRS
+    mods = ["errors", "sort", "strings", "fmt", "bytes"]
+    bads = [ValidationResult(ValidationKind.COMPILE_ERROR, f"undefined: {m}") for m in mods[:MAX_MECHANICAL_REPAIRS + 1]]
+    v = FakeValidator(ws, [*bads, accepted({"A:1", "A:2"})])
+    agents = FakeAgents([GOOD], fixes=[GOOD])
+    orch, events = run(ws, v, agents, target=50, max_fix_attempts=1)
+    summary = await orch.run(report(set()))
+    assert sum(1 for t, _ in events if t == "mechanical_repair") == MAX_MECHANICAL_REPAIRS
+    assert agents.fix_kinds == [ValidationKind.COMPILE_ERROR] and summary.tests_added == ["TestA"]

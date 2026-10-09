@@ -18,33 +18,44 @@ def _is_stdlib(path: str) -> bool:
     return "." not in path.split("/")[0]
 
 
-def _strip_go(code: str) -> str:
-    """Blank out comments and literal contents so keyword checks only see code tokens."""
-    out: list[str] = []
-    i, n = 0, len(code)
+def go_segments(code: str) -> list[tuple[str, str | None]]:
+    """Split Go source into (text, blank) pieces. `blank` is None for code and the stand-in for comments/literals."""
+    out: list[tuple[str, str | None]] = []
+    i, n, start = 0, len(code), 0
+
+    def flush(upto: int) -> None:
+        if upto > start:
+            out.append((code[start:upto], None))
+
     while i < n:
         if code.startswith("//", i):
-            end = code.find("\n", i)
-            i = n if end == -1 else end
-            out.append(" ")
+            end = code.find(chr(10), i)
+            j, blank = (n if end == -1 else end), " "
         elif code.startswith("/*", i):
             end = code.find("*/", i + 2)
-            i = n if end == -1 else end + 2
-            out.append(" ")
+            j, blank = (n if end == -1 else end + 2), " "
         elif code[i] in "\"'":
             quote, j = code[i], i + 1
-            while j < n and code[j] not in (quote, "\n"):
+            while j < n and code[j] not in (quote, chr(10)):
                 j += 2 if code[j] == "\\" else 1
-            out.append(quote * 2)
-            i = j + 1 if j < n and code[j] == quote else j
+            blank = quote * 2
+            j = j + 1 if j < n and code[j] == quote else j
         elif code[i] == "`":
             end = code.find("`", i + 1)
-            out.append("``")
-            i = n if end == -1 else end + 1
+            j, blank = (n if end == -1 else end + 1), "``"
         else:
-            out.append(code[i])
             i += 1
-    return "".join(out)
+            continue
+        flush(i)
+        out.append((code[i:j], blank))
+        i = start = j
+    flush(n)
+    return out
+
+
+def _strip_go(code: str) -> str:
+    """Blank out comments and literal contents so keyword checks only see code tokens."""
+    return "".join(text if blank is None else blank for text, blank in go_segments(code))
 
 
 def check_snippet(snippet: TestSnippet, module: str, max_bytes: int = 40_000) -> list[str]:
