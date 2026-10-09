@@ -170,8 +170,8 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 </tr>
 <tr>
 <td valign="top">
-<a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page: a plain-language explanation of the five-step loop"></a>
-<br><b>How it works page</b><br>A plain-language explanation for non-developers: what tests and coverage are (8 of 10 lines = 80%), the five steps of a run, each with a collapsed Technical detail, when it stops, why the number can be trusted, and measured results for <code>montanaflynn/stats</code> (0% to 80.75% in 12 rounds, about 4 minutes) and <code>Masterminds/semver</code> (1.4% to 84.6% in 4 rounds, about 2 minutes).
+<a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page: the five steps of a run side by side, with steps 2 to 5 marked as one round and an arrow from step 5 back to step 2"></a>
+<br><b>How it works page</b><br>A plain-language explanation for non-developers: what tests and coverage are (8 of 10 lines = 80%), the five steps of a run side by side (step 1 once at the start, steps 2 to 5 as one round with an arrow from step 5 back to step 2), each with a collapsed Technical detail, when it stops, why the number can be trusted, and measured results for <code>montanaflynn/stats</code> (0% to 80.75% in 12 rounds, about 4 minutes) and <code>Masterminds/semver</code> (1.4% to 84.6% in 4 rounds, about 2 minutes).
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-howitworks-mobile.png"><img src="docs/screenshots/gallery-howitworks-mobile.png" width="100%" alt="How it works page on a phone-width screen"></a>

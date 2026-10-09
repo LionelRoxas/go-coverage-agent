@@ -99,7 +99,7 @@ function RepeatBracket({ index }: { index: number }) {
   const shape = index === 1 ? "top-3 bottom-0 rounded-tr-md border-t-2"
     : index === STEPS.length - 1 ? "inset-y-0 rounded-br-md border-b-2" : "inset-y-0";
   return (
-    <span aria-hidden className={`absolute right-0 w-4 border-r-2 border-accent/60 ${shape}`}>
+    <span aria-hidden className={`absolute right-0 w-4 border-r-2 border-accent/60 lg:hidden ${shape}`}>
       {index === 1 && (
         <svg viewBox="0 0 8 12" className="absolute -left-1.5 -top-[7px] h-3 w-2 text-accent" fill="currentColor"><path d="M0 6 8 0v12z" /></svg>
       )}
@@ -109,7 +109,7 @@ function RepeatBracket({ index }: { index: number }) {
 
 export default function HowItWorksPage() {
   return (
-    <div className="mx-auto max-w-3xl space-y-16">
+    <div className="space-y-16 [&>*:not(#loop)]:mx-auto [&>*:not(#loop)]:max-w-3xl">
       <section className="space-y-4">
         <p className="text-base leading-relaxed text-muted sm:text-lg">
           Software teams write small automatic checks, called tests, that prove their code works.
@@ -130,39 +130,65 @@ export default function HowItWorksPage() {
         <CoverageLines />
       </section>
 
-      <section aria-labelledby="loop-heading" className="space-y-6">
-        <div className="space-y-2">
+      <section id="loop" aria-labelledby="loop-heading" className="space-y-6">
+        <div className="mx-auto max-w-3xl space-y-2">
           <h2 id="loop-heading" className={h2}>What happens in a run</h2>
           <p className="leading-relaxed text-muted">Five steps. Steps 2 to 5 form one round, and rounds repeat until it can stop.</p>
         </div>
-        <ol>
-          {STEPS.map((s, i) => (
-            <li key={s.title} data-step={i + 1} className="relative flex gap-4 pr-8">
-              <div aria-hidden className="relative flex w-7 shrink-0 flex-col items-center">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-accent text-sm font-semibold tabular-nums text-accent">{i + 1}</span>
-                {i < STEPS.length - 1 && <span className="w-px flex-1 bg-border" />}
+        <div className="mx-auto max-w-3xl lg:max-w-none">
+          <div aria-hidden data-testid="loop-phases" className="mb-3 hidden grid-cols-5 gap-3 text-xs lg:grid">
+            <div className="space-y-1.5 text-muted">
+              <p className="text-center">Once at the start</p>
+              <div className="mx-4 h-2 rounded-t-sm border-x-2 border-t-2 border-border" />
+            </div>
+            <div className="col-span-4 space-y-1.5 text-accent">
+              <p className="text-center font-medium">Each round</p>
+              <div className="mx-4 h-2 rounded-t-sm border-x-2 border-t-2 border-accent/60" />
+            </div>
+          </div>
+          <ol className="lg:grid lg:grid-cols-5 lg:gap-x-3">
+            {STEPS.map((s, i) => {
+              const card = i === 0 ? "lg:border-dashed lg:border-border" : "lg:border-border lg:bg-surface";
+              return (
+                <li key={s.title} data-step={i + 1}
+                    className="relative grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-4 pr-8 lg:row-span-2 lg:grid-cols-1 lg:grid-rows-subgrid lg:pr-0">
+                  <div aria-hidden className="relative row-span-2 flex flex-col items-center lg:hidden">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-accent text-sm font-semibold tabular-nums text-accent">{i + 1}</span>
+                    {i < STEPS.length - 1 && <span className="w-px flex-1 bg-border" />}
+                  </div>
+                  <div className={`min-w-0 space-y-1.5 pt-0.5 lg:rounded-t-md lg:border lg:border-b-0 lg:px-4 lg:pt-4 ${card}`}>
+                    <span aria-hidden className="mb-3 hidden h-7 w-7 items-center justify-center rounded-full border-2 border-accent text-sm font-semibold tabular-nums text-accent lg:flex">{i + 1}</span>
+                    <h3 className="font-semibold lg:text-[0.9375rem] lg:leading-snug">{s.title}</h3>
+                    <p className="leading-relaxed text-muted lg:text-sm">{s.plain}</p>
+                  </div>
+                  <details className={`group min-w-0 self-start pb-8 pt-2.5 lg:rounded-b-md lg:border lg:border-t-0 lg:px-4 lg:pb-4 lg:pt-3 ${card}`}>
+                    <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-sm font-medium text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+                      <span>Technical detail<span className="sr-only">: {s.title}</span></span><Chevron />
+                    </summary>
+                    <p className="mt-2 border-l-2 border-border pl-3 text-sm leading-relaxed text-muted">{s.tech}</p>
+                  </details>
+                  <RepeatBracket index={i} />
+                </li>
+              );
+            })}
+          </ol>
+          <p className="sr-only">Step 1 happens once, at the start. After step 5 it starts again from step 2 with the new coverage, until it reaches the goal or a stop rule.</p>
+          <div aria-hidden data-testid="repeat-connector" className="hidden lg:block">
+            <div className="relative h-10">
+              <div className="absolute inset-y-0 rounded-b-md border-x-2 border-b-2 border-accent/60"
+                   style={{ left: "calc((100% - 3rem) / 5 * 1.5 + 0.75rem)", right: "calc((100% - 3rem) / 10)" }}>
+                <svg viewBox="0 0 12 8" className="absolute -left-[7px] -top-1 h-2 w-3 text-accent" fill="currentColor"><path d="M6 0 12 8H0z" /></svg>
+                <span className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-bg px-3 text-sm text-muted">repeat until the goal or a stop rule</span>
               </div>
-              <div className="min-w-0 flex-1 space-y-1.5 pb-8 pt-0.5">
-                <h3 className="font-semibold">{s.title}</h3>
-                <p className="leading-relaxed text-muted">{s.plain}</p>
-                <details className="group pt-1">
-                  <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-sm font-medium text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
-                    <span>Technical detail<span className="sr-only">: {s.title}</span></span><Chevron />
-                  </summary>
-                  <p className="mt-2 border-l-2 border-border pl-3 text-sm leading-relaxed text-muted">{s.tech}</p>
-                </details>
-              </div>
-              <RepeatBracket index={i} />
-            </li>
-          ))}
-        </ol>
-        <p className="sr-only">After step 5 it starts again from step 2 with the new coverage, until it reaches the goal or a stop rule.</p>
-        <p aria-hidden data-testid="repeat-connector" className="-mt-4 flex items-center justify-end gap-2 text-right text-sm text-muted">
-          <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-accent" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 21v-5h5" />
-          </svg>
-          Back to step 2: repeat until the goal or a stop rule
-        </p>
+            </div>
+          </div>
+          <p aria-hidden data-testid="repeat-connector-narrow" className="mt-2 flex items-center justify-end gap-2 text-right text-sm text-muted lg:hidden">
+            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-accent" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 21v-5h5" />
+            </svg>
+            Back to step 2: repeat until the goal or a stop rule
+          </p>
+        </div>
       </section>
 
       <div className="grid gap-12 md:grid-cols-2 md:gap-10">

@@ -38,10 +38,32 @@ describe("HowItWorksPage", () => {
     expect(within(steps[4]).getByText(/history of every earlier attempt/)).toBeInTheDocument();
   });
 
-  it("shows the repeat connector from step 5 back to step 2", () => {
+  it("keeps the steps in one real ordered list", () => {
     render(<HowItWorksPage />);
-    expect(screen.getByTestId("repeat-connector")).toHaveTextContent("Back to step 2: repeat until the goal or a stop rule");
-    expect(screen.getByText(/starts again from step 2/)).toBeInTheDocument();
+    const steps = screen.getAllByRole("listitem").filter((li) => li.hasAttribute("data-step"));
+    expect(steps).toHaveLength(5);
+    expect(new Set(steps.map((li) => li.parentElement))).toEqual(new Set([steps[0].parentElement]));
+    expect(steps[0].parentElement!.tagName).toBe("OL");
+    expect(steps.map((li) => li.getAttribute("data-step"))).toEqual(["1", "2", "3", "4", "5"]);
+  });
+
+  it("marks step 1 as once and steps 2 to 5 as the repeated round", () => {
+    render(<HowItWorksPage />);
+    const phases = screen.getByTestId("loop-phases");
+    expect(phases).toHaveAttribute("aria-hidden");
+    expect(phases).toHaveTextContent("Once at the start");
+    expect(phases).toHaveTextContent("Each round");
+    expect(screen.getByText(/Step 1 happens once, at the start\. After step 5 it starts again from step 2/)).toHaveClass("sr-only");
+  });
+
+  it("shows the repeat connector from step 5 back to step 2, wide and narrow, hidden from screen readers", () => {
+    render(<HowItWorksPage />);
+    const wide = screen.getByTestId("repeat-connector");
+    expect(wide).toHaveAttribute("aria-hidden");
+    expect(wide).toHaveTextContent(/^repeat until the goal or a stop rule$/);
+    const narrow = screen.getByTestId("repeat-connector-narrow");
+    expect(narrow).toHaveAttribute("aria-hidden");
+    expect(narrow).toHaveTextContent("Back to step 2: repeat until the goal or a stop rule");
   });
 
   it("shows the stop rules, the trust notes, the measured results and the links", () => {
