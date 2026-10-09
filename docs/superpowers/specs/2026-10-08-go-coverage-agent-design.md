@@ -323,7 +323,7 @@ Each has its own context and contract, so prompts stay small, failures are attri
   - `GROQ_MODEL=openai/gpt-oss-20b` for cheaper runs.
   - A Groq Developer plan removes the waiting.
   - Expected duration, so reviewers aren't surprised.
-- **Measured end-to-end on 2026-10-08:** job `a46c5a902f70` on `stats` via the HTTP API (defaults: 10 iterations, 3 targets per iteration). Coverage went from 0.0% to 68.97% of 1247 statements in 1677.7 s over 10 iterations and stopped with `max_iterations`; the 80% target was not reached. Independent verification (fresh clone, existing tests deleted, generated tests copied in, `go vet` clean, `go test -count=1`) measured 69.0%. Tokens: 182,173 (122,218 prompt + 59,955 completion) over 43 LLM calls. 29 candidates accepted, 1 rejected (`llm_error`: 1), 14 fix attempts, 8 prune events. Gains slowed from about 6 pp per iteration to about 3 pp by iteration 10, so the default of 10 iterations is too low for `stats`. Observed Groq limits for this key: 8,000 tokens per minute (`x-ratelimit-limit-tokens`) and 200,000 tokens per day. The job logged 46 `rate_limited` events (tpm and 429) totalling about 1,457 s of the 1,678 s, so rate-limit waiting dominated the duration. Two follow-up runs with `max_iterations=20` were stopped immediately with `budget_exhausted` because the daily token cap was already used.
+- **Measured end-to-end on 2026-10-08:** job `a46c5a902f70` on `stats` via the HTTP API (defaults: 10 iterations, 3 targets per iteration). Coverage went from 0.0% to 68.97% of 1247 statements in 1677.7 s over 10 iterations and stopped with `max_iterations`; the 80% target was not reached. Independent verification (fresh clone, existing tests deleted, generated tests copied in, `go vet` clean, `go test -count=1`) measured 69.0%. Tokens: 182,173 (122,218 prompt + 59,955 completion) over 43 LLM calls. 29 candidates accepted, 1 rejected (`llm_error`: 1), 14 fix attempts, 8 prune events. Gains were 3–12 pp per iteration early on, about 3 pp by iteration 10, so the default of 10 iterations was too low for `stats` and was raised to 20. Observed Groq limits for this key: 8,000 tokens per minute (`x-ratelimit-limit-tokens`) and 200,000 tokens per day. The job logged 46 `rate_limited` events (tpm and 429) totalling about 1,457 s of the 1,678 s, so rate-limit waiting dominated the duration. Two follow-up runs with `max_iterations=20` were stopped immediately with `budget_exhausted` because the daily token cap was already used.
 - **Fallback if day-1 measurements show 80% isn't reachable within one day's budget:** lower the default target in the README example to the measured reachable value, and say so honestly. Don't hide it.
 
 ---
@@ -397,7 +397,7 @@ This guarantees coverage never regresses, the suite is never redundant, and the 
 | Option | Default | Range |
 |---|---|---|
 | `target_coverage` | 80 | 1–100 |
-| `max_iterations` | 10 | 1–30 |
+| `max_iterations` | 20 | 1–30 |
 | `min_gain` (percentage points per iteration) | 1.0 | 0–10 |
 | `patience` | 2 | 1–5 |
 | `targets_per_iteration` | 3 | 1–5 |
@@ -479,7 +479,9 @@ services:
   backend:
     build: ./backend
     env_file: .env
-    ports: ["127.0.0.1:8000:8000"]          # loopback only: no LAN exposure
+    environment:
+      CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}"]'
+    ports: ["127.0.0.1:${BACKEND_PORT:-8000}:8000"]   # loopback only; host ports set in .env (defaults 8000/3000)
     volumes:
       - ${HOST_REPOS_DIR:-./repos}:/repos     # rw only so "Use sample repo" can clone
       - ./output:/output
@@ -487,8 +489,8 @@ services:
   frontend:
     build:
       context: ./frontend
-      args: { NEXT_PUBLIC_API_URL: "http://localhost:8000" }   # baked at build time
-    ports: ["127.0.0.1:3000:3000"]
+      args: { NEXT_PUBLIC_API_URL: "http://localhost:${BACKEND_PORT:-8000}" }   # baked at build time
+    ports: ["127.0.0.1:${FRONTEND_PORT:-3000}:3000"]
     depends_on: [backend]
 volumes: { gocache: {} }
 ```

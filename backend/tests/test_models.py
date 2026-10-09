@@ -25,7 +25,7 @@ def test_report_public_omits_block_ids():
 def test_job_request_defaults_and_bounds():
     req = JobRequest(repo_path="stats")
     assert req.target_coverage == 80
-    assert req.options.max_iterations == 10
+    assert req.options.max_iterations == 20
     assert req.options.exclude_patterns == ["examples/**", "testdata/**"]
 
 

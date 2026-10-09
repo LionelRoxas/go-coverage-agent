@@ -104,7 +104,7 @@ class TestSnippet(BaseModel):
 
 # --- Jobs ---
 class JobOptions(BaseModel):
-    max_iterations: int = Field(10, ge=1, le=30)
+    max_iterations: int = Field(20, ge=1, le=30)
     min_gain: float = Field(1.0, ge=0, le=10)
     patience: int = Field(2, ge=1, le=5)
     targets_per_iteration: int = Field(3, ge=1, le=5)
