@@ -92,7 +92,7 @@ The loop is plain, testable Python. The LLM only writes and fixes tests. The sam
 2. **Plan.** A deterministic planner ranks files by uncovered statements and picks up to 3 targets per iteration (no planning tokens).
 3. **Write.** The Writer LLM gets a compact context (the functions to test, with lines marked `// UNCOVERED`) and returns new test functions as schema-constrained JSON.
 4. **Merge and validate.** A Go AST helper appends the tests to `<source>_test.go`. The candidate must pass the import guard, `go vet`, and `go test -count=2`, and the set of covered blocks must be a strict superset of the previous one.
-5. **Repair.** Failing assertions are pruned test by test; forgotten imports and unqualified identifiers are fixed mechanically; anything else goes to the Fixer LLM (up to 2 attempts). Rejected candidates are rolled back.
+5. **Repair.** Failing assertions are pruned test by test; forgotten imports, unqualified identifiers and reused test names are fixed mechanically; anything else goes to the Fixer LLM (up to 2 attempts). Rejected candidates are rolled back.
 6. **Stop** on target reached, marginal gains (less than `min_gain` points for `patience` iterations), max iterations, no remaining targets, token budget, or cancel. Artifacts are always written.
 
 **The UI.** The setup page has a **Runs** panel: a live card for a running job (with Cancel) and past runs with before to after coverage. The job page has an "← All runs" link. The header has a System / Light / Dark toggle (remembered per browser) and a **How it works** page. The Spectro Cloud logo in the navbar is there because this is a take-home for Spectro Cloud; it is not a Spectro Cloud product.
@@ -128,6 +128,7 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 | I worried that failing tests were counted toward coverage | Not a bug. A candidate is accepted only if `go test -count=2` passes and coverage is a strict superset; rejected candidates are rolled back | Verified, no change | Final tests of run `ca1beb9a1fdb` re-run in a fresh clone: all pass, 80.1% |
 | `make test` failed in PowerShell | The Makefile used `cat` and `VAR=x cmd`, which `cmd.exe` lacks | Shell-independent Makefile (`$(file <.go-version)`, exported `MSYS_NO_PATHCONV`) with a fallback for macOS make 3.81 | `make test` passes in PowerShell, Git Bash and CI |
 | No way to switch light/dark, no way back to the start page, the running job was only a one-line banner, the navbar looked unfinished, and the app did not explain the loop | UI gaps | System / Light / Dark toggle in the header (remembered per browser), "← All runs" on the job page, a Run history panel on the setup page (live running card with Cancel, past runs with before to after coverage), a redesigned navbar and a How it works page | Screenshots below |
+| semver run stalled at 64.2%: fix attempts failed with 'targets need ~3591 tokens; budget is 2191' and duplicate test names | prompt cap from the free-trial era left the fixer too little room; existing test names were crowded out of the prompt | `MAX_PROMPT_TOKENS` default 4,500 → 12,000 (free-trial keys set 4,500); existing test names now come before optional context; Fixer prompts shrink (first error lines, failing parts, then no code) instead of failing; a reused `Test…` name is renamed to `_2`, `_3`, … without an LLM call; an oversized prompt shows as "Prompt too large (no model call)", not "Model error" | re-run pending |
 
 ## Screenshots
 
@@ -234,6 +235,7 @@ Environment variables (`.env`, see `.env.example`):
 | `GROQ_MAX_COMPLETION_TOKENS` | `65536` | Output-token limit sent with every call; 65536 is the model maximum (empty omits it, and Groq then applies a smaller default) |
 | `CALL_TOKEN_RESERVATION` | 8000 | Tokens reserved per call for rate pacing; lower means more calls/min |
 | `DAILY_TOKEN_BUDGET` | 2,000,000 | Set `190000` on free-trial keys |
+| `MAX_PROMPT_TOKENS` | 12000 | Estimated prompt-size cap per call; set `4500` on free-trial keys (8K tokens/min) |
 | `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only); rebuild after changing |
 | `HOST_REPOS_DIR` | `./repos` | Absolute host path whose subfolders are Go modules |
 
