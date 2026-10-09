@@ -1,6 +1,6 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 GO_IMAGE := golang:$(shell cat .go-version)
-.PHONY: up backend-image test test-go test-backend test-integration test-frontend
+.PHONY: up backend-image test test-go test-backend test-integration test-frontend build-frontend
 up:
 	docker compose up --build
 backend-image:
@@ -14,3 +14,5 @@ test-integration: backend-image
 	docker run --rm gca-backend uv run --no-sync pytest -m integration
 test-frontend:
 	cd frontend && npm ci && npm test
+build-frontend:
+	cd frontend && npm ci && npm run build

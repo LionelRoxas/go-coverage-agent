@@ -175,6 +175,8 @@ make test-integration
 make test-frontend
 ```
 
+CI (`.github/workflows/ci.yml`) runs exactly these make targets, so the Makefile is the single source of truth for the test commands.
+
 Without `make` (Windows / Git Bash). Go is not required on the host; it runs in Docker:
 
 ```bash
