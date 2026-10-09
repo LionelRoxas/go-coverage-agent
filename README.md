@@ -218,7 +218,7 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <tr>
 <td valign="top" width="50%">
 <a href="docs/screenshots/gallery-summary-ai.png"><img src="docs/screenshots/gallery-summary-ai.png" width="100%" alt="The Summary section of a finished stats run on the For stakeholders tab: a headline about coverage rising from 0% to 81.1%, then Outcome, Efficiency with an estimated cost, Risks and Recommendation, with Copy as Markdown and Write again buttons"></a>
-<br><b>AI summary</b><br>Under the summary card, two tabs: For stakeholders (shown: outcome, efficiency with the cost line "Run cost $0.07 · summary $0.0013 · total $0.07", risks, recommendation) and For engineering teams (what was tested, where the tests are, how to run them, gaps, suspected bugs, next steps), with Copy as Markdown (the same text as <code>SUMMARY.md</code>) and Write again. No Groq call was made for this screenshot: the text was written by hand from run <code>e2de1ca387cb</code>'s facts, and a backend test checks that it passes the same grounding check as a real summary.
+<br><b>AI summary</b><br>Under the summary card, two tabs: For stakeholders (shown: outcome, efficiency with the cost line "Run cost $0.0674 · summary $0.0013 · total $0.0688", risks, recommendation) and For engineering teams (what was tested, where the tests are, how to run them, gaps, suspected bugs, next steps), with Copy as Markdown (the same text as <code>SUMMARY.md</code>) and Write again. No Groq call was made for this screenshot: the text was written by hand from run <code>e2de1ca387cb</code>'s facts, and a backend test checks that it passes the same grounding check as a real summary.
 </td>
 <td valign="top" width="50%"></td>
 </tr>
