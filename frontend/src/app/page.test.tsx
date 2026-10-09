@@ -46,6 +46,24 @@ describe("SetupPage", () => {
     localStorage.clear();
   });
 
+  it("opens with a plain headline, one supporting line, a measured result and a How it works link, before step 1", async () => {
+    setup();
+    render(<SetupPage />);
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1).toHaveTextContent("Fill the gaps in a Go project’s tests");
+    const header = h1.closest("header")!;
+    expect(header).toHaveTextContent(
+      "An AI model writes tests for the code no test runs yet. Each one is run for real, and only those that pass and check new code are kept.",
+    );
+    expect(header.textContent).not.toMatch(/autonomously|LLM/);
+    // the proof uses the real run 0e1f8bf7442a (output/0e1f8bf7442a/report.json)
+    expect(within(header).getByRole("img", { name: /22 rounds.*17\.2%.*100%/ })).toBeInTheDocument();
+    expect(header).toHaveTextContent("Measured on montanaflynn/stats: 0% to 100% of the code tested in 22 rounds, about 10 minutes.");
+    expect(within(header).getByRole("link", { name: "How it works" })).toHaveAttribute("href", "/how-it-works");
+    const steps = await screen.findByRole("list", { name: "Steps to start a run" });
+    expect(header.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("warns about a missing Groq key and disables Start", async () => {
     setup({ llm: false });
     render(<SetupPage />);
