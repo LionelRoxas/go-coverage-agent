@@ -11,6 +11,7 @@ _IMPORT_PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*")
 _TEST_FUNC = re.compile(r"^func (Test(?!Main\()[A-Z0-9_]\w*)\(", re.M)
 _KEYWORD = re.compile(r"\b(import|package)\b")
 _DIRECTIVE = re.compile(r"^\s*//go:", re.M)
+_START_PROCESS = re.compile(r"\bStartProcess\b")
 _BUILD_TAG = re.compile(r"^\s*//\s*(go:build|\+build)", re.M)
 
 
@@ -70,6 +71,10 @@ def check_snippet(snippet: TestSnippet, module: str, max_bytes: int = 40_000) ->
     code = snippet.code
     if _KEYWORD.search(_strip_go(code)):
         problems.append("`code` must not contain a package clause or import declarations; list import paths in `imports`")
+    if _START_PROCESS.search(_strip_go(code)):
+        problems.append("`StartProcess` is not allowed in generated tests (tests must not start processes)")
+    if any("/proc/" in text for text, blank in go_segments(code) if blank is None or not text.startswith(("//", "/*"))):
+        problems.append("the path `/proc/` is not allowed in generated tests (tests must not read process state)")
     if _BUILD_TAG.search(code):
         problems.append("build constraints are not allowed")
     if _DIRECTIVE.search(code):

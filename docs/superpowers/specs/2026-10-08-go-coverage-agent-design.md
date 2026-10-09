@@ -119,7 +119,7 @@ The LLM never rewrites a test file. It returns **new test functions plus the imp
 
 ### 3.3 Key choice: no Docker-in-Docker sandbox
 
-The backend container already isolates execution from the host. Untrusted generated test code runs as a non-root user, on a throwaway copy of the repo, with a scrubbed environment, timeouts, process-group kill and an import guard (§10.3). Mounting the Docker socket would give the backend root-equivalent host access on reviewers' Macs, which is worse than what it buys. This is documented as a trade-off, and a per-run sandbox is listed as production follow-up (§11).
+The backend container already isolates execution from the host. Untrusted generated test code runs as a non-root user, on a throwaway copy of the repo, with an env allowlist, timeouts, process-group kill and an import guard (§10.3). Mounting the Docker socket would give the backend root-equivalent host access on reviewers' Macs, which is worse than what it buys. This is documented as a trade-off, and a per-run sandbox is listed as production follow-up (§11).
 
 ---
 
@@ -186,7 +186,7 @@ It's written in Go because Python can't reliably parse Go, and `go/ast` can. It 
 
 `run(argv, cwd, timeout)` uses `asyncio.create_subprocess_exec` with argument lists (never a shell) and `start_new_session=True`. On timeout or cancel it **kills the whole process group** (`os.killpg`), which also stops the test binary that `go` spawned. Output is truncated to a cap.
 
-- **Environment allowlist** (not inherited): `PATH`, `HOME`, `GOCACHE`, `GOMODCACHE`, `GOFLAGS=-mod=readonly`, `GOTOOLCHAIN=local`, `CGO_ENABLED=0`, `GOPROXY` (default), `TMPDIR`. **`GROQ_API_KEY` is never visible to test processes.**
+- **Environment allowlist** (not inherited): `PATH`, `HOME`, `GOCACHE`, `GOMODCACHE`, `GOFLAGS=-mod=readonly`, `GOTOOLCHAIN=local`, `CGO_ENABLED=0`, `GOPROXY` (default), `TMPDIR`. **`GROQ_API_KEY` is never passed to test processes** (code running as the same container user could still read it via `/proc`; see §10.3).
 - `GOTOOLCHAIN=local`: a repo whose `go` directive is newer than the image's Go fails fast with a clear `job_failed` message.
 
 | Wrapper | Command |
@@ -230,7 +230,7 @@ Formatting needs no separate step: `gohelper merge` writes `go/format` output, a
 ### 5.8 `jobs` and `events`
 
 - `Job`: id, inputs, status (`running|completed|failed|cancelled`), ordered `events`, latest `CoverageReport`, `Summary`.
-- `Event`: `{seq, ts, type, data}`. Types: `job_started`, `workspace_ready`, `baseline_measured`, `iteration_started`, `plan_created`, `llm_call`, `rate_limited`, `candidate_generated`, `validation_result`, `tests_pruned`, `mechanical_repair` (`{index, file, repair}`), `fix_attempt`, `candidate_accepted`, `candidate_rejected`, `iteration_completed`, `job_completed`, `job_failed`, `job_cancelled`. `validation_result.kind` can be `llm_error`, with the LLM error text in `output`.
+- `Event`: `{seq, ts, type, data}`. Types: `job_started`, `workspace_ready`, `baseline_measured`, `iteration_started`, `plan_created`, `llm_call`, `rate_limited`, `candidate_generated`, `validation_result`, `tests_pruned`, `mechanical_repair` (`{index, file, repair, description}`), `fix_attempt`, `candidate_accepted`, `candidate_rejected`, `iteration_completed`, `job_completed`, `job_failed`, `job_cancelled`. `validation_result.kind` can be `llm_error`, with the LLM error text in `output`.
 - `JobManager`: in-memory, **one running job at a time** (409 otherwise). Each job is an `asyncio.Task`. Cancel sets a flag checked before every LLM call and command, and kills the active process group.
 - On finish, write `OUTPUT_DIR/<job_id>/`: the accepted `_test.go` files (repo-relative paths), `report.json`, `events.jsonl`. The UI shows this host path (`./output/<job_id>`) so users can copy the tests into their repo.
 - **SSE:** `GET /api/jobs/{id}/events` always replays from seq 0, then tails. The client reducer ignores already-seen `seq`. That makes reconnects and refreshes safe without `Last-Event-ID`.
@@ -518,12 +518,12 @@ volumes: { gocache: {} }
 ### 10.3 Execution safety (generated code is untrusted)
 
 - Runs inside the container as non-root, never on the host. Only the workspace copy is executed or modified.
-- **Scrubbed environment allowlist:** the API key isn't visible to tests.
+- **Environment allowlist:** the API key is not passed to test processes. Code running as the same container user could still read it via `/proc`, so the guard also rejects `StartProcess` and `/proc/` in generated code (a speed bump, not a sandbox).
 - **Import guard:** the snippet may import only standard library packages and the module's own packages. These are denied: `os/exec`, `net`, `net/*`, `syscall`, `unsafe`, `plugin`, `runtime/debug`.
 - Timeouts at two levels (`-timeout=60s`, process 120s), with process-group kill and output caps.
 - Only fixed commands run; the LLM can't choose commands.
 - Ports bound to loopback only.
-- **Documented residual risk:** a test could still read files inside the container via `os`. Production hardening (a per-run sandbox with gVisor/Firecracker, no network) is in §11.
+- **Documented residual risk:** a test could still read files inside the container via `os` (including the backend's environment via `/proc`) and start processes. The real fix is a per-job sandbox with a separate uid. Production hardening (a per-run sandbox with gVisor/Firecracker, no network) is in §11.
 
 ### 10.4 `.env.example`
 

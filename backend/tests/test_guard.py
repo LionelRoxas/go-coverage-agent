@@ -65,3 +65,18 @@ def test_testmain_and_lowercase_not_test_functions():
     assert test_names("func TestMain(m *testing.M) {}\nfunc TestA(t *testing.T) {}") == ["TestA"]
     assert test_names("func Testlower(t *testing.T) {}") == []
     assert check_snippet(snip(code="func TestMain(m *testing.M) {}"), MOD)
+
+
+def test_start_process_identifier_rejected_but_not_in_comments_or_strings():
+    bad = snip(code="func TestX(t *testing.T) { os.StartProcess(\"x\", nil, nil) }")
+    assert any("StartProcess" in p for p in check_snippet(bad, MOD))
+    ok = snip(code="// os.StartProcess is banned" + chr(10) + "func TestX(t *testing.T) { _ = \"StartProcess\" }")
+    assert not check_snippet(ok, MOD)
+
+
+def test_proc_path_rejected_in_string_literals_but_not_comments():
+    for lit in ('"/proc/self/environ"', "`/proc/1/environ`"):
+        bad = snip(code=f"func TestX(t *testing.T) {{ _ = {lit} }}")
+        assert any("/proc/" in p for p in check_snippet(bad, MOD)), lit
+    ok = snip(code="// never read /proc/self" + chr(10) + "func TestX(t *testing.T) {}")
+    assert not check_snippet(ok, MOD)
