@@ -38,6 +38,17 @@ def estimate_tokens(text: str) -> int:
     return math.ceil(len(text) / 3.5)
 
 
+def _retry_after(headers: Any) -> float:
+    """Seconds from a Retry-After header; 60s when missing, unparseable (e.g. an HTTP-date), or non-finite."""
+    try:
+        value = float(headers.get("retry-after", "60"))
+    except (TypeError, ValueError):
+        return 60.0
+    if not math.isfinite(value):
+        return 60.0
+    return max(0.0, value)
+
+
 class LLMClient(Protocol):
     async def complete(self, *, role: str, system: str, user: str, schema: type[T]) -> tuple[T, TokenUsage]: ...
 
@@ -58,26 +69,34 @@ class GroqLLM:
     async def _wait(self, seconds: float, reason: str) -> None:
         if self._emit:
             await self._emit("rate_limited", {"seconds": round(seconds, 1), "reason": reason})
+        await self._sleep_cancellable(seconds)
+
+    async def _sleep_cancellable(self, seconds: float) -> None:
         if self._cancel is None:
             await self._sleep(seconds)
             return
-        try:  # wake up immediately if the user cancels during a long rate-limit pause
+        try:  # wake up immediately if the user cancels during a pause
             await asyncio.wait_for(self._cancel.wait(), timeout=seconds)
         except asyncio.TimeoutError:
             return
-        raise LLMCancelled("cancelled while waiting for the rate limit")
+        raise LLMCancelled("cancelled while waiting")
 
     async def _request(self, **kwargs: Any) -> Any:
         call = asyncio.ensure_future(self._client.chat.completions.with_raw_response.create(**kwargs))
         if self._cancel is None:
             return await call
         stop = asyncio.ensure_future(self._cancel.wait())
-        done, _ = await asyncio.wait({call, stop}, return_when=asyncio.FIRST_COMPLETED)
-        if call in done:
-            stop.cancel()
-            return call.result()
-        call.cancel()
-        raise LLMCancelled("cancelled during an LLM request")
+        try:
+            done, _ = await asyncio.wait({call, stop}, return_when=asyncio.FIRST_COMPLETED)
+            if call in done:
+                return call.result()
+            raise LLMCancelled("cancelled during an LLM request")
+        finally:
+            pending = [t for t in (call, stop) if not t.done()]
+            for t in pending:
+                t.cancel()
+            if pending:  # let the cancelled tasks finish so none are left orphaned
+                await asyncio.wait(pending)
 
     async def complete(self, *, role: str, system: str, user: str, schema: type[T]) -> tuple[T, TokenUsage]:
         prompt_tokens = estimate_tokens(system) + estimate_tokens(user)
@@ -110,7 +129,7 @@ class GroqLLM:
             except groq.AuthenticationError as e:
                 raise LLMFatal("Groq rejected the API key (401). Check GROQ_API_KEY in .env.") from e
             except groq.RateLimitError as e:
-                retry_after = float(e.response.headers.get("retry-after", "60"))
+                retry_after = _retry_after(e.response.headers)
                 if retry_after > self.MAX_RETRY_AFTER_S or rate_retries >= self.MAX_RATE_RETRIES:
                     raise LLMBudgetExhausted(
                         f"Groq asked us to wait {retry_after:.0f}s, which usually means the daily token cap was hit."
@@ -122,13 +141,17 @@ class GroqLLM:
                 if net_retries >= self.MAX_NET_RETRIES:
                     raise LLMError(f"Groq is unreachable: {e}") from e
                 net_retries += 1
-                await self._sleep(2.0 ** net_retries)
+                await self._sleep_cancellable(2.0 ** net_retries)
                 continue
             except groq.APIStatusError as e:
                 raise LLMError(f"Groq returned {e.status_code}: {e.message}") from e
 
             self.limiter.update(raw.headers)
-            completion = raw.parse()
+            completion = await raw.parse()
+            if not completion.choices:
+                raise LLMError("Groq returned no choices")
+            if completion.usage is None:
+                raise LLMError("Groq response carried no usage data")
             usage = TokenUsage(prompt_tokens=completion.usage.prompt_tokens,
                                completion_tokens=completion.usage.completion_tokens)
             spent = spent.add(usage)

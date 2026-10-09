@@ -31,7 +31,7 @@ class Completion:
 
 class Raw:
     def __init__(self, completion, headers=None): self._c, self.headers = completion, headers or {}
-    def parse(self): return self._c
+    async def parse(self): return self._c  # the real AsyncAPIResponse.parse is a coroutine
 
 
 def http_error(cls, status, headers=None):
@@ -54,6 +54,9 @@ class FakeGroq:
         if isinstance(item, Exception):
             raise item
         return item
+
+
+async def _no_sleep(seconds): return None
 
 
 def make(tmp_path, script, events=None):
@@ -139,3 +142,66 @@ async def test_oversized_prompt_rejected(tmp_path):
     llm, _, _ = make(tmp_path, [])
     with pytest.raises(LLMError, match="prompt"):
         await llm.complete(role="writer", system="s", user="x" * 20_000, schema=Out)
+
+
+async def test_http_date_retry_after_falls_back_to_60s(tmp_path):
+    llm, _, slept = make(tmp_path, [http_error(groq.RateLimitError, 429, {"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}),
+                                    Raw(Completion('{"answer": "ok"}', "stop"))])
+    out, _ = await call(llm)
+    assert out.answer == "ok" and slept == [60.0]
+
+
+async def test_network_errors_back_off_then_fail(tmp_path):
+    req = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    script = [groq.APIConnectionError(request=req) for _ in range(4)]
+    llm, fake, slept = make(tmp_path, script)
+    with pytest.raises(LLMError, match="unreachable"):
+        await call(llm)
+    assert len(fake.calls) == 4 and slept == [2.0, 4.0, 8.0]
+
+
+async def test_higher_effort_truncation_retries_once_at_low(tmp_path):
+    fake = FakeGroq([Raw(Completion("{", "length")), Raw(Completion('{"answer": "ok"}', "stop"))])
+    llm = GroqLLM(Settings(groq_api_key="k", groq_reasoning_effort="medium"),
+                  UsageLedger(tmp_path / "u.json", 190_000), RateLimiter(),
+                  client=fake, sleep=_no_sleep)
+    out, usage = await call(llm)
+    assert out.answer == "ok"
+    assert [c["reasoning_effort"] for c in fake.calls] == ["medium", "low"]
+    assert usage.total == 300 and llm.ledger.used_today() == 300
+
+
+async def test_missing_choices_is_llm_error(tmp_path):
+    empty = Completion('{"answer": "x"}', "stop")
+    empty.choices = []
+    llm, _, _ = make(tmp_path, [Raw(empty)])
+    with pytest.raises(LLMError, match="no choices"):
+        await call(llm)
+
+
+async def test_cancel_during_hanging_request_leaves_no_tasks(tmp_path):
+    import asyncio
+    from app.llm.client import LLMCancelled
+
+    class Hanging:
+        def __init__(self):
+            self.cancelled = False
+            self.chat = self.completions = self.with_raw_response = self
+
+        async def create(self, **kwargs):
+            try:
+                await asyncio.Event().wait()  # never fires
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+
+    cancel = asyncio.Event()
+    fake = Hanging()
+    llm = GroqLLM(Settings(groq_api_key="k"), UsageLedger(tmp_path / "u.json", 190_000), RateLimiter(),
+                  client=fake, cancel=cancel)
+    asyncio.get_running_loop().call_later(0.05, cancel.set)
+    with pytest.raises(LLMCancelled):
+        await asyncio.wait_for(call(llm), timeout=2)
+    assert fake.cancelled
+    others = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    assert others == []
