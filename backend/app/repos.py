@@ -86,9 +86,7 @@ def list_repos(repos_dir: Path) -> list[RepoInfo]:
 
 
 async def clone_sample(settings: Settings, sample_id: str = "stats") -> RepoInfo:
-    sample = SAMPLES.get(sample_id)
-    if sample is None:
-        raise KeyError(sample_id)
+    sample = SAMPLES[sample_id]
     async with _clone_lock:
         return await _clone_sample_locked(settings, sample)
 
@@ -114,7 +112,7 @@ async def _clone_sample_locked(settings: Settings, sample: Sample) -> RepoInfo:
         argv = ["git", "clone", "--depth", "1"]
         if sample.ref:
             argv += ["--branch", sample.ref]
-        argv += ["--no-recurse-submodules", sample.url, str(dest)]
+        argv += ["--no-recurse-submodules", "--", sample.url, str(dest)]
         try:
             r = await run(argv, cwd=settings.repos_dir, timeout=120, env=env)
         except OSError as e:

@@ -45,7 +45,7 @@ If `.env` is missing or has no key, the stack still starts and the UI shows a "N
 
 The Repository section of the setup page has two tabs.
 
-**Sample repos** lists six small, dependency-free Go libraries. Click one and it is downloaded into `./repos/<id>` (shallow clone of a pinned release tag, no submodules), then selected. Nothing else is fetched.
+**Sample repos** lists six small, dependency-free Go libraries. Click one and it is downloaded into `./repos/<id>` (shallow clone of a pinned release tag, no submodules; stats: default branch, the assessment's evaluation repo), then selected. Nothing else is fetched.
 
 | Sample | What it is | Licence |
 |---|---|---|
@@ -138,10 +138,6 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <br><b>Setup page: sample repos and Run history</b><br>The Sample repos tab with six cards (Ready or Download, licence, pinned tag), one selected, the one-line Selected summary, a closed Advanced options row, and the separate Run history panel on the right. The navbar link is New run.
 </td>
 <td valign="top">
-<a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Your folders tab with a user module, the mounted folder path and the Add your own repository note with a HOST_REPOS_DIR line"></a>
-<br><b>Your folders</b><br>Modules found in the mounted folder, a Refresh button, and the steps for adding your own repository, with a copyable <code>HOST_REPOS_DIR</code> line.
-</td>
-<td valign="top">
 <a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="Setup page and Run history panel in the dark theme"></a>
 <br><b>Dark theme</b><br>The same page in the dark theme.
 </td>
@@ -170,6 +166,10 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <td valign="top">
 <a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Header, coverage meter and summary card for the 80.5 percent run"></a>
 <br><b>Run summary</b><br>Header, coverage meter with the 80% target marker, and the summary card: stop reason, coverage 0.0% to 80.5%, 135 tests added in 34 test files, 4m 47s, 184.9k tokens.
+</td>
+<td valign="top">
+<a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Your folders tab with a user module, the mounted folder path and the Add your own repository note with a HOST_REPOS_DIR line"></a>
+<br><b>Your folders</b><br>Modules found in the mounted folder, a Refresh button, and the steps for adding your own repository, with a copyable <code>HOST_REPOS_DIR</code> line.
 </td>
 </tr>
 <tr>

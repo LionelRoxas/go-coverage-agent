@@ -52,6 +52,23 @@ describe("RepoPicker", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /o\/decimal/ })).toBeEnabled());
   });
 
+  it("ignores a second click on the downloading card and keeps every card disabled", async () => {
+    const user = userEvent.setup();
+    const onDownload = vi.fn(() => new Promise<void>(() => {}));
+    render(<Harness onDownload={onDownload} />);
+    const card = screen.getByRole("button", { name: /o\/btree/ });
+    await user.dblClick(card);
+    expect(onDownload).toHaveBeenCalledTimes(1);
+    expect(card).toBeDisabled();
+    expect(screen.getByRole("button", { name: /o\/semver/ })).toBeDisabled();
+  });
+
+  it("only the active tab references a panel", () => {
+    render(<Harness />);
+    expect(screen.getByRole("tab", { name: "Sample repos" })).toHaveAttribute("aria-controls", "panel-samples");
+    expect(screen.getByRole("tab", { name: "Your folders" })).not.toHaveAttribute("aria-controls");
+  });
+
   it("has tablist semantics and moves between tabs with the arrow keys", async () => {
     const user = userEvent.setup();
     render(<Harness />);

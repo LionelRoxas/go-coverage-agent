@@ -135,4 +135,26 @@ describe("SetupPage", () => {
     render(<SetupPage />);
     expect(await screen.findByRole("tab", { name: "Sample repos" })).toHaveAttribute("aria-selected", "true");
   });
+
+  it("still loads health and folders when the sample list fails", async () => {
+    setup({ repos: [repo, { ...repo, path: "mine", module: "example.com/mine" }] });
+    mocked.samples.mockRejectedValue(new ApiError(404, "http_error", "Not Found"));
+    render(<SetupPage />);
+    expect(await screen.findByText("m")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Sample repos" }));
+    expect(screen.getByText(/Sample list unavailable/)).toBeInTheDocument();
+  });
+
+  it("selects a downloaded sample even if the reload afterwards fails", async () => {
+    setup({ repos: [repo], samples: sampleList() });
+    mocked.downloadSample.mockResolvedValue({ ...repo, path: "semver" });
+    const user = userEvent.setup();
+    render(<SetupPage />);
+    const card = await screen.findByRole("button", { name: /o\/semver/ });
+    mocked.repos.mockRejectedValue(new Error("down"));
+    await user.click(card);
+    await waitFor(() => expect(mocked.downloadSample).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(card).toHaveAttribute("aria-busy", "false");
+  });
 });

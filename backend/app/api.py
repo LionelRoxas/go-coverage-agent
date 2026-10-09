@@ -10,7 +10,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.jobs import Job, JobConflict, JobManager, JobRejected
 from app.models import JobRequest
-from app.repos import clone_sample, list_repos, list_samples
+from app.repos import SAMPLES, clone_sample, list_repos, list_samples
 from app.workspace import WorkspaceError, resolve_repo
 
 router = APIRouter(prefix="/api")
@@ -54,10 +54,10 @@ async def samples(request: Request) -> list[dict]:
 
 
 async def _download(request: Request, sample_id: str) -> dict:
+    if sample_id not in SAMPLES:
+        raise ApiError(404, "unknown_sample", f"No sample repository {sample_id!r}.")
     try:
         return (await clone_sample(request.app.state.settings, sample_id)).model_dump()
-    except KeyError:
-        raise ApiError(404, "unknown_sample", f"No sample repository {sample_id!r}.") from None
     except RuntimeError as e:
         raise ApiError(502, "clone_failed", str(e)) from e
 

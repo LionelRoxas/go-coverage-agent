@@ -131,7 +131,7 @@ async def test_clone_command_arguments(tmp_path, monkeypatch):
     monkeypatch.setattr("app.repos.run", fake)
     info = await clone_sample(settings, "semver")
     assert info.path == "semver"
-    assert seen["argv"] == ["git", "clone", "--depth", "1", "--branch", SAMPLES["semver"].ref, "--no-recurse-submodules",
+    assert seen["argv"] == ["git", "clone", "--depth", "1", "--branch", SAMPLES["semver"].ref, "--no-recurse-submodules", "--",
                             "https://github.com/Masterminds/semver", str(settings.repos_dir / "semver")]
     assert seen["env"]["GIT_TERMINAL_PROMPT"] == "0" and set(seen["env"]) == {"PATH", "HOME", "GIT_TERMINAL_PROMPT"}
 

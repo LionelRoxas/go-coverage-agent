@@ -433,7 +433,7 @@ All under `/api`, JSON, Pydantic-validated. Errors: `{"error": {"code", "message
 | `GET /api/health` | `{status, go_version, model, llm_configured, tokens_left_today, storage_writable, host_repos_dir}` (`host_repos_dir` is display only, from `HOST_REPOS_DIR_DISPLAY`) |
 | `GET /api/repos` | Directories under `/repos` (depth ≤2) containing `go.mod`: `[{path, module, go_files, test_files}]` |
 | `GET /api/repos/samples` | The curated sample allowlist: `[{id, name, description, license, ref, path, downloaded}]` |
-| `POST /api/repos/samples/{id}` | Shallow-clones that sample (pinned release tag, no submodules) into `/repos/<id>` if absent and returns the entry. Unknown id: 404 `unknown_sample`. Refuses a `go.mod` that has `require` lines |
+| `POST /api/repos/samples/{id}` | Shallow-clones that sample (pinned release tags, no submodules; stats: default branch, the assessment's evaluation repo) into `/repos/<id>` if absent and returns the entry. Unknown id: 404 `unknown_sample`. Refuses a `go.mod` that has `require` lines |
 | `POST /api/repos/sample` | Alias for `POST /api/repos/samples/stats` |
 | `POST /api/jobs` | `{repo_path, target_coverage, options?}` → `201 {job_id}`. 400 for invalid input or missing key, 409 if a job is running, 429 if the daily budget is too low |
 | `GET /api/jobs` | Jobs in the current process |

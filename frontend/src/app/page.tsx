@@ -39,23 +39,27 @@ export default function SetupPage() {
   const [busy, setBusy] = useState(false);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [tab, setTab] = useState<PickerTab>("samples");
+  const [samplesFailed, setSamplesFailed] = useState(false);
 
   const sampleIds = new Set(samples.map((s) => s.id));
   const folders = repos.filter((r) => !sampleIds.has(r.path));
   const selected = repos.find((r) => r.path === repo);
 
   useEffect(() => {
-    Promise.all([api.health(), api.repos(), api.samples()])
-      .then(([h, r, s]) => {
-        const ids = new Set(s.map((x) => x.id));
-        const own = r.filter((x) => !ids.has(x.path));
-        setHealth(h);
-        setRepos(r);
-        setSamples(s);
-        setTab(pickTab(own));
-        setRepo((cur) => cur || own[0]?.path || r[0]?.path || "");
-      })
-      .catch((e) => setError(e.message));
+    Promise.allSettled([api.health(), api.repos(), api.samples()]).then(([h, r, s]) => {
+      const list = r.status === "fulfilled" ? r.value : [];
+      const sampleList = s.status === "fulfilled" ? s.value : [];
+      const ids = new Set(sampleList.map((x) => x.id));
+      const own = list.filter((x) => !ids.has(x.path));
+      if (h.status === "fulfilled") setHealth(h.value);
+      setRepos(list);
+      setSamples(sampleList);
+      setSamplesFailed(s.status === "rejected");
+      setTab(pickTab(own));
+      setRepo((cur) => cur || own[0]?.path || list[0]?.path || "");
+      const failed = [h, r].find((x) => x.status === "rejected");
+      if (failed && failed.status === "rejected") setError((failed.reason as Error).message);
+    });
   }, []);
 
   function changeTab(t: PickerTab) {
@@ -77,8 +81,12 @@ export default function SetupPage() {
 
   async function download(id: string) {
     const info = await api.downloadSample(id);
-    await reload();
     setRepo(info.path);
+    try {
+      await reload();
+    } catch {
+      // the clone succeeded; the lists refresh on the next Refresh
+    }
   }
 
   async function start(e: React.FormEvent) {
@@ -113,7 +121,7 @@ export default function SetupPage() {
           </div>
         )}
         <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
-                    onDownload={download} onRefresh={reload} hostDir={health?.host_repos_dir ?? null} />
+                    onDownload={download} onRefresh={reload} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
         <p className="text-sm text-muted">
           {selected ? (
             <>Selected: <span className="font-mono text-text">{selected.path}</span> · <span className="font-mono">{selected.module}</span> · {selected.go_files} source files</>

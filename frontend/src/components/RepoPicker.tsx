@@ -22,6 +22,7 @@ type Props = {
   onDownload: (id: string) => Promise<void>;
   onRefresh: () => Promise<void>;
   hostDir: string | null;
+  samplesFailed?: boolean;
 };
 
 const cardCls = (selected: boolean) =>
@@ -38,7 +39,7 @@ function SampleCard({ sample, selected, busy, anyBusy, error, onPick }: {
 }) {
   return (
     <li>
-      <button type="button" onClick={onPick} disabled={anyBusy && !busy} aria-pressed={selected} className={cardCls(selected)}>
+      <button type="button" onClick={onPick} disabled={anyBusy} aria-busy={busy} aria-pressed={selected} className={cardCls(selected)}>
         <span className="flex items-start justify-between gap-2">
           <span className="min-w-0 break-all font-mono text-sm font-medium">{sample.name}</span>
           {busy ? (
@@ -78,13 +79,14 @@ function CopyLine({ text }: { text: string }) {
   );
 }
 
-export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange, onDownload, onRefresh, hostDir }: Props) {
+export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange, onDownload, onRefresh, hostDir, samplesFailed }: Props) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const tabRefs = useRef<Record<PickerTab, HTMLButtonElement | null>>({ samples: null, folders: null });
 
   async function pick(s: Sample) {
+    if (downloading) return;
     if (s.downloaded) {
       onChange(s.path);
       return;
@@ -130,7 +132,7 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
           const active = t.id === tab;
           return (
             <button key={t.id} ref={(el) => { tabRefs.current[t.id] = el; }} type="button" role="tab" id={`tab-${t.id}`}
-                    aria-selected={active} aria-controls={`panel-${t.id}`} tabIndex={active ? 0 : -1}
+                    aria-selected={active} aria-controls={active ? `panel-${t.id}` : undefined} tabIndex={active ? 0 : -1}
                     onClick={() => onTabChange(t.id)}
                     className={`relative -mb-px px-3 py-2 text-sm transition-colors ${active ? "font-medium text-text" : "text-muted hover:text-text"}`}>
               {t.label}
@@ -145,6 +147,11 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
           <p className="text-xs leading-relaxed text-muted">
             Small open-source Go libraries with no dependencies. Picking one downloads it into <code className="font-mono">./repos</code> the first time.
           </p>
+          {samplesFailed && (
+            <p role="status" className="rounded-sm border border-dashed border-border px-3 py-3 text-sm text-muted">
+              Sample list unavailable (rebuild the backend?). Your folders still work.
+            </p>
+          )}
           <ul className="grid gap-2 sm:grid-cols-2">
             {samples.map((s) => (
               <SampleCard key={s.id} sample={s} selected={value === s.path} busy={downloading === s.id}
