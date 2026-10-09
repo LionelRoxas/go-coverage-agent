@@ -234,7 +234,7 @@ Environment variables (`.env`, see `.env.example`):
 | `GROQ_REASONING_EFFORT` | `low` | `low`, `medium` or `high` |
 | `GROQ_MAX_COMPLETION_TOKENS` | `65536` | Output-token limit sent with every call; 65536 is the model maximum (empty omits it, and Groq then applies a smaller default) |
 | `CALL_TOKEN_RESERVATION` | 16000 | Tokens reserved per call for rate pacing; keep it at least `MAX_PROMPT_TOKENS` plus the expected answer (`8000` on free-trial keys); lower means more calls/min |
-| `DAILY_TOKEN_BUDGET` | 2,000,000 | Set `190000` on free-trial keys |
+| `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily cap (not a Groq limit), counted in `output/.usage.json` and reset at midnight UTC. Raise it freely on a paid key; set `190000` on free-trial keys |
 | `MAX_PROMPT_TOKENS` | 12000 | Estimated prompt-size cap per call; set `4500` on free-trial keys (8K tokens/min) |
 | `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only); rebuild after changing |
 | `HOST_REPOS_DIR` | `./repos` | Absolute host path whose subfolders are Go modules |

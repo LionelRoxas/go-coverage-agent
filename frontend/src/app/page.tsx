@@ -169,7 +169,7 @@ export default function SetupPage() {
           <li>Existing <code className="font-mono">_test.go</code> files are removed from a working copy. Your repository is never modified.</li>
           <li>Source code of the selected repository is sent to Groq.</li>
           {health && <li>Tests are written by <span className="font-mono">{health.model}</span> on Groq.</li>}
-          {health && <li>About <span className="font-mono">{tokens(health.tokens_left_today)}</span> Groq tokens left today on this machine.</li>}
+          {health && <li>About <span className="font-mono">{tokens(health.tokens_left_today)}</span> tokens left in today&apos;s budget (<code className="font-mono">DAILY_TOKEN_BUDGET</code> in <code className="font-mono">.env</code>, resets at midnight UTC). This is the app&apos;s own cap, not a Groq limit.</li>}
         </ul>
 
         {error && <p role="alert" className="text-sm text-danger">{error}</p>}
