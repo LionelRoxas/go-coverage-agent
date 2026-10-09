@@ -1,4 +1,4 @@
-# AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 # Debian (glibc) rather than Alpine: Tailwind v4 / lightningcss native binaries in a lockfile made on
 # Windows may lack the musl variants, which breaks `npm run build` on Mac ARM.
 FROM node:22-bookworm-slim AS deps

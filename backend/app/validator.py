@@ -1,4 +1,4 @@
-# AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 """Decides whether a candidate test snippet is kept: guard → merge → compile → vet → test → coverage."""
 from __future__ import annotations
 

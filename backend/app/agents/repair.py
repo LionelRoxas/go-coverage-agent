@@ -1,4 +1,4 @@
-# AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 """Free, deterministic repairs for the compile errors LLMs make most often. Costs no tokens.
 
 Run 1 on `stats`: 10 of the 13 fixer calls (about 46K tokens) answered `undefined: errors|math|sort|...`

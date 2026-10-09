@@ -1,4 +1,4 @@
-# AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 from app.agents.context import ContextInputs
 from app.agents.llm_agents import Agents
 from app.llm.client import estimate_tokens

@@ -1,4 +1,4 @@
-// AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+// AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
 import { useState } from "react";
 import { duration, pct, STOP_REASON_LABEL, tokens } from "@/lib/format";

@@ -1,3 +1,4 @@
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 GO_IMAGE := golang:$(shell cat .go-version)
 .PHONY: up backend-image test test-go test-backend test-integration test-frontend
 up:

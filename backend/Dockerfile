@@ -1,4 +1,4 @@
-# AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 ARG GO_IMAGE=golang:1.27-bookworm
 FROM ${GO_IMAGE} AS go
 WORKDIR /src

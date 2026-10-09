@@ -1,4 +1,4 @@
-# AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 """One real Groq Writer call against a repo, to measure tokens and latency. Run inside the backend image."""
 import asyncio
 import sys

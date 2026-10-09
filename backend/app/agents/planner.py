@@ -1,4 +1,4 @@
-# AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 """Chooses what to test next. Deterministic on purpose: it costs no LLM tokens and is easy to test."""
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-// AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+// AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // Pure reducer: the same code handles live events and replay after a refresh or reconnect.
 import type { CoverageReport, JobEvent, Scenario, Summary } from "./types";
 

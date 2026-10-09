@@ -1,4 +1,4 @@
-// AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+// AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import Link from "next/link";
