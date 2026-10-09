@@ -3,7 +3,18 @@
 import type { CoverageReport, JobEvent, Scenario, Summary } from "./types";
 
 export type ItemStatus = "writing" | "validating" | "fixing" | "accepted" | "rejected";
-export type Attempt = { kind: string; output: string; failedTests: string[] };
+
+// What checking one version of the test code found (validation_result).
+export type Check = { kind: string; output: string; failedTests: string[] };
+// Where one version of the test code came from.
+export type StepSource =
+  | { type: "writer"; outputTokens?: number }
+  | { type: "auto_fix"; description: string }
+  | { type: "prune"; tests: string[]; kept?: number }
+  | { type: "llm_fix"; attempt: number; max?: number; given: string; givenStep?: number; outputTokens?: number };
+// One attempt: a version of the test code plus the result of checking it (no check yet while it runs).
+export type Step = { source: StepSource; code?: string; testCount?: number; check?: Check };
+
 export type ItemView = {
   file: string;
   functions: string[];
@@ -11,11 +22,13 @@ export type ItemView = {
   status: ItemStatus;
   testPlan: Scenario[];
   code?: string;
-  attempts: Attempt[];
-  pruned: string[];
+  steps: Step[];
   tests: string[];
   gain?: number;
+  percentBefore?: number;
+  percentAfter?: number;
   rejectReason?: string;
+  writerTokens?: number; // the writer's llm_call arrives just before its candidate_generated
 };
 export type IterationView = { index: number; startPercent: number; endPercent?: number; items: ItemView[] };
 export type RunState = {
@@ -25,6 +38,7 @@ export type RunState = {
   model?: string;
   startedAt?: number;
   target: number;
+  maxFixAttempts?: number;
   removedTests: string[];
   baseline?: CoverageReport;
   percent: number;
@@ -62,6 +76,27 @@ function nextWriting(s: RunState, index: number): string {
   return next ? `Writing tests for ${next.file}…` : s.activity;
 }
 
+const countTests = (code: string) => (code.match(/^func Test\w*\s*\(/gm) ?? []).length;
+const last = <T>(xs: T[]): T | undefined => xs[xs.length - 1];
+const withLast = (steps: Step[], fn: (st: Step) => Step) => [...steps.slice(0, -1), fn(steps[steps.length - 1])];
+
+// A new candidate fills the step waiting for code (auto-fix, LLM fix); otherwise it is the writer's first version.
+function addCode(i: ItemView, code: string): ItemView {
+  const prev = last(i.steps);
+  const testCount = countTests(code) || undefined;
+  if (prev && !prev.check && prev.code == null && prev.source.type !== "prune")
+    return { ...i, steps: withLast(i.steps, (st) => ({ ...st, code, testCount })) };
+  return { ...i, writerTokens: undefined,
+           steps: [...i.steps, { source: { type: "writer", outputTokens: i.writerTokens }, code, testCount }] };
+}
+
+function addCheck(i: ItemView, check: Check): ItemView {
+  const prev = last(i.steps);
+  if (prev && !prev.check) return { ...i, steps: withLast(i.steps, (st) => ({ ...st, check })) };
+  // a check with no version before it: the writer's request failed (or an old log missed the candidate)
+  return { ...i, steps: [...i.steps, { source: { type: "writer", outputTokens: i.writerTokens }, check }] };
+}
+
 export type RunAction = JobEvent | { type: "reset" };
 
 export function reduce(state: RunState, ev: RunAction): RunState {
@@ -72,7 +107,7 @@ export function reduce(state: RunState, ev: RunAction): RunState {
   switch (ev.type) {
     case "job_started":
       return { ...s, status: "running", repoPath: d.repo_path, model: d.model, target: d.target_coverage,
-               startedAt: ev.ts, activity: "Preparing a working copy…" };
+               maxFixAttempts: d.options?.max_fix_attempts, startedAt: ev.ts, activity: "Preparing a working copy…" };
     case "workspace_ready":
       return { ...s, removedTests: d.removed_tests, activity: "Measuring baseline coverage…" };
     case "baseline_measured":
@@ -87,30 +122,50 @@ export function reduce(state: RunState, ev: RunAction): RunState {
           ...it,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           items: d.items.map((i: any) => ({ file: i.file, functions: i.functions, uncovered: i.uncovered_statements,
-                                            status: "writing", testPlan: [], attempts: [], pruned: [], tests: [] })),
+                                            status: "writing", testPlan: [], steps: [], tests: [] })),
         })),
         activity: d.items.length ? `Writing tests for ${d.items[0].file}…` : s.activity,
       };
-    case "llm_call":
-      return { ...s, tokens: d.total_tokens };
+    case "llm_call": {
+      const next = { ...s, tokens: d.total_tokens };
+      if (d.role === "writer") return withItem(next, d.index, d.file, (i) => ({ ...i, writerTokens: d.completion_tokens }));
+      if (d.role !== "fixer") return next;
+      return withItem(next, d.index, d.file, (i) => {
+        const prev = last(i.steps);
+        if (prev?.source.type !== "llm_fix" || prev.code != null) return i;
+        const source = { ...prev.source, outputTokens: d.completion_tokens };
+        return { ...i, steps: withLast(i.steps, (st) => ({ ...st, source })) };
+      });
+    }
     case "rate_limited":
       return { ...s, activity: `Waiting ${Math.round(d.seconds)}s for the Groq rate limit (${d.reason === "tpm" ? "tokens per minute" : "HTTP 429"})…` };
     case "candidate_generated":
-      return { ...withItem(s, d.index, d.file, (i) => ({ ...i, status: "validating", testPlan: d.test_plan, code: d.code })),
+      return { ...withItem(s, d.index, d.file, (i) => ({ ...addCode(i, d.code ?? ""), status: "validating",
+                                                          testPlan: d.test_plan ?? i.testPlan, code: d.code })),
                activity: `Compiling and running tests for ${d.file}…` };
     case "validation_result":
-      return d.kind === "accepted" ? s : withItem(s, d.index, d.file, (i) => ({
-        ...i, attempts: [...i.attempts, { kind: d.kind, output: d.output, failedTests: d.failed_tests }] }));
+      return withItem(s, d.index, d.file, (i) =>
+        addCheck(i, { kind: d.kind, output: d.output ?? "", failedTests: d.failed_tests ?? [] }));
     case "mechanical_repair":
       return withItem(s, d.index, d.file, (i) => ({
-        ...i, attempts: [...i.attempts, { kind: "mechanical_repair", output: d.description ?? "", failedTests: [] }] }));
+        ...i, steps: [...i.steps, { source: { type: "auto_fix", description: d.description ?? "" } }] }));
     case "tests_pruned":
-      return withItem(s, d.index, d.file, (i) => ({ ...i, pruned: [...i.pruned, ...d.tests] }));
+      return withItem(s, d.index, d.file, (i) => {
+        const tests: string[] = d.tests ?? [];
+        const before = last(i.steps)?.testCount;
+        const kept = before != null && before > tests.length ? before - tests.length : undefined;
+        return { ...i, steps: [...i.steps, { source: { type: "prune", tests, kept }, testCount: kept }] };
+      });
     case "fix_attempt":
-      return { ...withItem(s, d.index, d.file, (i) => ({ ...i, status: "fixing" })),
+      return { ...withItem(s, d.index, d.file, (i) => ({
+                 ...i, status: "fixing",
+                 steps: [...i.steps, { source: { type: "llm_fix", attempt: d.attempt, max: s.maxFixAttempts, given: d.kind,
+                                                 givenStep: last(i.steps)?.check ? i.steps.length : undefined } }] })),
                activity: `Fixing ${String(d.kind).replace("_", " ")} in ${d.file} (attempt ${d.attempt})…` };
     case "candidate_accepted": {
-      const next = withItem(s, d.index, d.file, (i) => ({ ...i, status: "accepted", tests: d.tests, gain: d.gain }));
+      const next = withItem(s, d.index, d.file, (i) => ({
+        ...i, status: "accepted", tests: d.tests ?? [], gain: d.gain, percentAfter: d.percent,
+        percentBefore: d.percent != null && d.gain != null ? d.percent - d.gain : undefined }));
       return { ...next, percent: d.percent, activity: nextWriting(next, d.index) };
     }
     case "candidate_rejected": {

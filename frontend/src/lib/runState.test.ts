@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { initialState, reduce } from "./runState";
 import type { JobEvent } from "./types";
+import { constraintsFixTooLarge, constraintsNoGain, constraintsRenamed, loadFirstTry, movingFixed, normPruned } from "./fixtures/traceEvents";
 
 const report = (percent: number) => ({ total_statements: 10, covered_statements: percent / 10, percent, files: [], functions: [] });
 let seq = 0;
@@ -37,12 +38,12 @@ describe("reduce", () => {
     expect(s.history).toEqual([{ label: "Baseline", percent: 0 }, { label: "Iter 1", percent: 40 }]);
     const item = s.iterations[0].items[0];
     expect(item.status).toBe("accepted");
-    expect(item.attempts.map((a) => a.kind)).toEqual(["test_failure"]);
+    expect(item.steps.map((st) => [st.source.type, st.check?.kind])).toEqual([["writer", "test_failure"], ["llm_fix", "accepted"]]);
     expect(item.testPlan[0].scenario).toBe("empty");
     expect(item.tests).toEqual(["TestMean"]);
   });
 
-  it("records a mechanical repair as an attempt without leaving validating", () => {
+  it("records a mechanical repair as a step waiting for its code without leaving validating", () => {
     seq = 0;
     const s = run([
       ev("job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" }),
@@ -53,7 +54,8 @@ describe("reduce", () => {
     ]);
     const item = s.iterations[0].items[0];
     expect(item.status).toBe("validating");
-    expect(item.attempts).toEqual([{ kind: "mechanical_repair", output: "added import math", failedTests: [] }]);
+    expect(item.steps.map((st) => st.source)).toEqual([
+      { type: "writer", outputTokens: undefined }, { type: "auto_fix", description: "added import math" }]);
   });
 
   const start = () => ev("job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" });
@@ -66,7 +68,7 @@ describe("reduce", () => {
       ev("plan_created", { index: 1, items: [{ file: "mean.go", functions: ["Mean"], uncovered_statements: 4 }] }),
       ev("mechanical_repair", { index: 1, file: "mean.go", repair: 1 }),
     ]);
-    expect(s.iterations[0].items[0].attempts).toEqual([{ kind: "mechanical_repair", output: "", failedTests: [] }]);
+    expect(s.iterations[0].items[0].steps).toEqual([{ source: { type: "auto_fix", description: "" } }]);
   });
 
   it("points the activity at the next item still being written after an accept or reject", () => {
@@ -117,19 +119,18 @@ describe("reduce", () => {
     ev("plan_created", { index: 1, items: [{ file: "mean.go", functions: ["Mean"], uncovered_statements: 4 }] }),
   ];
 
-  it("records rejections, pruned tests and model errors", () => {
+  it("records a writer request that failed before producing code, and the rejection", () => {
     seq = 0;
     const s = run([
       ...planned(),
       ev("validation_result", { index: 1, file: "mean.go", kind: "llm_error", output: "model timed out", failed_tests: [] }),
-      ev("tests_pruned", { index: 1, file: "mean.go", tests: ["TestBad"] }),
-      ev("candidate_rejected", { index: 1, file: "mean.go", reason: "no_gain" }),
+      ev("candidate_rejected", { index: 1, file: "mean.go", reason: "llm_error" }),
     ]);
     const item = s.iterations[0].items[0];
-    expect(item.attempts).toEqual([{ kind: "llm_error", output: "model timed out", failedTests: [] }]);
-    expect(item.pruned).toEqual(["TestBad"]);
+    expect(item.steps).toEqual([{ source: { type: "writer", outputTokens: undefined },
+                                  check: { kind: "llm_error", output: "model timed out", failedTests: [] } }]);
     expect(item.status).toBe("rejected");
-    expect(item.rejectReason).toBe("no_gain");
+    expect(item.rejectReason).toBe("llm_error");
   });
 
   it("handles a cancelled job", () => {
@@ -161,5 +162,94 @@ describe("reduce", () => {
     seq = 0;
     const s = run([started(), ev("llm_call", { total_tokens: 7 })]);
     expect(reduce(s, { type: "reset" })).toBe(initialState);
+  });
+});
+
+// Driven by trimmed copies of real event logs (see ./fixtures/traceEvents.ts).
+describe("reduce: attempt trace", () => {
+  const itemOf = (events: JobEvent[]) => events.reduce(reduce, initialState).iterations[0].items[0];
+  const shape = (events: JobEvent[]) =>
+    itemOf(events).steps.map((st) => [st.source.type, st.code != null, st.check?.kind ?? null]);
+
+  it("norm.go: writer, compile error, auto-fix, test failure, prune, accepted", () => {
+    const item = itemOf(normPruned);
+    expect(shape(normPruned)).toEqual([
+      ["writer", true, "compile_error"], ["auto_fix", true, "test_failure"], ["prune", false, "accepted"]]);
+    expect(item.steps[0].source).toEqual({ type: "writer", outputTokens: 2556 });
+    expect(item.steps[0].testCount).toBe(8);
+    expect(item.steps[1].source).toEqual({ type: "auto_fix", description: "added import strconv" });
+    expect(item.steps[1].check?.failedTests).toHaveLength(3);
+    expect(item.steps[2].source).toEqual({ type: "prune", kept: 5,
+      tests: ["TestNcr_BoundaryAndOverflow", "TestNormStats_MomentsSelection", "TestNormLogCdf_PosNeg"] });
+    expect(item.status).toBe("accepted");
+    expect(item.gain).toBe(4.89);
+    expect(item.percentBefore).toBeCloseTo(2.97);
+    expect(item.percentAfter).toBe(7.86);
+    expect(item.tests).toHaveLength(5);
+  });
+
+  it("load.go: accepted on the first try", () => {
+    expect(shape(loadFirstTry)).toEqual([["writer", true, "accepted"]]);
+    expect(itemOf(loadFirstTry).steps[0].source).toEqual({ type: "writer", outputTokens: 989 });
+  });
+
+  it("moving.go: compile error fixed by the LLM fixer", () => {
+    const item = itemOf(movingFixed);
+    expect(shape(movingFixed)).toEqual([["writer", true, "compile_error"], ["llm_fix", true, "accepted"]]);
+    expect(item.steps[1].source).toEqual({ type: "llm_fix", attempt: 1, max: 2, given: "compile_error", givenStep: 1, outputTokens: 1634 });
+  });
+
+  it("constraints.go: every attempt adds no coverage, then it is rejected", () => {
+    const item = itemOf(constraintsNoGain);
+    expect(shape(constraintsNoGain)).toEqual([
+      ["writer", true, "no_gain"], ["llm_fix", true, "no_gain"], ["llm_fix", true, "no_gain"]]);
+    expect(item.steps[2].source).toMatchObject({ attempt: 2, max: 2, given: "no_gain", givenStep: 2 });
+    expect(item.status).toBe("rejected");
+    expect(item.rejectReason).toBe("no_gain");
+  });
+
+  it("a fix request that never produced code keeps its llm_error / prompt_too_large check", () => {
+    expect(shape(constraintsFixTooLarge)).toEqual([["writer", true, "compile_error"], ["llm_fix", false, "llm_error"]]);
+    expect(itemOf(constraintsFixTooLarge).steps[1].check?.output).toBe("targets need ~3591 tokens; budget is 2191");
+    const modern = constraintsFixTooLarge.map((e) =>
+      e.type === "validation_result" && e.data.kind === "llm_error" ? { ...e, data: { ...e.data, kind: "prompt_too_large" } } : e);
+    expect(shape(modern)[1]).toEqual(["llm_fix", false, "prompt_too_large"]);
+  });
+
+  it("an item still in progress has a last step without a check", () => {
+    const fixing = itemOf(movingFixed.slice(0, 7)); // up to fix_attempt
+    expect(fixing.status).toBe("fixing");
+    expect(fixing.steps[1]).toEqual({ source: { type: "llm_fix", attempt: 1, max: 2, given: "compile_error", givenStep: 1 } });
+    const checking = itemOf(normPruned.slice(0, 8)); // up to the auto-fixed candidate
+    expect(checking.status).toBe("validating");
+    expect(checking.steps[1].check).toBeUndefined();
+    expect(checking.steps[1].code).toBeDefined();
+  });
+
+  it("duplicate test names renamed twice by auto-fix", () => {
+    const item = itemOf(constraintsRenamed);
+    expect(shape(constraintsRenamed)).toEqual([
+      ["writer", true, "compile_error"], ["auto_fix", true, "compile_error"], ["auto_fix", true, "test_failure"],
+      ["prune", false, "accepted"]]);
+    expect(item.steps[1].source).toEqual({ type: "auto_fix",
+      description: "renamed duplicate test TestConstraintGreaterThan_Uncovered to TestConstraintGreaterThan_Uncovered_2" });
+  });
+
+  it("tolerates events with missing fields", () => {
+    let n = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const e = (type: string, data: Record<string, any>): JobEvent => ({ seq: n++, ts: 1, type, data });
+    const s = [e("job_started", { repo_path: "r", target_coverage: 80, model: "m" }), e("iteration_started", { index: 1, percent: 0 }),
+      e("plan_created", { index: 1, items: [{ file: "a.go", functions: ["A"], uncovered_statements: 1 }] }),
+      e("candidate_generated", { index: 1, file: "a.go" }),
+      e("tests_pruned", { index: 1, file: "a.go" }),
+      e("validation_result", { index: 1, file: "a.go", kind: "accepted" }),
+      e("candidate_accepted", { index: 1, file: "a.go" })].reduce(reduce, initialState);
+    const item = s.iterations[0].items[0];
+    expect(s.maxFixAttempts).toBeUndefined();
+    expect(item.steps.map((st) => st.source.type)).toEqual(["writer", "prune"]);
+    expect(item.steps[1].check).toEqual({ kind: "accepted", output: "", failedTests: [] });
+    expect(item.tests).toEqual([]);
+    expect(item.percentBefore).toBeUndefined();
   });
 });
