@@ -39,7 +39,24 @@ def summary(**kw) -> RunSummary:
 
 def test_number_tokens():
     text = "From 0% to 81.07% (+81.1 pp), 175,023 tokens or 175K, $0.07, 1.2M, in go1.27 with gpt-oss-120b, x2, v1.2.3"
-    assert [t.text for t in number_tokens(text)] == ["0", "81.07", "81.1", "175,023", "175K", "0.07", "1.2M"]
+    assert [(t.text, t.kind) for t in number_tokens(text)] == [
+        ("0", "percent"), ("81.07", "percent"), ("81.1", "percent"), ("175,023", "count"), ("175K", "tokens"),
+        ("$0.07", "currency"), ("1.2M", "tokens"), ("x2", "multiplier")]
+
+
+def test_number_words_multipliers_ordinals_and_durations_are_tokens():
+    text = ("Twenty-nine files, eleven rounds, a dozen tests, 3x, 3-fold, twice, doubled, the 11th round, "
+            "two hours, 310s, half an hour, about an hour, 81 percent, 90 points.")
+    assert [(t.text, t.kind, t.value) for t in number_tokens(text)] == [
+        ("Twenty-nine", "count", 29), ("eleven", "count", 11), ("dozen", "count", 12), ("3x", "multiplier", 3),
+        ("3-fold", "multiplier", 3), ("twice", "multiplier", 2), ("doubled", "multiplier", 2), ("11th", "count", 11),
+        ("two", "duration", 2), ("310s", "duration", 310), ("half an hour", "duration", 0.5),
+        ("an hour", "duration", 1), ("81", "percent", 81), ("90", "percent", 90)]
+
+
+def test_plain_words_are_not_numbers():
+    text = "Each one passes. Double-check the tests, then run `go test ./...` once more."
+    assert list(number_tokens(text)) == []
 
 
 def test_grounded_summary_is_unchanged():
@@ -110,3 +127,51 @@ def test_the_hand_written_screenshot_summary_is_grounded_in_the_real_run():
     written = RunSummary.model_validate(data)
     out, dropped = ground(written, run_facts(price_input_per_m=0.15, price_output_per_m=0.60))
     assert dropped == 0 and out == written
+
+
+def kept(text, **fact_overrides):
+    out, dropped = ground(summary(business={"outcome": text}), facts(**fact_overrides))
+    return dropped == 0
+
+
+def test_dollar_amounts_must_match_the_cost_facts():
+    assert not kept("It cost $5.", cost_usd=None)  # 5 would match duration_min 5.2 as a count
+    assert not kept("It cost about $1.", cost_usd=None)  # 1 would match llm_fixes as a count
+    assert not kept("It cost $11.")  # cost is set, but 11 is a count (rounds), not a cost
+    assert kept("It cost $0.07, of which $0.05 was output.")
+
+
+def test_multipliers_and_number_words_are_checked():
+    for invented in ("Coverage went up 3x.", "That is x3 faster.", "A 3-fold gain.", "It ran twice as fast.",
+                     "Coverage doubled.", "Half of the files are covered.", "It took two hours.",
+                     "It took seven rounds.", "It took about an hour.", "It took half an hour."):
+        assert not kept(invented), invented
+    for true in ("It took eleven rounds.", "Twenty-nine test files were added.", "It took 5 minutes.",
+                 "It took 310s.", "It took 5.2 minutes.", "Eleven rounds, then it stopped at the 11th."):
+        assert kept(true), true
+
+
+def test_percentages_and_counts_do_not_stand_in_for_each_other():
+    assert kept("Coverage reached 81 percent, past the goal of 80%; it gained 81.07 points.")
+    assert not kept("3% of the targets were rejected.")  # 3 is a count (pruned tests), not a percentage
+    assert not kept("It took 81 rounds.")  # 81 is a percentage, not a count
+    assert not kept("Coverage rose by 19 percent.")
+
+
+def test_commands_and_ordinary_words_pass():
+    assert kept("Run `go test ./...` and `go test -cover ./...` in the module root; each one passes.")
+    assert kept("Double-check the 3 pruned tests before merging the 109 tests.")
+
+
+def test_paths_must_be_known_files_or_the_export_folder():
+    assert kept("See output/e2de1ca387cb/tests/mean_test.go and ./norm.go.")
+    assert not kept("See internal/fake/clip.go.")
+    assert not kept("See output/other/tests/mean_test.go.")
+
+
+def test_suspected_bugs_come_from_the_facts():
+    s = summary(technical={"suspected_bugs": ["Mean: returns 42 for empty input"]})
+    out, _ = ground(s, facts())
+    assert out.technical.suspected_bugs == ["Mean: empty input"]
+    out, _ = ground(s, facts(suspected_bugs=[]))
+    assert out.technical.suspected_bugs == []

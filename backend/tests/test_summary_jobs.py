@@ -8,8 +8,8 @@ import pytest
 
 from app.config import Settings
 from app.engine.run import JobFailed
-from app.jobs import JobManager, JobRejected
-from app.llm.client import LLMBudgetExhausted, LLMError, LLMTimeout
+from app.jobs import JobConflict, JobManager, JobRejected
+from app.llm.client import LLMBudgetExhausted, LLMCancelled, LLMError, LLMTimeout
 from app.main import create_app
 from app.models import JobOptions, JobRequest, JobStatus, StopReason, Summary, TokenUsage
 from app.summary.report import NOTE
@@ -25,7 +25,7 @@ def summary(reason=StopReason.TARGET_REACHED, tokens=TokenUsage(prompt_tokens=10
 def setup(tmp_path, responses=None, reason=StopReason.TARGET_REACHED, **settings):
     llms: list[FakeLLM] = []
 
-    def factory(emit):
+    def factory(emit, cancel):
         llms.append(FakeLLM(list(responses) if responses is not None else [run_summary()]))
         return llms[-1]
 
@@ -135,13 +135,30 @@ async def _done(value):
     return value
 
 
-async def test_cost_includes_the_summary_call(tmp_path):
+async def test_cost_separates_the_run_and_the_summary_call(tmp_path):
+    class BigLLM(FakeLLM):
+        async def complete(self, **kw):
+            out, _ = await super().complete(**kw)
+            return out, TokenUsage(prompt_tokens=10_000, completion_tokens=5_000)
+
     m, _ = setup(tmp_path, groq_price_input_per_m=0.15, groq_price_output_per_m=0.60)
+    m._llm_factory = lambda emit, cancel: BigLLM([run_summary()])
+    m._runner = lambda job, emit, cancel: _done(summary(tokens=TokenUsage(prompt_tokens=100_000, completion_tokens=50_000)))
     job = await run(m)
-    # run 1000 + 500 tokens, summary call 100 + 50: input 1100 * 0.15 / 1e6, output 550 * 0.60 / 1e6
-    assert job.events[-1].data["cost_usd"] == {"input": 0.0002, "output": 0.0003, "total": 0.0005}
+    # run 0.015 + 0.03; summary 0.0015 + 0.003; together input 110000 * 0.15 / 1e6, output 55000 * 0.60 / 1e6
+    assert job.events[-1].data["cost_usd"] == {"run": 0.045, "summary": 0.0045, "input": 0.0165, "output": 0.033,
+                                               "total": 0.0495}
     md = (tmp_path / job.id / "SUMMARY.md").read_text(encoding="utf-8")
-    assert "Estimated cost: $0.0005 (input $0.0002, output $0.0003)" in md
+    assert "Run cost $0.04 · summary $0.0045 · total $0.05 (input $0.02, output $0.03)" in md
+    report = json.loads((tmp_path / job.id / "report.json").read_text(encoding="utf-8"))
+    assert report["tokens"] == {"prompt_tokens": 100_000, "completion_tokens": 50_000}  # the run's own
+    assert report["summary_tokens"] == {"prompt_tokens": 10_000, "completion_tokens": 5_000, "total_tokens": 15_000}
+
+
+async def test_no_cost_without_prices(tmp_path):
+    m, _ = setup(tmp_path, groq_price_input_per_m=0.15)
+    job = await run(m)
+    assert "cost_usd" not in job.events[-1].data
 
 
 async def test_grounding_drops_invented_sentences(tmp_path):
@@ -182,7 +199,7 @@ async def test_write_again_counts_earlier_summary_calls_toward_the_job_budget(tm
 async def test_write_again_keeps_an_earlier_summary_when_it_fails(tmp_path):
     m, _ = setup(tmp_path)
     job = await run(m)
-    m._llm_factory = lambda emit: FakeLLM([LLMError("Groq returned 500")])
+    m._llm_factory = lambda emit, cancel: FakeLLM([LLMError("Groq returned 500")])
     m.write_summary_again(job.id)
     await job.summary_task
     report = json.loads((tmp_path / job.id / "report.json").read_text(encoding="utf-8"))
@@ -227,7 +244,7 @@ async def test_summary_endpoint(tmp_path):
             await gate.wait()
             return await super().complete(**kw)
 
-    m = JobManager(settings, runner=runner, llm_factory=lambda emit: GatedLLM([run_summary()]))
+    m = JobManager(settings, runner=runner, llm_factory=lambda emit, cancel: GatedLLM([run_summary()]))
     app = create_app(settings, m)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         assert (await client.post("/api/jobs/nope/summary")).status_code == 404
@@ -245,3 +262,92 @@ async def test_summary_endpoint(tmp_path):
         gate.set()
         await job.summary_task
         assert job.events[-1].type == "summary_generated"
+
+
+class CancellableLLM(FakeLLM):
+    """Waits like a Groq request until the summary's cancel event is set, then fails like GroqLLM does."""
+
+    def __init__(self, cancel):
+        super().__init__([run_summary()])
+        self.cancel, self.started = cancel, asyncio.Event()
+
+    async def complete(self, *, on_request=None, **kw):
+        if on_request is not None:
+            await on_request("medium")
+        self.started.set()
+        await self.cancel.wait()
+        raise LLMCancelled("cancelled during an LLM request")
+
+
+async def test_the_job_is_busy_until_its_summary_is_written_and_cancel_stops_the_summary(tmp_path):
+    m, _ = setup(tmp_path)
+    llms = []
+    m._llm_factory = lambda emit, cancel: llms.append(CancellableLLM(cancel)) or llms[-1]
+    job = m.start(JobRequest(repo_path="stats"))
+    while not llms:
+        await asyncio.sleep(0)
+    await llms[0].started.wait()
+    assert job.status is JobStatus.COMPLETED and job.writing_summary and job.snapshot()["writing_summary"]
+    assert m.running() is job
+    with pytest.raises(JobConflict):
+        m.start(JobRequest(repo_path="stats"))
+    m.cancel(job.id)
+    await asyncio.wait_for(job.task, 1)
+    assert job.status is JobStatus.COMPLETED and not job.writing_summary and m.running() is None
+    assert types(job)[-3:] == ["job_completed", "llm_request", "summary_failed"]
+    assert job.events[-1].data == {"reason": "cancelled", "message": "Cancelled while the summary was being written."}
+    assert not job.cancel.is_set()  # the run's own cancel event is untouched
+
+
+async def test_write_again_waits_for_another_busy_job(tmp_path):
+    m, _ = setup(tmp_path)
+    first = await run(m)
+    gate = asyncio.Event()
+
+    async def slow(job, emit, cancel):
+        await gate.wait()
+        return summary()
+
+    m._runner = slow
+    second = m.start(JobRequest(repo_path="stats", options=JobOptions(write_summary=False)))
+    with pytest.raises(JobRejected) as exc:
+        m.write_summary_again(first.id)
+    assert (exc.value.status, exc.value.code) == (409, "job_running") and second.id in exc.value.message
+    gate.set()
+    await second.task
+
+
+async def test_tokens_of_a_failed_summary_call_count_toward_the_job(tmp_path):
+    error = LLMError("the model's answer was truncated")
+    error.spent = TokenUsage(prompt_tokens=300, completion_tokens=200)
+    m, _ = setup(tmp_path, responses=[error])
+    job = await run(m)
+    assert job.summary_tokens.total == 500
+    report = json.loads((tmp_path / job.id / "report.json").read_text(encoding="utf-8"))
+    assert report["summary_tokens"]["total_tokens"] == 500
+
+
+async def test_start_conflict_says_the_summary_is_being_written(tmp_path):
+    repos = tmp_path / "repos"
+    (repos / "stats").mkdir(parents=True)
+    (repos / "stats" / "go.mod").write_text("module m\n")
+    settings = Settings(groq_api_key="k", repos_dir=repos, work_dir=tmp_path / "work", output_dir=tmp_path / "out")
+    llms = []
+
+    async def runner(job, emit, cancel):
+        return summary()
+
+    m = JobManager(settings, runner=runner,
+                   llm_factory=lambda emit, cancel: llms.append(CancellableLLM(cancel)) or llms[-1])
+    app = create_app(settings, m)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        job_id = (await client.post("/api/jobs", json={"repo_path": "stats"})).json()["job_id"]
+        while not llms:
+            await asyncio.sleep(0)
+        await llms[0].started.wait()
+        r = await client.post("/api/jobs", json={"repo_path": "stats"})
+        assert r.status_code == 409 and r.json()["error"]["message"] == f"Job {job_id} is still writing its summary."
+        assert (await client.get(f"/api/jobs/{job_id}")).json()["writing_summary"] is True
+        assert (await client.post(f"/api/jobs/{job_id}/cancel")).status_code == 200
+        await asyncio.wait_for(m.get(job_id).task, 1)
+        assert m.get(job_id).events[-1].data["reason"] == "cancelled"

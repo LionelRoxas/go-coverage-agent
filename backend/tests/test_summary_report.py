@@ -1,6 +1,6 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 """SUMMARY.md. frontend/src/lib/aiSummary.test.ts checks the same payload against the same Markdown."""
-from app.summary.report import to_markdown, usd
+from app.summary.report import EMPTY, to_markdown, usd
 
 PAYLOAD = {
     "business": {"headline": "Coverage rose from 0% to 81.1%.", "outcome": "The 80% goal was reached.",
@@ -11,7 +11,7 @@ PAYLOAD = {
                   "gaps": [{"file": "clip.go", "detail": "12 statements uncovered."}], "suspected_bugs": [],
                   "rejected_or_failed": "", "how_to_run": "Run `go test ./...`.", "next_steps": ["Review clip.go."]},
     "dropped_sentences": 0, "tokens": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-    "cost_usd": {"input": 0.0125, "output": 0.0549, "total": 0.0674},
+    "cost_usd": {"run": 0.0674, "summary": 0.0014, "input": 0.013, "output": 0.0558, "total": 0.0688},
 }
 
 EXPECTED = """# AI summary: stats
@@ -26,7 +26,7 @@ The 80% goal was reached.
 
 It took 5.2 minutes.
 
-Estimated cost: $0.07 (input $0.01, output $0.05)
+Run cost $0.07 · summary $0.0014 · total $0.07 (input $0.01, output $0.06)
 
 **Risks**
 
@@ -66,3 +66,10 @@ def test_markdown_without_cost():
 
 def test_usd():
     assert [usd(v) for v in (0, 0.0005, 0.01, 0.0674, 1.5)] == ["$0.00", "$0.0005", "$0.01", "$0.07", "$1.50"]
+
+
+def test_a_part_left_empty_by_the_grounding_check_says_so():
+    empty_business = {"headline": "", "outcome": "", "efficiency": "", "risks": [], "recommendation": ""}
+    md = to_markdown({**PAYLOAD, "business": empty_business, "cost_usd": None}, repo="stats", model="m", generated_at=0)
+    assert f"## For stakeholders\n\n_{EMPTY}_\n\n## For engineering teams\n\n### 81.07% covered." in md
+    assert md.count(EMPTY) == 1

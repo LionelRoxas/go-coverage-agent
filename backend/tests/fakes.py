@@ -38,6 +38,6 @@ def run_summary(headline: str = "Coverage rose from 0% to 80%.") -> RunSummary:
                                    next_steps=["Keep the tests in CI."]))
 
 
-def fake_llm(emit=None) -> FakeLLM:
+def fake_llm(emit=None, cancel=None) -> FakeLLM:
     """JobManager llm_factory for tests: one grounded summary per summary call, never Groq."""
     return FakeLLM([run_summary()])

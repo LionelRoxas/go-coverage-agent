@@ -95,7 +95,9 @@ async def create_job(body: JobRequest, request: Request) -> dict:
     try:
         job = _manager(request).start(body)
     except JobConflict as e:
-        raise ApiError(409, "job_running", f"Job {e.job_id} is still running.") from e
+        busy = _manager(request).get(e.job_id)
+        what = "writing its summary" if busy is not None and busy.writing_summary else "running"
+        raise ApiError(409, "job_running", f"Job {e.job_id} is still {what}.") from e
     except JobRejected as e:
         raise ApiError(e.status, e.code, e.message) from e
     return {"job_id": job.id}

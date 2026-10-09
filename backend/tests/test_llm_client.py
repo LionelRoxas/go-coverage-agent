@@ -386,3 +386,12 @@ async def test_on_request_runs_before_each_request_with_the_effort_sent(tmp_path
         seen.append((effort, len(fake.calls)))
     await llm.complete(role="fixer", system="s", user="u", schema=Out, on_request=on_request)
     assert seen == [("high", 0), ("medium", 1)]
+
+
+async def test_failed_call_reports_the_tokens_it_already_spent(tmp_path):
+    fake = FakeGroq([Raw(Completion("{", "length")), Raw(Completion("{", "length"))])
+    llm = GroqLLM(Settings(groq_api_key="k", groq_writer_reasoning_effort="medium"),
+                  UsageLedger(tmp_path / "u.json", 190_000), RateLimiter(), client=fake, sleep=_no_sleep)
+    with pytest.raises(LLMOutputTooLarge) as exc:
+        await call(llm)
+    assert exc.value.spent.total == 300  # two truncated answers of 100 + 50
