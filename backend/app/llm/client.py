@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import re
 from typing import Any, Awaitable, Callable, Protocol, TypeVar
 
 import groq
@@ -51,6 +52,22 @@ def _retry_after(headers: Any) -> float:
     if not math.isfinite(value):
         return 60.0
     return max(0.0, value)
+
+
+_SIZE_HINT = re.compile(r"limit\D{0,3}(\d+)\D+requested\D{0,3}(\d+)", re.IGNORECASE)
+_MIN_COMPLETION = 1024
+_SIZE_GUIDANCE = ("Groq rejected the request size for this key's tokens-per-minute limit; "
+                  "set GROQ_MAX_COMPLETION_TOKENS lower (e.g. 4000).")
+
+
+def _size_rejection(e: groq.APIStatusError) -> tuple[bool, int | None]:
+    """(is this a request-size rejection, the TPM limit named in its message). Plain rate-limit 429s are not size errors."""
+    text = f"{e.message} {e.body}"
+    hint = _SIZE_HINT.search(text)
+    limit = int(hint[1]) if hint else None
+    if e.status_code == 413 or "request too large" in text.lower():
+        return True, limit
+    return (hint is not None and int(hint[2]) > int(hint[1])), limit  # asked for more than a minute can ever hold
 
 
 class LLMClient(Protocol):
@@ -117,9 +134,29 @@ class GroqLLM:
         response_format = {"type": "json_schema", "json_schema": {
             "name": schema.__name__, "strict": True, "schema": to_strict_schema(schema)}}
 
-        extra: dict[str, Any] = {}
-        if self.s.groq_max_completion_tokens is not None:
-            extra["max_completion_tokens"] = self.s.groq_max_completion_tokens
+        size_retried = False
+
+        def completion_allowance() -> dict[str, Any]:
+            cap = self.s.groq_max_completion_tokens
+            if cap is None:
+                return {}
+            if self.limiter.limit_tokens is not None:
+                cap = min(cap, max(_MIN_COMPLETION, self.limiter.limit_tokens - prompt_tokens - 256))
+            return {"max_completion_tokens": cap}
+
+        def size_rejected(e: groq.APIStatusError) -> bool:
+            """True when the request should be retried once with a clamped allowance; raises on a repeat."""
+            nonlocal size_retried
+            rejected, limit = _size_rejection(e)
+            if not rejected:
+                return False
+            self.limiter.update(e.response.headers)
+            if self.limiter.limit_tokens is None and limit is not None:
+                self.limiter.limit_tokens = limit
+            if size_retried or self.limiter.limit_tokens is None:
+                raise LLMError(_SIZE_GUIDANCE) from e
+            size_retried = True
+            return True
 
         while True:
             wait = self.limiter.wait_needed(self.s.call_token_reservation)
@@ -133,11 +170,13 @@ class GroqLLM:
                     response_format=response_format,
                     reasoning_effort=effort,
                     temperature=0.2,
-                    **extra,
+                    **completion_allowance(),
                 )
             except groq.AuthenticationError as e:
                 raise LLMFatal("Groq rejected the API key (401). Check GROQ_API_KEY in .env.") from e
             except groq.RateLimitError as e:
+                if size_rejected(e):
+                    continue
                 retry_after = _retry_after(e.response.headers)
                 if retry_after > self.MAX_RETRY_AFTER_S or rate_retries >= self.MAX_RATE_RETRIES:
                     raise LLMBudgetExhausted(
@@ -153,6 +192,8 @@ class GroqLLM:
                 await self._sleep_cancellable(2.0 ** net_retries)
                 continue
             except groq.APIStatusError as e:
+                if size_rejected(e):
+                    continue
                 if e.status_code == 400 and not json_retried and "json_validate_failed" in f"{e.body} {e.message}":
                     json_retried = True  # strict-mode flake: the model skipped required fields; sample once more
                     continue
