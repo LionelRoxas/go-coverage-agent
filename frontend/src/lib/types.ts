@@ -72,6 +72,8 @@ export type Health = {
   model: string;
   llm_configured: boolean;
   tokens_left_today: number;
+  /** Below this many tokens left today the backend refuses a new job. Older backends omit it. */
+  min_daily_tokens_to_start?: number;
   storage_writable: boolean;
   host_repos_dir?: string | null;
 };

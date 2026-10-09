@@ -18,15 +18,22 @@ describe("TokenBudget", () => {
   });
 
   it("explains why a run cannot start below the 20K minimum", () => {
-    render(<TokenBudget left={12_000} id="budget" />);
+    render(<TokenBudget left={12_000} min={20_000} id="budget" />);
     const reason = screen.getByText(/A run needs at least/);
-    expect(reason).toHaveTextContent("Only 12.0k tokens left today. A run needs at least 20k; the budget resets at midnight UTC.");
+    expect(reason).toHaveTextContent("Only 12.0k tokens left today. A run needs at least 20.0k; the budget resets at midnight UTC.");
     expect(reason).toHaveAttribute("id", "budget");
   });
 
-  it("blocks starting below 20,000 tokens only", () => {
+  it("renders the minimum it is given", () => {
+    render(<TokenBudget left={40_000} min={50_000} />);
+    expect(screen.getByText(/A run needs at least/)).toHaveTextContent("A run needs at least 50.0k;");
+  });
+
+  it("blocks starting below the minimum only, defaulting to 20,000", () => {
     expect(budgetBlocked(19_999)).toBe(true);
     expect(budgetBlocked(20_000)).toBe(false);
+    expect(budgetBlocked(49_999, 50_000)).toBe(true);
+    expect(budgetBlocked(50_000, 50_000)).toBe(false);
   });
 
   it("has a labelled info button that reveals where the cap comes from", async () => {

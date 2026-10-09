@@ -3,18 +3,18 @@
 import { useId, useState } from "react";
 import { tokens } from "@/lib/format";
 
-/** Mirrors min_daily_tokens_to_start in backend/app/config.py: the backend refuses a new job below this. */
+/** Fallback for min_daily_tokens_to_start (backend/app/config.py), used only when /api/health does not report it. */
 export const MIN_TOKENS_TO_START = 20_000;
 /** Below this, a run can start but a long one may hit the daily cap and stop early. */
 export const LOW_TOKENS = 200_000;
 
-export const budgetBlocked = (left: number) => left < MIN_TOKENS_TO_START;
+export const budgetBlocked = (left: number, min = MIN_TOKENS_TO_START) => left < min;
 
 /** One line beside the Start button. `id` goes on the message so Start can point to it when blocked. */
-export function TokenBudget({ left, id }: { left: number; id?: string }) {
+export function TokenBudget({ left, min = MIN_TOKENS_TO_START, id }: { left: number; min?: number; id?: string }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
-  const blocked = budgetBlocked(left);
+  const blocked = budgetBlocked(left, min);
   const low = !blocked && left < LOW_TOKENS;
   const n = <span className="font-mono">{tokens(left)}</span>;
 
@@ -23,7 +23,7 @@ export function TokenBudget({ left, id }: { left: number; id?: string }) {
       <div className="flex items-start gap-1">
         <span id={id} className={blocked ? "font-medium text-danger" : low ? "text-warn" : "text-muted"}>
           {blocked ? (
-            <>Only {n} tokens left today. A run needs at least 20k; the budget resets at midnight UTC.</>
+            <>Only {n} tokens left today. A run needs at least <span className="font-mono">{tokens(min)}</span>; the budget resets at midnight UTC.</>
           ) : low ? (
             <>Running low: about {n} tokens left today. A long run may stop early.</>
           ) : (

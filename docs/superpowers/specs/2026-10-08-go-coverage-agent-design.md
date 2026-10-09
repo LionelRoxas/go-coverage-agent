@@ -442,7 +442,7 @@ All under `/api`, JSON, Pydantic-validated. Errors: `{"error": {"code", "message
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/health` | `{status, go_version, model, llm_configured, tokens_left_today, storage_writable, host_repos_dir}` (`host_repos_dir` is display only, from `HOST_REPOS_DIR_DISPLAY`) |
+| `GET /api/health` | `{status, go_version, model, llm_configured, tokens_left_today, min_daily_tokens_to_start, storage_writable, host_repos_dir}` (`host_repos_dir` is display only, from `HOST_REPOS_DIR_DISPLAY`; `min_daily_tokens_to_start` is the minimum daily budget needed to start a job, below which `POST /api/jobs` returns 429) |
 | `GET /api/repos` | Directories under `/repos` (depth ≤2) containing `go.mod`: `[{path, module, go_files, test_files}]` |
 | `GET /api/repos/samples` | The curated sample allowlist: `[{id, name, description, license, ref, path, downloaded}]` |
 | `POST /api/repos/samples/{id}` | Shallow-clones that sample (pinned release tags, no submodules; stats: default branch, the assessment's evaluation repo) into `/repos/<id>` if absent and returns the entry. Unknown id: 404 `unknown_sample`. Refuses a `go.mod` that has `require` lines |

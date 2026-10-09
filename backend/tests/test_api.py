@@ -59,6 +59,7 @@ async def test_health(env):
     body = (await client.get("/api/health")).json()
     assert body["llm_configured"] is True and body["model"] == "openai/gpt-oss-120b"
     assert "tokens_left_today" in body
+    assert body["min_daily_tokens_to_start"] == 20_000
 
 
 async def test_repos_listing(env):

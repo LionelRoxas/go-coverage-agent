@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { RepoPicker, type PickerTab } from "@/components/RepoPicker";
 import { RunsPanel } from "@/components/RunsPanel";
-import { TokenBudget, budgetBlocked } from "@/components/TokenBudget";
+import { MIN_TOKENS_TO_START, TokenBudget, budgetBlocked } from "@/components/TokenBudget";
 import { api, ApiError } from "@/lib/api";
 import type { Health, JobOptions, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
 
@@ -103,7 +103,9 @@ export default function SetupPage() {
   }
 
   const targetValid = Number.isFinite(target) && target >= 1 && target <= 100;
-  const noBudget = health != null && budgetBlocked(health.tokens_left_today);
+  const tokensLeft = typeof health?.tokens_left_today === "number" ? health.tokens_left_today : null;
+  const minTokens = health?.min_daily_tokens_to_start ?? MIN_TOKENS_TO_START;
+  const noBudget = tokensLeft != null && budgetBlocked(tokensLeft, minTokens);
 
   return (
     <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_23rem] lg:gap-14">
@@ -181,7 +183,7 @@ export default function SetupPage() {
                     className="shrink-0 rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-40">
               {busy ? "Starting…" : "Start"}
             </button>
-            {health && <TokenBudget left={health.tokens_left_today} id="budget-reason" />}
+            {tokensLeft != null && <TokenBudget left={tokensLeft} min={minTokens} id="budget-reason" />}
           </div>
           {running && <p className="text-xs text-muted">A run is in progress. Follow it in Run history.</p>}
         </div>

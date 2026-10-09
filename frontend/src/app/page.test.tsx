@@ -18,8 +18,9 @@ vi.mock("@/lib/api", async (orig) => {
 });
 
 const mocked = vi.mocked(api);
-const health = (llm: boolean, left = 1_600_000): Health => ({
-  status: "ok", go_version: "1.27", model: "m", llm_configured: llm, tokens_left_today: left, storage_writable: true,
+const health = (llm: boolean, left = 1_600_000, min = 20_000): Health => ({
+  status: "ok", go_version: "1.27", model: "m", llm_configured: llm, tokens_left_today: left, min_daily_tokens_to_start: min,
+  storage_writable: true,
 });
 const repo: RepoInfo = { path: "stats", module: "github.com/x/stats", go_files: 3, test_files: 1 };
 const sampleList = (downloaded: string[] = ["stats"]): Sample[] =>
@@ -31,9 +32,9 @@ const runningJob = {
   created_at: 0, percent: 10, event_count: 1, summary: null,
 } as unknown as JobSnapshot;
 
-function setup(opts: { llm?: boolean; left?: number; repos?: RepoInfo[]; jobs?: JobSnapshot[]; samples?: Sample[] } = {}) {
+function setup(opts: { llm?: boolean; left?: number; min?: number; repos?: RepoInfo[]; jobs?: JobSnapshot[]; samples?: Sample[] } = {}) {
   mocked.samples.mockResolvedValue(opts.samples ?? sampleList());
-  mocked.health.mockResolvedValue(health(opts.llm ?? true, opts.left));
+  mocked.health.mockResolvedValue(health(opts.llm ?? true, opts.left, opts.min));
   mocked.repos.mockResolvedValue(opts.repos ?? [repo]);
   mocked.jobs.mockResolvedValue(opts.jobs ?? []);
 }
@@ -77,9 +78,45 @@ describe("SetupPage", () => {
   it("disables Start with the reason when the budget is below the 20K minimum", async () => {
     setup({ left: 12_000 });
     render(<SetupPage />);
-    const reason = await screen.findByText(/A run needs at least 20k/);
+    const reason = await screen.findByText(/A run needs at least/);
+    expect(reason).toHaveTextContent("A run needs at least 20.0k;");
     expect(startButton()).toBeDisabled();
     expect(startButton()).toHaveAttribute("aria-describedby", reason.id);
+  });
+
+  it("uses the minimum reported by health", async () => {
+    setup({ left: 40_000, min: 50_000 });
+    render(<SetupPage />);
+    expect(await screen.findByText(/A run needs at least/)).toHaveTextContent("Only 40.0k tokens left today. A run needs at least 50.0k;");
+    expect(startButton()).toBeDisabled();
+  });
+
+  it("falls back to 20,000 when health does not report a minimum", async () => {
+    setup();
+    mocked.health.mockResolvedValue({ ...health(true, 30_000), min_daily_tokens_to_start: undefined });
+    render(<SetupPage />);
+    expect(await screen.findByText(/Running low/)).toBeInTheDocument();
+    await waitFor(() => expect(startButton()).toBeEnabled());
+  });
+
+  it("shows no budget line when health omits tokens_left_today", async () => {
+    setup();
+    const { tokens_left_today: _omit, ...partial } = health(true);
+    void _omit;
+    mocked.health.mockResolvedValue(partial as Health);
+    render(<SetupPage />);
+    await waitFor(() => expect(startButton()).toBeEnabled());
+    expect(screen.queryByText(/tokens left/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "About the token budget" })).not.toBeInTheDocument();
+  });
+
+  it("keeps Start disabled and shows no budget while health is loading", async () => {
+    setup();
+    mocked.health.mockReturnValue(new Promise(() => {}));
+    render(<SetupPage />);
+    await waitFor(() => expect(mocked.repos).toHaveBeenCalled());
+    expect(screen.queryByText(/tokens left/)).not.toBeInTheDocument();
+    expect(startButton()).toBeDisabled();
   });
 
   it("keeps Start enabled with a softer note when the budget is low", async () => {
