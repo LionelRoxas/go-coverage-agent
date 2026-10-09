@@ -116,6 +116,19 @@ coverage was **80.5%**. The same check on run `ca1beb9a1fdb` (80.11%) also passe
 An earlier run on a free-trial key (8K tokens/min, 200K/day) reached 69.0% in about 28 minutes before hitting the then-default 10-iteration cap,
 mostly waiting on rate limits.
 
+## Results on Masterminds/semver
+
+Developer-plan key, 2026-10-09, target 80%, defaults. Writer at `medium` reasoning in both new runs; the Fixer's effort was the variable.
+
+| Run | Setup | Coverage | Iterations / time | Items accepted / rejected | Tokens |
+|---|---|---|---|---|---|
+| `acab3e3c7570` | before the prompt-budget and duplicate-name fixes | 1.4% → 64.2%, stopped on small gains | 8 / 129 s | — | 115.9K |
+| `f9f3edcd9bfc` | after those fixes, `low` effort | 1.4% → 80.1%, target reached | 4 / 75 s | — | 59.0K |
+| `736baa413b5d` | after the Fixer-history fixes, Fixer `medium` | 1.4% → **84.6%**, target reached | 4 / 114 s | 8 / 0 | 82.6K |
+| `d247037efdb2` | same, Fixer `low` | 1.4% → **84.4%**, target reached | 3 / 88 s | 7 / 0 | 69.2K |
+
+Each of the last two runs needed only one LLM fix, and both fixes were accepted (12.8 s at `medium`, 9.6 s at `low`), so the two runs are too close to rank the Fixer's effort. A Fixer call at `high` was still waiting after about 114 s, which is why both roles default to `medium`.
+
 ## Issues I found in testing and fixed
 
 I ran the system end to end, spotted these problems, and decided the fixes. Claude Code implemented them under review.
@@ -129,7 +142,7 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 | `make test` failed in PowerShell | The Makefile used `cat` and `VAR=x cmd`, which `cmd.exe` lacks | Shell-independent Makefile (`$(file <.go-version)`, exported `MSYS_NO_PATHCONV`) with a fallback for macOS make 3.81 | `make test` passes in PowerShell, Git Bash and CI |
 | No way to switch light/dark, no way back to the start page, the running job was only a one-line banner, the navbar looked unfinished, and the app did not explain the loop | UI gaps | System / Light / Dark toggle in the header (remembered per browser), "← All runs" on the job page, a Run history panel on the setup page (live running card with Cancel, past runs with before to after coverage), a redesigned navbar and a How it works page | Screenshots below |
 | semver run stalled at 64.2%: fix attempts failed with 'targets need ~3591 tokens; budget is 2191' and duplicate test names | prompt cap from the free-trial era left the fixer too little room; existing test names were crowded out of the prompt | `MAX_PROMPT_TOKENS` default 4,500 → 12,000 (free-trial keys set 4,500); existing test names now come before optional context; Fixer prompts shrink (first error lines, then only the whole declarations the errors point at, then no code) instead of failing; a reused `Test…` name is renamed to `_2`, `_3`, … without an LLM call; an oversized prompt shows as "Prompt too large (no model call)", not "Model error" | Run `acab3e3c7570`: 1.4% → 64.2% in 8 iterations, stopped on small gains. Re-run `f9f3edcd9bfc`: 1.4% → 80.1% in 4 iterations, 75 s, 59K tokens, target reached, 0 model or prompt-size errors; 3 duplicate names renamed without an LLM call |
-| LLM fixes kept repeating a wrong assertion (semver constraints.go rejected after 6 attempts). I traced that item through the event log and questioned why the LLM kept failing | the fixer only saw the latest check result; after failing tests were removed it saw 'no new coverage' and never the observed values; reasoning effort was low | I decided to prioritise LLM quality. The Fixer now gets the candidate's full attempt history (each check's source, kind, failed tests and the failing assertions with their observed values), kept within the prompt budget; after pruning leaves no new coverage it is told to keep the failing tests and correct their values; the Fixer prompt says to trust the observed value; the Writer prompt says to trace the code path before asserting; reasoning effort per role (both default to `medium`: a `high` Fixer call was measured as too slow, still waiting after ~114 s against 9 s for a `medium` Writer call in job `86b6d88b558c`) | measurement pending |
+| LLM fixes kept repeating a wrong assertion (semver constraints.go rejected after 6 attempts). I traced that item through the event log and questioned why the LLM kept failing | the fixer only saw the latest check result; after failing tests were removed it saw 'no new coverage' and never the observed values; reasoning effort was at its minimum | I decided to prioritise LLM quality. The Fixer now gets the candidate's full attempt history (each check's source, kind, failed tests and the failing assertions with their observed values), kept within the prompt budget; after pruning leaves no new coverage it is told to keep the failing tests and correct their values; the Fixer prompt says to trust the observed value; the Writer prompt says to trace the code path before asserting; reasoning effort per role (both default to `medium`: a `high` Fixer call was measured as too slow, still waiting after ~114 s against 9 s for a `medium` Writer call in job `86b6d88b558c`) | Same semver target afterwards: 1.4% → 84.6% in 4 iterations and 114 s, 8 items accepted, 0 rejected, 82.6K tokens (job `736baa413b5d`). See [Results on Masterminds/semver](#results-on-mastermindssemver) |
 
 ## Screenshots
 
@@ -234,8 +247,9 @@ Environment variables (`.env`, same layout as `.env.example`). Only the key is r
 | `GROQ_FIXER_REASONING_EFFORT` | `medium` | Fixer's reasoning effort (`medium` or `low`; `high` is accepted but too slow). If an answer is cut off for length, it is retried automatically one level lower |
 | `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only); run `make up` again after changing |
 | `HOST_REPOS_DIR` | `./repos` | Host folder whose Go modules appear under "Your folders" |
+| `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily token cap (not a Groq limit), counted in `output/.usage.json`, reset at midnight UTC. Raise it freely on a paid key |
 | **Free-trial Groq key** (8K tokens/min, 200K/day): set all three | | |
-| `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily cap (not a Groq limit), counted in `output/.usage.json`, reset at midnight UTC. Free trial: `190000` |
+| `DAILY_TOKEN_BUDGET` | | Free trial: `190000` |
 | `MAX_PROMPT_TOKENS` | 12000 | Prompt-size cap per call. Free trial: `4500` |
 | `CALL_TOKEN_RESERVATION` | 16000 | Tokens reserved per call for rate pacing. Free trial: `8000` |
 | **Advanced** | | |
@@ -305,7 +319,7 @@ I used Claude Code as a pair programmer and implementation team. I set the direc
 - **Proof that failing tests are not counted.** I asked for evidence, not an assurance. The final tests were re-run in a fresh clone and passed with 80.1%.
 - **Fixing `make` for PowerShell.** `make test` failed on my machine, so I had the Makefile made shell-independent.
 - **The UI gaps.** I found no theme switch, no way back to the start page, a one-line running banner, an unfinished navbar and no in-app explanation, and decided on the toggle, Run history panel, "← All runs", navbar and How it works page.
-- **LLM quality over token savings.** I traced semver's `constraints.go` item, rejected after 6 attempts, asked why the LLM kept failing, and decided five changes: (1) give the Fixer the item's full attempt history, including the failures of tests that were pruned; (2) a Fixer rule to keep the tests that reached new lines and correct their expected values to the observed behaviour; (3) reasoning effort per role, with the old low-effort setting removed entirely; both roles now default to `medium`, because `high` was measured as too slow (a Fixer call was still waiting after ~114 s, against 9 s for a `medium` Writer call); (4) a Writer rule to trace parsing and regex logic step by step before asserting; (5) measuring before and after on semver and stats (results pending).
+- **LLM quality over token savings.** I traced semver's `constraints.go` item, rejected after 6 attempts, asked why the LLM kept failing, and decided five changes: (1) give the Fixer the item's full attempt history, including the failures of tests that were pruned; (2) a Fixer rule to keep the tests that reached new lines and correct their expected values to the observed behaviour; (3) reasoning effort per role, with the old low-effort setting removed entirely; both roles now default to `medium`, because `high` was measured as too slow (a Fixer call was still waiting after ~114 s, against 9 s for a `medium` Writer call); (4) a Writer rule to trace parsing and regex logic step by step before asserting; (5) measuring the result on semver: 1.4% → 84.6% with nothing rejected, against 64.2% before the earlier fixes (see Results on Masterminds/semver).
 - **Publishing and disclosure.** The wording of the per-file disclosure line and the pull-request workflow.
 
 ### What Claude did
