@@ -67,3 +67,17 @@ async def test_clone_sample_without_go_mod_is_runtime_error(tmp_path, monkeypatc
     monkeypatch.setattr("app.repos.run", ok)
     with pytest.raises(RuntimeError, match="no go.mod"):
         await clone_sample(settings)
+
+
+async def test_clone_sample_never_touches_existing_non_module_dir(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    (settings.repos_dir / "stats").mkdir()
+    (settings.repos_dir / "stats" / "mine.txt").write_text("keep")
+
+    async def must_not_run(*a, **k):
+        raise AssertionError("run must not be called")
+
+    monkeypatch.setattr("app.repos.run", must_not_run)
+    with pytest.raises(RuntimeError, match="not a Go module"):
+        await clone_sample(settings)
+    assert (settings.repos_dir / "stats" / "mine.txt").read_text() == "keep"

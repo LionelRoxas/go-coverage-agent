@@ -59,6 +59,8 @@ def list_repos(repos_dir: Path) -> list[RepoInfo]:
 async def clone_sample(settings: Settings) -> RepoInfo:
     dest = settings.repos_dir / "stats"
     if not (dest / "go.mod").exists():
+        if dest.exists():
+            raise RuntimeError("repos/stats exists but is not a Go module; remove or rename it")
         env = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", "/tmp"), "GIT_TERMINAL_PROMPT": "0"}
         try:
             r = await run(["git", "clone", "--depth", "1", settings.sample_repo_url, str(dest)],
