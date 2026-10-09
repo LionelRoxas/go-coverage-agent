@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // Pure reducer: the same code handles live events and replay after a refresh or reconnect.
-import type { CoverageReport, JobEvent, Scenario, Summary } from "./types";
+import type { CoverageReport, JobEvent, Scenario, Summary, SummaryGenerated } from "./types";
 
 // "not_run": the run ended (goal reached, stopped or cancelled) before this planned item finished.
 export type ItemStatus = "writing" | "validating" | "fixing" | "accepted" | "rejected" | "not_run";
@@ -36,6 +36,16 @@ export type ItemView = {
   writerTokens?: number; // the writer's llm_call arrives just before its candidate_generated
   pending?: PendingRequest;
 };
+// The end-of-run AI summary. "waiting": expected or being written (pending once its Groq request is out);
+// "off": write_summary was false; "none": an older run that predates the summary.
+export type AiSummaryView = {
+  status: "waiting" | "done" | "failed" | "off" | "none";
+  pending?: PendingRequest;
+  result?: SummaryGenerated;
+  generatedAt?: number;
+  error?: { reason: string; message: string };
+};
+
 export type IterationView = { index: number; startPercent: number; endPercent?: number; items: ItemView[] };
 export type RunState = {
   lastSeq: number;
@@ -53,6 +63,8 @@ export type RunState = {
   activity: string;
   tokens: number;
   summary?: Summary;
+  writeSummary?: boolean; // job_started options.write_summary; older logs lack it
+  aiSummary?: AiSummaryView;
   failure?: { reason: string; message: string; output: string };
 };
 
@@ -126,9 +138,15 @@ function addCheck(i: ItemView, check: Check): ItemView {
   return { ...i, steps: [...i.steps, { source: { type: "writer", outputTokens: i.writerTokens }, check }] };
 }
 
-export type RunAction = JobEvent | { type: "reset" };
+/** True while the event stream must stay open after the run ended: its summary is still to come. */
+export const summaryWaiting = (s: RunState) => s.aiSummary?.status === "waiting";
+
+// "summary_requested": Write summary / Write again was accepted; its events follow on a reopened stream.
+export type RunAction = JobEvent | { type: "reset" } | { type: "summary_requested" };
 
 export function reduce(state: RunState, ev: RunAction): RunState {
+  if (ev.type === "summary_requested")
+    return { ...state, aiSummary: { ...state.aiSummary, status: "waiting", pending: undefined, error: undefined } };
   if (!("seq" in ev)) return initialState; // "reset": a different job was opened
   if (ev.seq <= state.lastSeq) return state;
   const s: RunState = { ...state, lastSeq: ev.seq };
@@ -136,7 +154,7 @@ export function reduce(state: RunState, ev: RunAction): RunState {
   switch (ev.type) {
     case "job_started":
       return { ...s, status: "running", repoPath: d.repo_path, model: d.model, target: d.target_coverage,
-               maxFixAttempts: d.options?.max_fix_attempts, startedAt: ev.ts, activity: "Preparing a working copy…" };
+               maxFixAttempts: d.options?.max_fix_attempts, writeSummary: d.options?.write_summary, startedAt: ev.ts, activity: "Preparing a working copy…" };
     case "workspace_ready":
       return { ...s, removedTests: d.removed_tests, activity: "Measuring baseline coverage…" };
     case "baseline_measured":
@@ -156,6 +174,9 @@ export function reduce(state: RunState, ev: RunAction): RunState {
         activity: d.items.length ? `Writing tests for ${d.items[0].file}…` : s.activity,
       };
     case "llm_request":
+      if (d.role === "summarizer")
+        return { ...s, aiSummary: { ...s.aiSummary, status: "waiting",
+                                    pending: { since: ev.ts, role: d.role, effort: d.reasoning_effort ?? undefined } } };
       return withItem(s, d.index, d.file, (i) => ({
         ...i, pending: { since: ev.ts, role: d.role, effort: d.reasoning_effort ?? undefined } }));
     case "llm_call": {
@@ -170,7 +191,7 @@ export function reduce(state: RunState, ev: RunAction): RunState {
       });
     }
     case "rate_limited":
-      return { ...clearPending(s), activity: `Waiting ${Math.round(d.seconds)}s for the Groq rate limit (${d.reason === "tpm" ? "tokens per minute" : "HTTP 429"})…` };
+      return { ...clearPending(s), aiSummary: s.aiSummary && { ...s.aiSummary, pending: undefined }, activity: `Waiting ${Math.round(d.seconds)}s for the Groq rate limit (${d.reason === "tpm" ? "tokens per minute" : "HTTP 429"})…` };
     case "candidate_generated":
       return { ...withItem(s, d.index, d.file, (i) => ({ ...addCode(i, d.code ?? ""), status: "validating",
                                                           testPlan: d.test_plan ?? i.testPlan, code: d.code })),
@@ -212,7 +233,14 @@ export function reduce(state: RunState, ev: RunAction): RunState {
     case "job_cancelled":
       return { ...settleUnfinished(clearPending(s), ev.type === "job_completed" && d.stop_reason === "target_reached" ? "goal" : "stopped"),
                status: ev.type === "job_completed" ? "completed" : "cancelled", summary: d as Summary,
+               aiSummary: { status: s.writeSummary ? "waiting" : s.writeSummary === false ? "off" : "none" },
                percent: d.final_percent, activity: d.message };
+    case "summary_generated":
+      return { ...s, tokens: s.tokens + (d.tokens?.total_tokens ?? 0),
+               aiSummary: { status: "done", result: d as SummaryGenerated, generatedAt: ev.ts } };
+    case "summary_failed":
+      return { ...s, aiSummary: { ...s.aiSummary, status: "failed", pending: undefined,
+                                  error: { reason: d.reason, message: d.message } } };
     case "job_failed":
       // cancelled before the baseline finished: there is no Summary, so the backend reports it as a failure reason
       if (d.reason === "cancelled") return { ...settleUnfinished(clearPending(s), "stopped"), status: "cancelled", activity: "Cancelled." };

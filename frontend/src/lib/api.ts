@@ -79,6 +79,8 @@ export const api = {
   jobs: () => request<JobSnapshot[]>("/api/jobs"),
   job: (id: string) => request<JobSnapshot>(`/api/jobs/${id}`),
   cancel: (id: string) => request<JobSnapshot>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+  /** Write the AI summary of a finished run (again); its events follow on the run's event stream. */
+  writeSummary: (id: string) => request<JobSnapshot>(`/api/jobs/${id}/summary`, { method: "POST" }),
   file: (id: string, path: string) => request<string>(`/api/jobs/${id}/files/${encodePath(path)}`),
   eventsUrl: (id: string) => `${API_URL}/api/jobs/${id}/events`,
 };

@@ -1,8 +1,8 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import { initialState, reduce } from "./runState";
+import { initialState, reduce, summaryWaiting } from "./runState";
 
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
@@ -15,13 +15,17 @@ export function useJobEvents(jobId: string) {
   // Keyed by jobId: state left over from a previous job is ignored, so nothing leaks across jobs.
   const [ui, setUi] = useState<Ui>({ jobId, notFound: false, error: null, connection: "open" });
   const source = useRef<EventSource | null>(null);
+  // Bumped to open the stream again after the run ended (Write summary): replayed events are ignored by seq.
+  const [reopened, setReopened] = useState(0);
+  const opened = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let warned = false;
     const patch = (p: Partial<Ui>) =>
       setUi((u) => ({ ...(u.jobId === jobId ? u : { jobId, notFound: false, error: null, connection: "open" }), ...p }));
-    dispatch({ type: "reset" });
+    if (opened.current !== jobId) dispatch({ type: "reset" }); // a reopened stream keeps the state it extends
+    opened.current = jobId;
     api.job(jobId).then(
       () => {
         if (cancelled) return;
@@ -61,14 +65,20 @@ export function useJobEvents(jobId: string) {
       source.current?.close();
       source.current = null;
     };
-  }, [jobId]);
+  }, [jobId, reopened]);
 
-  const terminal = TERMINAL.has(state.status);
+  // The run has ended and nothing more is coming: its summary (if any) is written, failed or off.
+  const terminal = TERMINAL.has(state.status) && !summaryWaiting(state);
   useEffect(() => {
     if (terminal) source.current?.close(); // stop EventSource from reconnecting forever
   }, [terminal]);
 
   const cur = ui.jobId === jobId ? ui : { notFound: false, error: null, connection: "open" as const };
   const connection: Connection = terminal ? "closed" : cur.connection;
-  return { state, notFound: cur.notFound, error: cur.error, connection };
+  /** After POST /api/jobs/{id}/summary succeeded: wait for the summary and reopen the stream to receive it. */
+  const summaryRequested = useCallback(() => {
+    dispatch({ type: "summary_requested" });
+    setReopened((n) => n + 1);
+  }, []);
+  return { state, notFound: cur.notFound, error: cur.error, connection, summaryRequested };
 }

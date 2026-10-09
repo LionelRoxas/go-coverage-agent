@@ -114,6 +114,7 @@ export default function SetupPage() {
   const [repo, setRepo] = useState("");
   const [target, setTarget] = useState(80);
   const [opts, setOpts] = useState<Limits>(DEFAULTS);
+  const [writeSummary, setWriteSummary] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [samples, setSamples] = useState<Sample[]>([]);
@@ -229,6 +230,7 @@ export default function SetupPage() {
     return i < furthest ? "done" : "upcoming";
   });
   const changed = LIMITS.filter((l) => opts[l.key] !== DEFAULTS[l.key]);
+  const anyChanged = changed.length > 0 || !writeSummary;
 
   const tokensLeft = typeof health?.tokens_left_today === "number" ? health.tokens_left_today : null;
   const minTokens = health?.min_daily_tokens_to_start ?? MIN_TOKENS_TO_START;
@@ -239,7 +241,8 @@ export default function SetupPage() {
     setBusy(true);
     setError(null);
     try {
-      const { job_id } = await api.startJob({ repo_path: repo, target_coverage: target, options: opts });
+      const { job_id } = await api.startJob({ repo_path: repo, target_coverage: target,
+                                                options: { ...opts, write_summary: writeSummary } });
       router.push(`/jobs/${job_id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
@@ -326,9 +329,9 @@ export default function SetupPage() {
 
               {step === 2 && (
                 <div className="grid max-w-xl gap-x-6 gap-y-4 sm:grid-cols-2">
-                  {changed.length > 0 && (
+                  {anyChanged && (
                     <p id="skip-note" className="text-xs text-muted sm:col-span-2">
-                      You changed {changed.length === 1 ? "a limit" : "some limits"}. Skip (use defaults) discards these changes.
+                      You changed {changed.length + (writeSummary ? 0 : 1) === 1 ? "an option" : "some options"}. Skip (use defaults) discards these changes.
                     </p>
                   )}
                   {LIMITS.map((l, i) => {
@@ -346,6 +349,16 @@ export default function SetupPage() {
                       </div>
                     );
                   })}
+                  <div className="flex items-start gap-2.5 sm:col-span-2">
+                    <input id="write-summary" type="checkbox" checked={writeSummary} onChange={(e) => setWriteSummary(e.target.checked)}
+                           aria-describedby="write-summary-hint" className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" />
+                    <div className="space-y-0.5">
+                      <label htmlFor="write-summary" className="block text-sm">Write an AI summary at the end</label>
+                      <p id="write-summary-hint" className="text-xs leading-snug text-muted">
+                        One more Groq call writes a summary for stakeholders and one for engineering teams from the run&apos;s measured data.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -365,12 +378,13 @@ export default function SetupPage() {
                     </ReviewRow>
                     <ReviewRow label="Advanced options" editLabel="Edit advanced options" onEdit={() => goTo(2)} disabled={busy}>
                       {changed.length === 0 ? (
-                        <span className="text-muted">Defaults</span>
+                        <span className="block text-muted">Defaults</span>
                       ) : (
                         <ul className="space-y-0.5">
                           {changed.map((l) => <li key={l.key}>{l.label}: <span className="font-mono">{opts[l.key]}</span></li>)}
                         </ul>
                       )}
+                      <span className="mt-0.5 block">AI summary at the end: {writeSummary ? "on" : <span className="font-medium">off</span>}</span>
                     </ReviewRow>
                   </div>
 
@@ -399,8 +413,8 @@ export default function SetupPage() {
                 )}
                 <div className="ml-auto flex items-center gap-3 max-sm:order-3">
                   {step === 2 && (
-                    <Button variant="ghost" aria-describedby={changed.length > 0 ? "skip-note" : undefined}
-                            onClick={() => { setOpts(DEFAULTS); goTo(REVIEW); }}>
+                    <Button variant="ghost" aria-describedby={anyChanged ? "skip-note" : undefined}
+                            onClick={() => { setOpts(DEFAULTS); setWriteSummary(true); goTo(REVIEW); }}>
                       Skip (use defaults)
                     </Button>
                   )}

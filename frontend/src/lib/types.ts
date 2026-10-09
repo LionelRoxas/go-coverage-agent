@@ -47,6 +47,29 @@ export type JobOptions = {
   delete_existing_tests: boolean;
   max_llm_tokens: number;
   exclude_patterns: string[];
+  write_summary: boolean; // backend default: true
+};
+
+/** The end-of-run AI summary (summary_generated), written from the run's measured facts. */
+export type BusinessSummary = { headline: string; outcome: string; efficiency: string; risks: string[]; recommendation: string };
+export type TechnicalSummary = {
+  headline: string;
+  what_was_tested: string;
+  where_tests_live: string;
+  gaps: { file: string; detail: string }[];
+  suspected_bugs: string[];
+  rejected_or_failed: string;
+  how_to_run: string;
+  next_steps: string[];
+};
+export type CostUsd = { input: number; output: number; total: number };
+export type SummaryGenerated = {
+  business: BusinessSummary;
+  technical: TechnicalSummary;
+  dropped_sentences: number;
+  tokens: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  /** The run plus the summary call; only when GROQ_PRICE_*_PER_M are set. */
+  cost_usd?: CostUsd;
 };
 
 export type StartJobBody = { repo_path: string; target_coverage: number; options?: Partial<JobOptions> };

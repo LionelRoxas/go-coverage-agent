@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { AiSummary } from "@/components/AiSummary";
 import { CoverageChart } from "@/components/CoverageChart";
 import { CoverageMeter } from "@/components/CoverageMeter";
 import { FileTable } from "@/components/FileTable";
@@ -34,7 +35,7 @@ function useElapsed(startedAt?: number, running?: boolean) {
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
-  const { state, notFound, error, connection } = useJobEvents(id);
+  const { state, notFound, error, connection, summaryRequested } = useJobEvents(id);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   // "connecting" returns early below, so the clock and Cancel only ever see a known status.
@@ -145,7 +146,13 @@ export default function JobPage() {
 
       {state.summary && (
         <>
-          <SummaryCard summary={state.summary} jobId={id} />
+          <div className="space-y-4">
+            <SummaryCard summary={state.summary} jobId={id} />
+            {state.aiSummary && (
+              <AiSummary view={state.aiSummary} jobId={id} repo={state.repoPath ?? ""} model={state.model ?? ""}
+                         onRequested={summaryRequested} />
+            )}
+          </div>
           <section className="space-y-3">
             <SectionHeading>Coverage by iteration</SectionHeading>
             <CoverageChart history={state.history} target={state.target} />

@@ -7,3 +7,4 @@ export { EmptyState } from "./EmptyState";
 export { ledeClass, PageHeader, pageTitleClass, statementTitleClass, readingHeadingClass, SectionHeading, sectionHeadingClass } from "./Heading";
 export { LoadingStatus, Skeleton } from "./Skeleton";
 export { StatusPanel } from "./StatusPanel";
+export { tabIds, Tabs, type TabItem } from "./Tabs";

@@ -1,9 +1,9 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { RepoInfo, Sample, UploadLimits } from "@/lib/types";
 import { FolderUpload, type UploadFn } from "./FolderUpload";
-import { Badge, Button, EmptyState, LoadingStatus, Skeleton, staticTileClass, tileClass } from "./ui";
+import { Badge, Button, EmptyState, LoadingStatus, Skeleton, staticTileClass, Tabs, tileClass } from "./ui";
 
 export type PickerTab = "samples" | "folders";
 const TABS: { id: PickerTab; label: string }[] = [
@@ -84,7 +84,6 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
   const [downloading, setDownloading] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
-  const tabRefs = useRef<Record<PickerTab, HTMLButtonElement | null>>({ samples: null, folders: null });
 
   async function pick(s: Sample) {
     if (downloading) return;
@@ -112,35 +111,9 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
     }
   }
 
-  function onKeyDown(e: React.KeyboardEvent) {
-    const i = TABS.findIndex((t) => t.id === tab);
-    let next = -1;
-    if (e.key === "ArrowRight") next = (i + 1) % TABS.length;
-    else if (e.key === "ArrowLeft") next = (i - 1 + TABS.length) % TABS.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = TABS.length - 1;
-    if (next < 0) return;
-    e.preventDefault();
-    onTabChange(TABS[next].id);
-    tabRefs.current[TABS[next].id]?.focus();
-  }
-
   return (
     <div className="space-y-3">
-      <div role="tablist" aria-label="Repository source" onKeyDown={onKeyDown} className="flex gap-1 border-b border-border">
-        {TABS.map((t) => {
-          const active = t.id === tab;
-          return (
-            <button key={t.id} ref={(el) => { tabRefs.current[t.id] = el; }} type="button" role="tab" id={`tab-${t.id}`}
-                    aria-selected={active} aria-controls={active ? `panel-${t.id}` : undefined} tabIndex={active ? 0 : -1}
-                    onClick={() => onTabChange(t.id)}
-                    className={`relative -mb-px px-3 py-2 text-sm transition-colors ${active ? "font-medium text-text" : "text-muted hover:text-text"}`}>
-              {t.label}
-              {active && <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" />}
-            </button>
-          );
-        })}
-      </div>
+      <Tabs label="Repository source" tabs={TABS} value={tab} onChange={onTabChange} />
 
       {tab === "samples" && (
         <div role="tabpanel" id="panel-samples" aria-labelledby="tab-samples" className="space-y-3">

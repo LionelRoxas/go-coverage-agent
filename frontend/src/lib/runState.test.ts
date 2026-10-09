@@ -1,7 +1,8 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import { describe, expect, it } from "vitest";
-import { initialState, reduce, waitingOn } from "./runState";
+import { initialState, reduce, summaryWaiting, waitingOn } from "./runState";
 import type { JobEvent } from "./types";
+import { statsSummary } from "./fixtures/aiSummary";
 import { constraintsFixTooLarge, constraintsNoGain, constraintsRenamed, loadFirstTry, movingFixed, normPruned } from "./fixtures/traceEvents";
 
 const report = (percent: number) => ({ total_statements: 10, covered_statements: percent / 10, percent, files: [], functions: [] });
@@ -335,5 +336,65 @@ describe("items the run never finished", () => {
   it("marks unfinished items as stopped when the job fails", () => {
     const s = run([...planned(), ev("job_failed", { reason: "llm_fatal", message: "boom" })]);
     expect(items(s).filter((i) => i.status === "not_run")).toHaveLength(2);
+  });
+});
+
+describe("the end-of-run AI summary", () => {
+  const done = { stop_reason: "target_reached", message: "Reached the 80% coverage target.", final_percent: 81.07 };
+  const started = (options: Record<string, unknown>) =>
+    ev("job_started", { repo_path: "stats", target_coverage: 80, options, model: "openai/gpt-oss-120b" });
+  const generated = { business: statsSummary.business, technical: statsSummary.technical, dropped_sentences: 0,
+                      tokens: { prompt_tokens: 2950, completion_tokens: 1480, total_tokens: 4430 } };
+
+  it("waits after job_completed, shows the Groq wait, then the summary and its tokens", () => {
+    seq = 0;
+    let s = run([started({ write_summary: true }),
+                 ev("llm_call", { index: 1, file: "a.go", role: "writer", prompt_tokens: 1, completion_tokens: 1, total_tokens: 1000 }),
+                 ev("job_completed", done)]);
+    expect(s.status).toBe("completed");
+    expect(s.aiSummary).toEqual({ status: "waiting" });
+    expect(summaryWaiting(s)).toBe(true);
+    s = reduce(s, ev("llm_request", { role: "summarizer", reasoning_effort: "medium" }, 2000));
+    expect(s.aiSummary?.pending).toEqual({ since: 2000, role: "summarizer", effort: "medium" });
+    expect(waitingOn(s)).toBeUndefined(); // the run's own items are not waiting
+    s = reduce(s, ev("summary_generated", generated, 2010));
+    expect(s.aiSummary).toEqual({ status: "done", result: generated, generatedAt: 2010 });
+    expect(summaryWaiting(s)).toBe(false);
+    expect(s.tokens).toBe(5430);
+  });
+
+  it("records a failure and keeps an earlier summary", () => {
+    seq = 0;
+    let s = run([started({ write_summary: true }), ev("job_cancelled", { ...done, stop_reason: "cancelled" }),
+                 ev("summary_generated", generated, 10)]);
+    s = reduce(s, { type: "summary_requested" });
+    expect(s.aiSummary?.status).toBe("waiting");
+    expect(s.aiSummary?.result).toEqual(generated);
+    s = reduce(s, ev("llm_request", { role: "summarizer", reasoning_effort: "medium" }));
+    s = reduce(s, ev("summary_failed", { reason: "timeout", message: "Groq did not answer within 240 s, twice" }));
+    expect(s.aiSummary).toMatchObject({ status: "failed", result: generated, pending: undefined,
+                                        error: { reason: "timeout", message: "Groq did not answer within 240 s, twice" } });
+    expect(summaryWaiting(s)).toBe(false);
+  });
+
+  it("is off when the run turned it off, and absent from older runs", () => {
+    seq = 0;
+    expect(run([started({ write_summary: false }), ev("job_completed", done)]).aiSummary).toEqual({ status: "off" });
+    seq = 0;
+    expect(run([started({}), ev("job_completed", done)]).aiSummary).toEqual({ status: "none" });
+  });
+
+  it("a rate-limit pause stops the summary's wait timer but keeps it waiting", () => {
+    seq = 0;
+    const s = run([started({ write_summary: true }), ev("job_completed", done),
+                   ev("llm_request", { role: "summarizer", reasoning_effort: "medium" }),
+                   ev("rate_limited", { seconds: 12, reason: "tpm" })]);
+    expect(s.aiSummary).toEqual({ status: "waiting", pending: undefined });
+  });
+
+  it("a failed setup has no summary", () => {
+    seq = 0;
+    const s = run([started({ write_summary: true }), ev("job_failed", { reason: "repo_does_not_build", message: "x", output: "" })]);
+    expect(s.aiSummary).toBeUndefined();
   });
 });

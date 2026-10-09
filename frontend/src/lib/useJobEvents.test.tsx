@@ -69,3 +69,56 @@ describe("useJobEvents error handling", () => {
     expect(result.current.connection).toBe("reconnecting");
   });
 });
+
+describe("useJobEvents and the AI summary", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    FakeEventSource.last = null;
+    vi.stubGlobal("EventSource", FakeEventSource);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const send = (es: FakeEventSource, seq: number, type: string, data: Record<string, any>) =>
+    act(() => es.onmessage!({ data: JSON.stringify({ seq, ts: 1000 + seq, type, data }) }));
+  const result = { business: {}, technical: {}, dropped_sentences: 0, tokens: { total_tokens: 10 } };
+
+  it("keeps the stream open after job_completed until the summary arrives", async () => {
+    vi.mocked(api.job).mockResolvedValueOnce({} as never);
+    const hook = renderHook(() => useJobEvents("j1"));
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const es = FakeEventSource.last!;
+    send(es, 0, "job_started", { repo_path: "stats", target_coverage: 80, options: { write_summary: true }, model: "m" });
+    send(es, 1, "job_completed", { stop_reason: "target_reached", message: "done", final_percent: 81 });
+    expect(es.readyState).not.toBe(FakeEventSource.CLOSED);
+    expect(hook.result.current.connection).toBe("open");
+    send(es, 2, "summary_generated", result);
+    expect(es.readyState).toBe(FakeEventSource.CLOSED);
+    expect(hook.result.current.connection).toBe("closed");
+  });
+
+  it("summaryRequested reopens the stream and keeps the state it extends", async () => {
+    vi.mocked(api.job).mockResolvedValueOnce({} as never);
+    const hook = renderHook(() => useJobEvents("j1"));
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const first = FakeEventSource.last!;
+    send(first, 0, "job_started", { repo_path: "stats", target_coverage: 80, options: { write_summary: false }, model: "m" });
+    send(first, 1, "job_completed", { stop_reason: "target_reached", message: "done", final_percent: 81 });
+    expect(first.readyState).toBe(FakeEventSource.CLOSED);
+    expect(hook.result.current.state.aiSummary?.status).toBe("off");
+
+    vi.mocked(api.job).mockResolvedValueOnce({} as never);
+    act(() => hook.result.current.summaryRequested());
+    expect(hook.result.current.state.aiSummary?.status).toBe("waiting");
+    await waitFor(() => expect(FakeEventSource.last).not.toBe(first));
+    const second = FakeEventSource.last!;
+    expect(hook.result.current.state.status).toBe("completed"); // not reset
+    send(second, 0, "job_started", { repo_path: "stats", target_coverage: 80, options: { write_summary: false }, model: "m" });
+    send(second, 1, "job_completed", { stop_reason: "target_reached", message: "done", final_percent: 81 });
+    expect(hook.result.current.state.aiSummary?.status).toBe("waiting"); // replayed events are ignored
+    send(second, 2, "llm_request", { role: "summarizer", reasoning_effort: "medium" });
+    send(second, 3, "summary_generated", result);
+    expect(hook.result.current.state.aiSummary?.status).toBe("done");
+    expect(second.readyState).toBe(FakeEventSource.CLOSED);
+  });
+});

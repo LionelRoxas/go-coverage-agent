@@ -260,7 +260,7 @@ describe("SetupPage", () => {
     expect(iterations).toHaveAttribute("aria-invalid", "true");
 
     expect(screen.getByText(/discards these changes/)).toHaveTextContent(
-      "You changed a limit. Skip (use defaults) discards these changes.");
+      "You changed an option. Skip (use defaults) discards these changes.");
     expect(screen.getByRole("button", { name: "Skip (use defaults)" })).toHaveAccessibleDescription(/discards these changes/);
     await user.click(screen.getByRole("button", { name: "Skip (use defaults)" }));
     expect(stepHeading()).toHaveTextContent("Review & start");
@@ -286,8 +286,44 @@ describe("SetupPage", () => {
     await waitFor(() => expect(startButton()).toBeEnabled());
     await user.click(startButton());
     await waitFor(() => expect(mocked.startJob).toHaveBeenCalledWith(expect.objectContaining({
-      options: { max_iterations: 10, min_gain: 1, targets_per_iteration: 3, max_fix_attempts: 2 },
+      options: { max_iterations: 10, min_gain: 1, targets_per_iteration: 3, max_fix_attempts: 2, write_summary: true },
     })));
+  });
+
+  it("has an AI summary checkbox on step 3, on by default, listed on the review step and sent on Start", async () => {
+    setup();
+    mocked.startJob.mockResolvedValue({ job_id: "abc" });
+    const user = userEvent.setup();
+    render(<SetupPage />);
+    await waitFor(() => expect(nextButton()).toBeEnabled());
+    await user.click(nextButton());
+    await user.click(nextButton());
+    const box = screen.getByRole("checkbox", { name: "Write an AI summary at the end" });
+    expect(box).toBeChecked();
+    await user.click(box);
+    expect(screen.getByText(/discards these changes/)).toHaveTextContent("You changed an option.");
+    await user.click(nextButton());
+    const advanced = screen.getByRole("group", { name: "Advanced options" });
+    expect(advanced).toHaveTextContent("Defaults");
+    expect(advanced).toHaveTextContent("AI summary at the end: off");
+    clock.t += 1000;
+    await waitFor(() => expect(startButton()).toBeEnabled());
+    await user.click(startButton());
+    await waitFor(() => expect(mocked.startJob).toHaveBeenCalledWith(expect.objectContaining({
+      options: expect.objectContaining({ write_summary: false }),
+    })));
+  });
+
+  it("Skip turns the AI summary back on", async () => {
+    setup();
+    const user = userEvent.setup();
+    render(<SetupPage />);
+    await waitFor(() => expect(nextButton()).toBeEnabled());
+    await user.click(nextButton());
+    await user.click(nextButton());
+    await user.click(screen.getByRole("checkbox", { name: "Write an AI summary at the end" }));
+    await user.click(screen.getByRole("button", { name: "Skip (use defaults)" }));
+    expect(screen.getByRole("group", { name: "Advanced options" })).toHaveTextContent("AI summary at the end: on");
   });
 
   it("summarises the choices on the review step, each with an Edit link that jumps to its step", async () => {
@@ -454,7 +490,7 @@ describe("SetupPage", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/jobs/abc"));
     expect(mocked.startJob).toHaveBeenCalledWith({
       repo_path: "stats", target_coverage: 80,
-      options: { max_iterations: 20, min_gain: 1, targets_per_iteration: 3, max_fix_attempts: 2 },
+      options: { max_iterations: 20, min_gain: 1, targets_per_iteration: 3, max_fix_attempts: 2, write_summary: true },
     });
   });
 
