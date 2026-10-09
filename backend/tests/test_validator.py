@@ -98,3 +98,11 @@ async def test_prune_and_check_drops_failed_names(tmp_path):
     tools = FakeTools(profile=profile)
     r = await make(tmp_path, tools).prune_and_check("a_test.go", ["TestB"], prev(), ["TestA", "TestB"])
     assert tools.pruned == ["TestB"] and r.accepted and r.new_tests == ["TestA"]
+
+
+async def test_no_gain_messages_distinguish_loss_from_equal(tmp_path):
+    profile = "mode: set\nexample.com/m/a.go:1.1,2.2 1 1\n"
+    r = await make(tmp_path, FakeTools(profile=profile)).validate("a_test.go", "m", SNIP, prev(["a.go:5.1,6.2"]))
+    assert r.output == "the new tests made previously covered statements uncovered"
+    r = await make(tmp_path / "2", FakeTools(profile=profile)).validate("a_test.go", "m", SNIP, prev(["a.go:1.1,2.2"]))
+    assert r.output == "the new tests executed no previously uncovered statements"

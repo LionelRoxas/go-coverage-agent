@@ -39,3 +39,29 @@ def test_render_and_names():
     s = snip(code="func TestA(t *testing.T) {}\n\nfunc TestB(t *testing.T) {}", imports=["testing", "testing"])
     assert render_snippet("stats", s) == 'package stats\n\nimport (\n\t"testing"\n)\n\nfunc TestA(t *testing.T) {}\n\nfunc TestB(t *testing.T) {}\n'
     assert test_names(s.code) == ["TestA", "TestB"]
+
+
+def test_import_path_injection_rejected():
+    problems = check_snippet(snip(imports=['testing"\n\t"os/exec']), MOD)
+    assert any("invalid import path" in p for p in problems)
+
+
+def test_comment_prefixed_import_rejected():
+    assert check_snippet(snip(code='/* x */ import "os/exec"\nfunc TestX(t *testing.T) {}'), MOD)
+
+
+def test_import_word_inside_raw_string_allowed():
+    assert check_snippet(snip(code='var s = `\nimport x\n`\nfunc TestX(t *testing.T) {}'), MOD) == []
+
+
+def test_cgo_and_directives_rejected():
+    assert any("'C'" in p for p in check_snippet(snip(imports=["testing", "C"]), MOD))
+    assert any("runtime/cgo" in p for p in check_snippet(snip(imports=["testing", "runtime/cgo"]), MOD))
+    assert check_snippet(snip(code="//go:linkname x runtime.x\nfunc TestX(t *testing.T) {}"), MOD)
+    assert check_snippet(snip(code="// #cgo LDFLAGS: -lm\nfunc TestX(t *testing.T) {}"), MOD)
+
+
+def test_testmain_and_lowercase_not_test_functions():
+    assert test_names("func TestMain(m *testing.M) {}\nfunc TestA(t *testing.T) {}") == ["TestA"]
+    assert test_names("func Testlower(t *testing.T) {}") == []
+    assert check_snippet(snip(code="func TestMain(m *testing.M) {}"), MOD)

@@ -67,7 +67,7 @@ class Validator:
         r = await self.tools.test(self.packages, profile)
         if r.exit_code != 0 or r.timed_out or not profile.exists():
             return Measurement(r, None)
-        return Measurement(r, summarize(parse_profile(profile.read_text(), self.module), self.funcs))
+        return Measurement(r, summarize(parse_profile(profile.read_text(encoding="utf-8"), self.module), self.funcs))
 
     async def validate(self, test_file: str, package: str, snippet: TestSnippet,
                        prev: CoverageReport) -> ValidationResult:
@@ -76,7 +76,7 @@ class Validator:
         if problems:
             return ValidationResult(ValidationKind.GUARD_REJECTED, "\n".join(problems), new_tests=new_tests)
         snippet_path = self.ws.scratch / "snippet.go"
-        snippet_path.write_text(render_snippet(package, snippet))
+        snippet_path.write_text(render_snippet(package, snippet), encoding="utf-8")
         r = await self.tools.merge(test_file, snippet_path)
         if r.exit_code != 0:
             return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests)
@@ -102,7 +102,10 @@ class Validator:
             failed = parse_failed_tests(m.result.combined) or list(new_tests)
             return ValidationResult(ValidationKind.TEST_FAILURE, output, failed_tests=failed, new_tests=new_tests)
         before, after = prev.covered_set(), m.report.covered_set()
-        if not before <= after or after == before:
+        if not before <= after:
+            return ValidationResult(ValidationKind.NO_GAIN, "the new tests made previously covered statements uncovered",
+                                    report=m.report, new_tests=new_tests)
+        if after == before:
             return ValidationResult(ValidationKind.NO_GAIN, "the new tests executed no previously uncovered statements",
                                     report=m.report, new_tests=new_tests)
         return ValidationResult(ValidationKind.ACCEPTED, report=m.report, new_tests=new_tests)
