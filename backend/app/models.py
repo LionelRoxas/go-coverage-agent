@@ -102,6 +102,36 @@ class TestSnippet(BaseModel):
     suspected_bugs: list[SuspectedBug] = Field(description="Behaviour that looks wrong in the source; empty if none")
 
 
+# --- End-of-run AI summary (strict schema: every field required) ---
+class BusinessSummary(BaseModel):
+    headline: str = Field(description="One sentence: the outcome in plain words")
+    outcome: str = Field(description="Short paragraph: what the run achieved against the goal")
+    efficiency: str = Field(description="Short paragraph: time, tokens and, when given, cost for the gain")
+    risks: list[str] = Field(description="Short plain-language risks or limits; empty if none")
+    recommendation: str = Field(description="One or two sentences: what the stakeholder should do next")
+
+
+class SummaryGap(BaseModel):
+    file: str = Field(description="A source file name from the facts")
+    detail: str = Field(description="What is still untested there, from the facts")
+
+
+class TechnicalSummary(BaseModel):
+    headline: str = Field(description="One sentence for engineers: the coverage change and where the tests are")
+    what_was_tested: str = Field(description="Short paragraph: which files and areas the new tests exercise")
+    where_tests_live: str = Field(description="Where the generated test files are and how to bring them into the repo")
+    gaps: list[SummaryGap] = Field(description="Least-covered files and what remains; empty if none")
+    suspected_bugs: list[str] = Field(description="Suspected bugs exactly as reported in the facts; empty if none")
+    rejected_or_failed: str = Field(description="Short paragraph: rejected targets, fixes, repairs and pruned tests")
+    how_to_run: str = Field(description="The commands to run the tests")
+    next_steps: list[str] = Field(description="Concrete next steps for the receiving team")
+
+
+class RunSummary(BaseModel):
+    business: BusinessSummary
+    technical: TechnicalSummary
+
+
 # --- Jobs ---
 class JobOptions(BaseModel):
     max_iterations: int = Field(20, ge=1, le=30)
@@ -112,6 +142,7 @@ class JobOptions(BaseModel):
     delete_existing_tests: bool = True
     max_llm_tokens: int = Field(1_000_000, ge=10_000, le=2_000_000)
     exclude_patterns: list[str] = Field(default_factory=lambda: ["examples/**", "testdata/**"])
+    write_summary: bool = True  # an LLM-written business + technical summary after the run
 
 
 class JobRequest(BaseModel):

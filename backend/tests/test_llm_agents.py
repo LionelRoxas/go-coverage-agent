@@ -182,3 +182,36 @@ async def test_fix_with_no_history_has_no_history_section():
     llm = FakeLLM([snippet("func TestMean(t *testing.T) {}")])
     await Agents(llm, max_prompt_tokens=2000).fix(ITEM, INPUTS, snippet("func TestMean(t *testing.T) {}"), NO_GAIN)
     assert "Earlier attempts" not in llm.calls[0]["user"]
+
+
+async def test_summarize_sends_the_facts_as_json_with_the_summary_schema():
+    from app.models import RunSummary
+    from tests.fakes import run_summary
+    from tests.test_summary_facts import facts
+
+    llm = FakeLLM([run_summary()])
+    seen = []
+
+    async def on_request(effort):
+        seen.append(effort)
+
+    f = facts()
+    out, usage = await Agents(llm, max_prompt_tokens=12000).summarize(f, on_request=on_request)
+    call = llm.calls[0]
+    assert call["role"] == "summarizer" and call["schema"] is RunSummary and seen == ["medium"]
+    assert call["system"] == load_prompt("summarizer")
+    assert f.model_dump_json() in call["user"]
+    assert out == run_summary() and usage.total == 150
+
+
+async def test_summarize_compacts_the_facts_to_fit_a_small_prompt_budget():
+    from tests.fakes import run_summary
+    from tests.test_summary_facts import facts
+
+    llm = FakeLLM([run_summary()])
+    f = facts()
+    budget = 4500
+    await Agents(llm, max_prompt_tokens=budget).summarize(f.model_copy(update={"tests_added": f.tests_added * 8}))
+    call = llm.calls[0]
+    assert estimate_tokens(call["system"]) + estimate_tokens(call["user"]) <= budget
+    assert '"tests_added_count":109' in call["user"] and '"file":"clip.go"' in call["user"]

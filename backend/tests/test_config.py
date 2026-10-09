@@ -86,3 +86,17 @@ def test_upload_limits_default_and_env(monkeypatch):
     monkeypatch.setenv("UPLOAD_MAX_FILES", "0")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_groq_prices_are_unset_by_default_and_read_from_env(monkeypatch):
+    for name in ("GROQ_PRICE_INPUT_PER_M", "GROQ_PRICE_OUTPUT_PER_M"):
+        monkeypatch.delenv(name, raising=False)
+    s = Settings(_env_file=None)
+    assert (s.groq_price_input_per_m, s.groq_price_output_per_m) == (None, None)
+    monkeypatch.setenv("GROQ_PRICE_INPUT_PER_M", "0.15")
+    monkeypatch.setenv("GROQ_PRICE_OUTPUT_PER_M", "0.60")
+    s = Settings(_env_file=None)
+    assert (s.groq_price_input_per_m, s.groq_price_output_per_m) == (0.15, 0.60)
+    monkeypatch.setenv("GROQ_PRICE_INPUT_PER_M", "-1")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)

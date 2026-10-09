@@ -128,6 +128,16 @@ async def cancel(job_id: str, request: Request) -> dict:
     return _manager(request).cancel(job_id).snapshot()
 
 
+@router.post("/jobs/{job_id}/summary", status_code=202)
+async def write_summary(job_id: str, request: Request) -> dict:
+    """Write the AI summary of a finished run (again); summary events follow on the job's event stream."""
+    _job(request, job_id)
+    try:
+        return _manager(request).write_summary_again(job_id).snapshot()
+    except JobRejected as e:
+        raise ApiError(e.status, e.code, e.message) from e
+
+
 @router.get("/jobs/{job_id}/files/{path:path}")
 async def file(job_id: str, path: str, request: Request) -> PlainTextResponse:
     job = _job(request, job_id)

@@ -1,0 +1,247 @@
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+"""The end-of-run AI summary: emitted after job_completed / job_cancelled, saved to report.json and SUMMARY.md."""
+import asyncio
+import json
+
+import httpx
+import pytest
+
+from app.config import Settings
+from app.engine.run import JobFailed
+from app.jobs import JobManager, JobRejected
+from app.llm.client import LLMBudgetExhausted, LLMError, LLMTimeout
+from app.main import create_app
+from app.models import JobOptions, JobRequest, JobStatus, StopReason, Summary, TokenUsage
+from app.summary.report import NOTE
+from tests.fakes import FakeLLM, run_summary
+
+
+def summary(reason=StopReason.TARGET_REACHED, tokens=TokenUsage(prompt_tokens=1000, completion_tokens=500)):
+    return Summary(stop_reason=reason, message="m", target=80, baseline_percent=0, final_percent=80, iterations=[],
+                   test_files=["mean_test.go"], tests_added=["TestMean"], suspected_bugs=[], per_file=[],
+                   tokens=tokens, duration_s=0.1)
+
+
+def setup(tmp_path, responses=None, reason=StopReason.TARGET_REACHED, **settings):
+    llms: list[FakeLLM] = []
+
+    def factory(emit):
+        llms.append(FakeLLM(list(responses) if responses is not None else [run_summary()]))
+        return llms[-1]
+
+    async def runner(job, emit, cancel):
+        await emit("baseline_measured", {"report": {"percent": 0.0, "files": []}})
+        return summary(reason)
+
+    m = JobManager(Settings(groq_api_key="k", output_dir=tmp_path, **settings), runner=runner, llm_factory=factory)
+    return m, llms
+
+
+def types(job):
+    return [e.type for e in job.events]
+
+
+async def run(m, **options):
+    job = m.start(JobRequest(repo_path="stats", options=JobOptions(**options)))
+    await job.task
+    return job
+
+
+async def test_summary_follows_job_completed_and_is_saved(tmp_path):
+    m, llms = setup(tmp_path)
+    job = await run(m)
+    assert job.status is JobStatus.COMPLETED
+    assert types(job)[-3:] == ["job_completed", "llm_request", "summary_generated"]
+    assert job.events[-2].data == {"role": "summarizer", "reasoning_effort": "medium"}
+    data = job.events[-1].data
+    assert data["business"] == run_summary().business.model_dump() and data["dropped_sentences"] == 0
+    assert data["tokens"] == {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
+    assert "cost_usd" not in data
+    assert llms[0].calls[0]["role"] == "summarizer" and '"repo":"stats"' in llms[0].calls[0]["user"]
+
+    report = json.loads((tmp_path / job.id / "report.json").read_text(encoding="utf-8"))
+    assert report["final_percent"] == 80 and report["ai_summary"]["technical"] == data["technical"]
+    assert report["ai_summary"]["model"] == "openai/gpt-oss-120b" and "ai_summary_error" not in report
+    md = (tmp_path / job.id / "SUMMARY.md").read_text(encoding="utf-8")
+    assert md.startswith("# AI summary: stats\n") and NOTE in md and "openai/gpt-oss-120b" in md
+    assert "## For stakeholders" in md and "## For engineering teams" in md
+
+
+async def test_stream_stays_open_until_the_summary_is_written(tmp_path):
+    m, _ = setup(tmp_path)
+    job = m.start(JobRequest(repo_path="stats"))
+    await asyncio.sleep(0)
+    collected = asyncio.create_task(_collect(job))
+    await job.task
+    assert (await asyncio.wait_for(collected, 1))[-2:] == ["llm_request", "summary_generated"]
+
+
+async def _collect(job):
+    return [e.type async for e in job.stream()]
+
+
+async def test_summary_after_a_cancelled_run(tmp_path):
+    m, _ = setup(tmp_path, reason=StopReason.CANCELLED)
+    job = await run(m)
+    assert job.status is JobStatus.CANCELLED
+    assert types(job)[-3:] == ["job_cancelled", "llm_request", "summary_generated"]
+
+
+async def test_no_summary_when_turned_off_or_when_setup_failed(tmp_path):
+    m, llms = setup(tmp_path)
+    job = await run(m, write_summary=False)
+    assert types(job)[-1] == "job_completed" and llms == []
+    assert not (tmp_path / job.id / "SUMMARY.md").exists()
+
+    async def failing(job, emit, cancel):
+        raise JobFailed("repo_does_not_build", "nope")
+
+    m._runner = failing
+    job = await run(m)
+    assert types(job)[-1] == "job_failed" and llms == []
+
+
+@pytest.mark.parametrize("error, reason", [(LLMError("Groq returned 500"), "llm_error"),
+                                           (LLMTimeout("Groq did not answer"), "timeout"),
+                                           (LLMBudgetExhausted("The daily Groq token budget is used up."),
+                                            "budget_exhausted")])
+async def test_failure_is_reported_and_the_job_still_completes(tmp_path, error, reason):
+    m, _ = setup(tmp_path, responses=[error])
+    job = await run(m)
+    assert job.status is JobStatus.COMPLETED and job.finished
+    assert types(job)[-3:] == ["job_completed", "llm_request", "summary_failed"]
+    assert job.events[-1].data == {"reason": reason, "message": str(error)}
+    report = json.loads((tmp_path / job.id / "report.json").read_text(encoding="utf-8"))
+    assert report["ai_summary_error"] == {"reason": reason, "message": str(error)} and "ai_summary" not in report
+    assert not (tmp_path / job.id / "SUMMARY.md").exists()
+
+
+async def test_unexpected_crash_is_an_internal_error(tmp_path):
+    m, _ = setup(tmp_path, responses=[RuntimeError("boom")])
+    job = await run(m)
+    assert job.status is JobStatus.COMPLETED
+    assert job.events[-1].type == "summary_failed" and job.events[-1].data["reason"] == "internal_error"
+
+
+async def test_job_token_budget_is_checked_before_calling(tmp_path):
+    m, llms = setup(tmp_path)
+    m._runner = lambda job, emit, cancel: _done(summary(tokens=TokenUsage(prompt_tokens=8000, completion_tokens=2000)))
+    job = await run(m, max_llm_tokens=10_000)
+    assert types(job)[-2:] == ["job_completed", "summary_failed"]
+    assert job.events[-1].data["reason"] == "budget_exhausted" and llms == []
+
+
+async def _done(value):
+    return value
+
+
+async def test_cost_includes_the_summary_call(tmp_path):
+    m, _ = setup(tmp_path, groq_price_input_per_m=0.15, groq_price_output_per_m=0.60)
+    job = await run(m)
+    # run 1000 + 500 tokens, summary call 100 + 50: input 1100 * 0.15 / 1e6, output 550 * 0.60 / 1e6
+    assert job.events[-1].data["cost_usd"] == {"input": 0.0002, "output": 0.0003, "total": 0.0005}
+    md = (tmp_path / job.id / "SUMMARY.md").read_text(encoding="utf-8")
+    assert "Estimated cost: $0.0005 (input $0.0002, output $0.0003)" in md
+
+
+async def test_grounding_drops_invented_sentences(tmp_path):
+    m, _ = setup(tmp_path, responses=[run_summary("Coverage rose from 0% to 80%. It saved 37 hours.")])
+    job = await run(m)
+    data = job.events[-1].data
+    assert data["business"]["headline"] == "Coverage rose from 0% to 80%." and data["dropped_sentences"] == 1
+
+
+async def test_write_again_reopens_the_stream_and_replaces_the_summary(tmp_path):
+    m, llms = setup(tmp_path)
+    job = await run(m, write_summary=False)
+    assert job.finished
+    m.write_summary_again(job.id)
+    assert not job.finished
+    with pytest.raises(JobRejected) as exc:  # one at a time
+        m.write_summary_again(job.id)
+    assert exc.value.status == 409
+    collected = asyncio.create_task(_collect(job))
+    await job.summary_task
+    assert job.finished and len(llms) == 1
+    assert (await asyncio.wait_for(collected, 1))[-3:] == ["job_completed", "llm_request", "summary_generated"]
+    assert (tmp_path / job.id / "SUMMARY.md").exists()
+    lines = (tmp_path / job.id / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    assert json.loads(lines[-1])["type"] == "summary_generated"
+
+
+async def test_write_again_counts_earlier_summary_calls_toward_the_job_budget(tmp_path):
+    m, llms = setup(tmp_path)
+    m._runner = lambda job, emit, cancel: _done(summary(tokens=TokenUsage(prompt_tokens=9900, completion_tokens=0)))
+    job = await run(m, max_llm_tokens=10_000)  # 9900 < 10000: the first summary is written; then 9900 + 150
+    assert job.events[-1].type == "summary_generated"
+    m.write_summary_again(job.id)
+    await job.summary_task
+    assert job.events[-1].type == "summary_failed" and job.events[-1].data["reason"] == "budget_exhausted"
+
+
+async def test_write_again_keeps_an_earlier_summary_when_it_fails(tmp_path):
+    m, _ = setup(tmp_path)
+    job = await run(m)
+    m._llm_factory = lambda emit: FakeLLM([LLMError("Groq returned 500")])
+    m.write_summary_again(job.id)
+    await job.summary_task
+    report = json.loads((tmp_path / job.id / "report.json").read_text(encoding="utf-8"))
+    assert "ai_summary" in report and report["ai_summary_error"]["reason"] == "llm_error"
+    assert (tmp_path / job.id / "SUMMARY.md").exists()
+
+
+async def test_write_again_refuses_running_and_failed_jobs(tmp_path):
+    gate = asyncio.Event()
+
+    async def slow(job, emit, cancel):
+        await gate.wait()
+        raise JobFailed("repo_does_not_build", "nope")
+
+    m, _ = setup(tmp_path)
+    m._runner = slow
+    job = m.start(JobRequest(repo_path="stats"))
+    await asyncio.sleep(0)
+    with pytest.raises(JobRejected) as exc:
+        m.write_summary_again(job.id)
+    assert (exc.value.status, exc.value.code) == (409, "job_running")
+    gate.set()
+    await job.task
+    with pytest.raises(JobRejected) as exc:
+        m.write_summary_again(job.id)
+    assert (exc.value.status, exc.value.code) == (409, "no_report")
+
+
+async def test_summary_endpoint(tmp_path):
+    repos = tmp_path / "repos"
+    (repos / "stats").mkdir(parents=True)
+    (repos / "stats" / "go.mod").write_text("module m\n")
+    settings = Settings(groq_api_key="k", repos_dir=repos, work_dir=tmp_path / "work", output_dir=tmp_path / "out")
+
+    async def runner(job, emit, cancel):
+        return summary()
+
+    gate = asyncio.Event()
+
+    class GatedLLM(FakeLLM):
+        async def complete(self, **kw):
+            await gate.wait()
+            return await super().complete(**kw)
+
+    m = JobManager(settings, runner=runner, llm_factory=lambda emit: GatedLLM([run_summary()]))
+    app = create_app(settings, m)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.post("/api/jobs/nope/summary")).status_code == 404
+        job_id = (await client.post("/api/jobs", json={"repo_path": "stats",
+                                                       "options": {"write_summary": False}})).json()["job_id"]
+        job = m.get(job_id)
+        assert job.request.options.write_summary is False
+        await job.task
+        blocked = await client.post(f"/api/jobs/{job_id}/summary", headers={"origin": "http://evil.example"})
+        assert blocked.status_code == 403
+        r = await client.post(f"/api/jobs/{job_id}/summary", headers={"origin": "http://localhost:3000"})
+        assert r.status_code == 202 and r.json()["id"] == job_id
+        again = await client.post(f"/api/jobs/{job_id}/summary")
+        assert again.status_code == 409 and again.json()["error"]["code"] == "job_running"
+        gate.set()
+        await job.summary_task
+        assert job.events[-1].type == "summary_generated"

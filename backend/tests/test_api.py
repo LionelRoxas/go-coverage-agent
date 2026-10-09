@@ -7,6 +7,7 @@ from app.jobs import JobManager
 from app.main import create_app
 from app.repos import RepoInfo
 from app.models import StopReason, Summary, TokenUsage
+from tests.fakes import fake_llm
 
 
 def summary():
@@ -31,7 +32,7 @@ async def env(tmp_path):
                                           "tests": ["TestMean"], "percent": 80.0, "gain": 80.0})
         return summary()
 
-    manager = JobManager(settings, runner=runner)
+    manager = JobManager(settings, runner=runner, llm_factory=fake_llm)
     app = create_app(settings, manager)
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
     yield client, manager
@@ -45,7 +46,7 @@ def make_env(tmp_path, runner, **overrides):
     kw = dict(groq_api_key="k", repos_dir=repos, work_dir=tmp_path / "work", output_dir=tmp_path / "out")
     kw.update(overrides)
     settings = Settings(**kw)
-    manager = JobManager(settings, runner=runner)
+    manager = JobManager(settings, runner=runner, llm_factory=fake_llm)
     app = create_app(settings, manager)
     return app, manager
 
@@ -79,7 +80,7 @@ async def test_job_lifecycle_events_and_files(env):
     assert snap["status"] == "completed" and snap["summary"]["final_percent"] == 80
 
     events = (await client.get(f"/api/jobs/{job_id}/events")).text
-    assert events.count("data: ") == 3 and '"type":"job_completed"' in events.replace(" ", "")
+    assert events.count("data: ") == 5 and '"type":"job_completed"' in events.replace(" ", "")
 
     f = await client.get(f"/api/jobs/{job_id}/files/mean_test.go")
     assert f.status_code == 200 and f.text == "package stats\n"

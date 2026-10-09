@@ -1,5 +1,5 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-"""The two LLM roles: Writer (new tests) and Fixer (repair rejected tests)."""
+"""The LLM roles: Writer (new tests), Fixer (repair rejected tests) and Summarizer (end-of-run summary)."""
 from __future__ import annotations
 
 import re
@@ -10,7 +10,8 @@ from typing import Sequence
 from app.agents.context import ContextInputs, ContextTooLarge, render_context
 from app.agents.history import AttemptRecord, render_history
 from app.llm.client import LLMClient, OnRequest, estimate_tokens
-from app.models import PlanItem, TestSnippet, TokenUsage
+from app.models import PlanItem, RunSummary, TestSnippet, TokenUsage
+from app.summary.facts import RunFacts
 from app.validator import ValidationKind, ValidationResult
 
 _PROMPTS = Path(__file__).parent / "prompts"
@@ -70,6 +71,9 @@ def _relevant_parts(snippet: TestSnippet, result: ValidationResult, limit: int,
         kept.append(chunk)
         size += len(chunk) + 2
     return "\n\n".join(kept) if kept else None
+
+
+_COMPACT_TESTS = 30  # test names kept when the full facts do not fit the prompt (tests_added_count stays exact)
 
 
 def _labels(item: PlanItem) -> str:
@@ -150,3 +154,21 @@ class Agents:
         assert error is not None
         raise ContextTooLarge(f"{error}; the targets plus the Fixer's minimal task (first error lines, no code) "
                               "do not fit") from error
+
+    async def summarize(self, facts: RunFacts,
+                        on_request: OnRequest | None = None) -> tuple[RunSummary, TokenUsage]:
+        """The business and technical summary of a finished run, written from its measured facts only. When the
+        facts do not fit the prompt, unchanged files and most test names are left out (their counts stay)."""
+        system = load_prompt("summarizer")
+
+        def user(f: RunFacts) -> str:
+            return (f"## Facts (JSON)\n```json\n{f.model_dump_json()}\n```\n\n"
+                    "## Task\nWrite the business and the technical summary of this run from these facts only.")
+
+        text = user(facts)
+        if estimate_tokens(system) + estimate_tokens(text) > self.max_prompt_tokens:
+            text = user(facts.model_copy(update={
+                "per_file": [f for f in facts.per_file if f.after != f.before],
+                "tests_added": facts.tests_added[:_COMPACT_TESTS]}))
+        return await self.llm.complete(role="summarizer", system=system, user=text, schema=RunSummary,
+                                       on_request=on_request)

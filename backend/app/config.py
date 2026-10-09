@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     groq_timeout_s: float = Field(240.0, gt=0)  # GROQ_TIMEOUT_S: per request; retried once at low effort, then the item fails
     call_token_reservation: int = 16000  # pacing/ledger reserve per call (>= MAX_PROMPT_TOKENS + expected output); never sent to Groq
     max_prompt_tokens: int = 12000  # MAX_PROMPT_TOKENS; free-trial keys (8K tokens/min) should set 4500
+    # USD per 1M tokens, for the cost estimate in the end-of-run summary; unset -> no cost is shown
+    groq_price_input_per_m: float | None = Field(None, ge=0)
+    groq_price_output_per_m: float | None = Field(None, ge=0)
     daily_token_budget: int = 2_000_000
     min_daily_tokens_to_start: int = 20_000
 

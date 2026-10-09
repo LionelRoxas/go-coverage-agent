@@ -9,6 +9,7 @@ from app.config import Settings
 from app.engine.run import JobFailed
 from app.jobs import JobConflict, JobManager, JobRejected
 from app.models import JobRequest, JobStatus, StopReason, Summary, TokenUsage
+from tests.fakes import fake_llm
 
 
 def summary(reason=StopReason.TARGET_REACHED) -> Summary:
@@ -19,7 +20,7 @@ def summary(reason=StopReason.TARGET_REACHED) -> Summary:
 
 def manager(tmp_path, runner, key="k"):
     s = Settings(groq_api_key=key, output_dir=tmp_path)
-    return JobManager(s, runner=runner)
+    return JobManager(s, runner=runner, llm_factory=fake_llm)
 
 
 async def finish(job):
@@ -35,8 +36,9 @@ async def test_successful_job_emits_lifecycle(tmp_path):
     job = m.start(JobRequest(repo_path="stats"))
     await finish(job)
     assert job.status is JobStatus.COMPLETED
-    assert [e.type for e in job.events] == ["job_started", "iteration_started", "job_completed"]
-    assert [e.seq for e in job.events] == [0, 1, 2]
+    assert [e.type for e in job.events] == ["job_started", "iteration_started", "job_completed",
+                                            "llm_request", "summary_generated"]
+    assert [e.seq for e in job.events] == [0, 1, 2, 3, 4]
 
 
 async def test_stream_replays_and_tails_without_duplicates(tmp_path):
@@ -61,7 +63,7 @@ async def test_stream_replays_and_tails_without_duplicates(tmp_path):
     gate.set()
     await finish(job)
     late = [e.type async for e in job.stream()]  # subscribe after completion
-    assert await early == late == ["job_started", "a", "b", "job_completed"]
+    assert await early == late == ["job_started", "a", "b", "job_completed", "llm_request", "summary_generated"]
 
 
 async def test_rejects_without_key_and_when_running_and_when_budget_low(tmp_path):
@@ -79,7 +81,8 @@ async def test_rejects_without_key_and_when_running_and_when_budget_low(tmp_path
         m.start(JobRequest(repo_path="stats"))
     m.cancel(job.id)
     await finish(job)
-    assert job.status is JobStatus.CANCELLED and job.events[-1].type == "job_cancelled"
+    assert job.status is JobStatus.CANCELLED
+    assert [e.type for e in job.events][-3:] == ["job_cancelled", "llm_request", "summary_generated"]
 
     m.ledger.add(m.settings.daily_token_budget)
     with pytest.raises(JobRejected) as exc:
@@ -115,14 +118,14 @@ async def test_cancel_during_setup_marks_job_cancelled(tmp_path):
     assert job.events[-1].type == "job_failed" and job.events[-1].data["reason"] == "cancelled"
 
 
-async def test_events_jsonl_ends_with_terminal_event(tmp_path):
+async def test_events_jsonl_ends_with_terminal_and_summary_events(tmp_path):
     async def runner(job, emit, cancel):
         return summary()
 
     job = manager(tmp_path, runner).start(JobRequest(repo_path="stats"))
     await finish(job)
     lines = (tmp_path / job.id / "events.jsonl").read_text(encoding="utf-8").splitlines()
-    assert json.loads(lines[-1])["type"] == "job_completed"
+    assert [json.loads(line)["type"] for line in lines[-3:]] == ["job_completed", "llm_request", "summary_generated"]
 
 
 async def test_write_failure_still_closes_job(tmp_path, monkeypatch):
@@ -137,7 +140,7 @@ async def test_write_failure_still_closes_job(tmp_path, monkeypatch):
     stream = asyncio.create_task(_collect(job))
     await finish(job)
     assert job.finished and job.status is JobStatus.COMPLETED
-    assert (await asyncio.wait_for(stream, 1))[-1] == "job_completed"
+    assert (await asyncio.wait_for(stream, 1))[-3:] == ["job_completed", "llm_request", "summary_generated"]
 
 
 async def _collect(job):
