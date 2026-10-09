@@ -11,6 +11,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.jobs import Job, JobConflict, JobManager, JobRejected
 from app.models import JobRequest
 from app.repos import SAMPLES, clone_sample, list_repos, list_samples
+from app.uploads import UploadError, receive_upload
 from app.workspace import WorkspaceError, resolve_repo
 
 router = APIRouter(prefix="/api")
@@ -72,6 +73,15 @@ async def download_sample(sample_id: str, request: Request) -> dict:
 async def sample(request: Request) -> dict:
     """Alias for the sample with id "stats"."""
     return await _download(request, "stats")
+
+
+@router.post("/repos/upload")
+async def upload_repo(request: Request) -> dict:
+    """Multipart: one 'files' part per file (filename = path such as 'myproj/pkg/a.go') and optional 'name'."""
+    try:
+        return await receive_upload(request, request.app.state.settings)
+    except UploadError as e:
+        raise ApiError(e.status, e.code, e.message) from e
 
 
 @router.post("/jobs", status_code=201)

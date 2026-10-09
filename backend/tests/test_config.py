@@ -71,3 +71,18 @@ def test_groq_timeout_must_be_positive(monkeypatch, value):
     monkeypatch.setenv("GROQ_TIMEOUT_S", value)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_upload_limits_default_and_env(monkeypatch):
+    for k in ("UPLOAD_MAX_BYTES", "UPLOAD_MAX_FILES", "UPLOAD_MAX_FILE_BYTES"):
+        monkeypatch.delenv(k, raising=False)
+    s = Settings(_env_file=None)
+    assert (s.upload_max_bytes, s.upload_max_files, s.upload_max_file_bytes) == (25 * 1024 * 1024, 3000, 1024 * 1024)
+    monkeypatch.setenv("UPLOAD_MAX_BYTES", "1000")
+    monkeypatch.setenv("UPLOAD_MAX_FILES", "5")
+    monkeypatch.setenv("UPLOAD_MAX_FILE_BYTES", "10")
+    s = Settings(_env_file=None)
+    assert (s.upload_max_bytes, s.upload_max_files, s.upload_max_file_bytes) == (1000, 5, 10)
+    monkeypatch.setenv("UPLOAD_MAX_FILES", "0")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
