@@ -47,6 +47,14 @@ describe("NavBar", () => {
     expect(screen.getByRole("link", { name: "New run" })).not.toHaveAttribute("aria-current");
   });
 
+  it("keeps two nav links and marks How it works current on /walkthrough", () => {
+    path = "/walkthrough";
+    render(<NavBar />);
+    expect(screen.getAllByRole("link").filter((a) => a.closest("nav"))).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "How it works" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "New run" })).not.toHaveAttribute("aria-current");
+  });
+
   it("hides the model badge when health is unavailable", async () => {
     vi.mocked(api.health).mockRejectedValue(new Error("down"));
     render(<NavBar />);

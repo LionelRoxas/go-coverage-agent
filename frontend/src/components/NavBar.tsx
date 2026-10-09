@@ -9,7 +9,8 @@ import { api } from "@/lib/api";
 
 const LINKS = [
   { href: "/", label: "New run", active: (p: string) => p === "/" },
-  { href: "/how-it-works", label: "How it works", active: (p: string) => p === "/how-it-works" },
+  // The Walkthrough is the long version of How it works, linked from there; a third item would not fit at 390 px.
+  { href: "/how-it-works", label: "How it works", active: (p: string) => p === "/how-it-works" || p === "/walkthrough" },
 ];
 
 export function NavBar() {
