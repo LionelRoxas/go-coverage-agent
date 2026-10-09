@@ -172,7 +172,7 @@ export default function SetupPage() {
           )}
           <ol aria-label="Steps to start a run">
             <Step n={1} title="Choose a repository" done={!!selected}
-                  hint="Pick a sample (it downloads the first time), or upload a Go project folder of your own (Your folders tab).">
+                  hint="Pick a sample (it downloads the first time), or upload a Go project folder of your own.">
               <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
                           onDownload={download} onRefresh={reload} onUpload={upload} uploadLimits={health?.upload_limits} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
               <div className="space-y-1.5">
@@ -180,10 +180,6 @@ export default function SetupPage() {
                   {selected ? (
                     <>Selected: <span className="font-mono text-text">{selected.path}</span> · <span className="font-mono">{selected.module}</span> · {selected.go_files} source files</>
                   ) : "Nothing selected yet. Pick a repository above."}
-                </p>
-                <p className="max-w-prose text-xs leading-relaxed text-muted">
-                  {selected ? "Its" : "The selected repository's"} source code is sent to Groq{health ? <>, where <span className="font-mono">{health.model}</span> writes the tests</> : " to write the tests"}.
-                  {" "}The agent works on a copy with the existing <code className="font-mono">_test.go</code> files removed; your repository is never modified.
                 </p>
               </div>
             </Step>

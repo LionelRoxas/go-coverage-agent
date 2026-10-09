@@ -72,19 +72,6 @@ describe("SetupPage", () => {
     expect(startButton()).toBeDisabled();
   });
 
-  it("says under the selection that code goes to Groq, which model writes the tests, and that the repo is untouched", async () => {
-    setup();
-    render(<SetupPage />);
-    expect(await screen.findByText("m")).toBeInTheDocument();
-    const note = screen.getByText(/is sent to Groq/);
-    expect(note).toHaveTextContent(
-      "Its source code is sent to Groq, where m writes the tests. The agent works on a copy with the existing _test.go files removed; your repository is never modified.",
-    );
-    // the note follows the selection summary and comes before the Start button
-    const selected = screen.getByText(/Selected:/);
-    expect(selected.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(note.compareDocumentPosition(startButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
 
   it("shows the token budget beside Start", async () => {
     setup();
@@ -177,7 +164,7 @@ describe("SetupPage", () => {
       "Choose a repository", "Set a target", "Advanced options (optional)", "Start the run",
     ]);
     expect(within(steps[0]).getByText(/Pick a sample \(it downloads the first time\)/)).toHaveTextContent(
-      "Pick a sample (it downloads the first time), or upload a Go project folder of your own (Your folders tab).");
+      "Pick a sample (it downloads the first time), or upload a Go project folder of your own.");
     expect(within(steps[1]).getByText(/share of the code/)).toHaveTextContent(
       "The share of the code you want tests to run. 80% is a good start; higher takes longer.");
     expect(within(steps[2]).getByText(/defaults work/i)).toBeInTheDocument();
@@ -269,7 +256,7 @@ describe("SetupPage", () => {
     setup({ repos: [repo, { ...repo, path: "mine", module: "example.com/mine" }] });
     mocked.samples.mockRejectedValue(new ApiError(404, "http_error", "Not Found"));
     render(<SetupPage />);
-    expect(await screen.findByText("m")).toBeInTheDocument();
+    expect(await screen.findByText(/tokens left today/)).toBeInTheDocument(); // health loaded
     await userEvent.setup().click(screen.getByRole("tab", { name: "Sample repos" }));
     expect(screen.getByText(/Sample list unavailable/)).toBeInTheDocument();
   });

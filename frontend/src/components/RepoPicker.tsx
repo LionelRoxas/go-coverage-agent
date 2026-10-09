@@ -148,9 +148,6 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
 
       {tab === "samples" && (
         <div role="tabpanel" id="panel-samples" aria-labelledby="tab-samples" className="space-y-3">
-          <p className="text-xs leading-relaxed text-muted">
-            Small open-source Go libraries with no dependencies. Picking one downloads it into <code className="font-mono">./repos</code> the first time.
-          </p>
           {samplesFailed && (
             <p role="status" className="rounded-sm border border-dashed border-border px-3 py-3 text-sm text-muted">
               Sample list unavailable (rebuild the backend?). Your folders still work.
