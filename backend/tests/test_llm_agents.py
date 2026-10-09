@@ -1,6 +1,8 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-from app.agents.context import ContextInputs
-from app.agents.llm_agents import Agents
+import pytest
+
+from app.agents.context import ContextInputs, ContextTooLarge, render_context
+from app.agents.llm_agents import Agents, load_prompt
 from app.llm.client import estimate_tokens
 from app.models import FuncKey, PlanItem, TestSnippet
 from app.validator import ValidationKind, ValidationResult
@@ -47,3 +49,47 @@ async def test_fix_shows_declared_imports_and_plan():
     await Agents(llm, max_prompt_tokens=2000).fix(ITEM, INPUTS, bad, ValidationResult(ValidationKind.VET_ERROR, "boom"))
     user = llm.calls[0]["user"]
     assert "Imports you declared: testing, math" in user and "- Mean: empty input" in user
+
+
+BIG_TARGET = "func Mean(input Float64Data) (float64, error) {\n" + "\tx := 1  // UNCOVERED\n" * 150 + "}"
+BIG_INPUTS = ContextInputs(module="m", package="stats", go_version="1.17", source_file="mean.go", test_file="mean_test.go",
+                           targets=[("Mean", BIG_TARGET)], declared=[], referenced=["type Float64Data []float64"] * 50,
+                           existing_tests=["func TestOld(t *testing.T)"])
+
+
+def _two_tests() -> TestSnippet:
+    failing = "func TestFail(t *testing.T) {\n" + "\tt.Log(\"fail\")\n" * 60 + "}\n"
+    passing = "func TestOther(t *testing.T) {\n" + "\tt.Log(\"other\")\n" * 200 + "}\n"
+    return snippet(failing + "\n" + passing)
+
+
+async def test_fix_degrades_to_failing_parts_and_first_error_lines_instead_of_failing():
+    llm = FakeLLM([snippet("func TestFail(t *testing.T) {}")])
+    output = "--- FAIL: TestFail (0.00s)\n    mean_test.go:3: got 1 want 2\n" + "noise line\n" * 400
+    result = ValidationResult(ValidationKind.TEST_FAILURE, output, failed_tests=["TestFail"])
+    budget = 2100
+    await Agents(llm, max_prompt_tokens=budget).fix(ITEM, BIG_INPUTS, _two_tests(), result)
+    call = llm.calls[0]
+    user = call["user"]
+    assert estimate_tokens(call["system"]) + estimate_tokens(user) <= budget
+    assert "x := 1  // UNCOVERED" in user and "func TestOld(t *testing.T)" in user
+    assert "--- FAIL: TestFail" in user and "got 1 want 2" in user
+    assert "func TestFail" in user and "TestOther" not in user
+
+
+async def test_fix_omits_the_code_as_a_last_resort():
+    llm = FakeLLM([snippet("func TestFail(t *testing.T) {}")])
+    result = ValidationResult(ValidationKind.COMPILE_ERROR, "./mean_test.go:3:2: undefined: foo\n" * 50)
+    target_only = estimate_tokens(load_prompt("fixer")) + 20 + estimate_tokens(
+        render_context(BIG_INPUTS, 10_000).split("## Tests already")[0])
+    await Agents(llm, max_prompt_tokens=target_only + 200).fix(ITEM, BIG_INPUTS, _two_tests(), result)
+    user = llm.calls[0]["user"]
+    assert "undefined: foo" in user and "TestFail" not in user and "omitted" in user
+
+
+async def test_fix_raises_context_too_large_only_when_targets_alone_do_not_fit():
+    llm = FakeLLM([])
+    result = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: foo")
+    with pytest.raises(ContextTooLarge, match="targets need"):
+        await Agents(llm, max_prompt_tokens=900).fix(ITEM, BIG_INPUTS, _two_tests(), result)
+    assert llm.calls == []

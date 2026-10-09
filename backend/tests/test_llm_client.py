@@ -162,9 +162,10 @@ async def test_cancel_interrupts_rate_limit_wait(tmp_path):
 
 
 async def test_oversized_prompt_rejected(tmp_path):
-    llm, _, _ = make(tmp_path, [])
-    with pytest.raises(LLMError, match="prompt"):
-        await llm.complete(role="writer", system="s", user="x" * 20_000, schema=Out)
+    llm, fake, _ = make(tmp_path, [])
+    with pytest.raises(LLMError, match="over the 12000 limit"):
+        await llm.complete(role="writer", system="s", user="x" * 45_000, schema=Out)
+    assert fake.calls == []
 
 
 async def test_http_date_retry_after_falls_back_to_60s(tmp_path):
@@ -308,9 +309,10 @@ async def test_413_clamps_from_message_when_header_missing(tmp_path):
 
 async def test_second_413_gives_guidance_and_does_not_loop(tmp_path):
     llm, fake, _ = make(tmp_path, [_too_large(), _too_large()])
-    with pytest.raises(LLMError, match="GROQ_MAX_COMPLETION_TOKENS lower"):
+    with pytest.raises(LLMError, match="GROQ_MAX_COMPLETION_TOKENS lower") as e:
         await call(llm)
     assert len(fake.calls) == 2
+    assert "MAX_PROMPT_TOKENS=4500" in str(e.value)  # a prompt near the TPM limit is not fixed by the cap alone
 
 
 async def test_unrelated_429_is_still_a_rate_limit_wait(tmp_path):

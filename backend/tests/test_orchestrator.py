@@ -1,5 +1,6 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -72,8 +73,11 @@ class FakeAgents:
 
 
 class FakeContexts:
+    def __init__(self, declared=()):
+        self.declared = list(declared)
+
     async def inputs_for(self, item, rep):
-        return object()
+        return SimpleNamespace(declared=self.declared)
 
 
 @pytest.fixture
@@ -303,3 +307,40 @@ async def test_fixer_output_too_large_stays_llm_error(ws):
                        max_iterations=1)
     await orch.run(report(set(), funcs=(("a.go", "A"),)))
     assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "llm_error"}) in events
+
+
+async def test_duplicate_test_name_is_renamed_without_calling_fixer(ws):
+    dup = ValidationResult(ValidationKind.COMPILE_ERROR, "gohelper: duplicate declaration: TestA")
+    v = FakeValidator(ws, [dup, accepted({"A:1", "A:2"}, tests=["TestA_3"])])
+    agents = FakeAgents([GOOD])
+    orch, events = run(ws, v, agents, target=50, max_fix_attempts=0, contexts=FakeContexts(["TestA", "TestA_2"]))
+    summary = await orch.run(report(set()))
+    assert agents.fix_kinds == [] and summary.tests_added == ["TestA_3"]
+    assert v.snips[1].code == "func TestA_3(t *testing.T) {}"
+    assert ("mechanical_repair", {"index": 1, "file": "a.go", "repair": 1,
+                                  "description": "renamed duplicate test TestA to TestA_3"}) in events
+
+
+async def test_duplicate_helper_goes_to_the_fixer(ws):
+    dup = ValidationResult(ValidationKind.COMPILE_ERROR, "gohelper: duplicate declaration: approxEqual")
+    helper = snippet("func approxEqual(a, b float64) bool { return a == b }")
+    v = FakeValidator(ws, [dup, accepted({"A:1", "A:2"})])
+    agents = FakeAgents([helper], fixes=[GOOD])
+    orch, events = run(ws, v, agents, target=50, max_fix_attempts=1, contexts=FakeContexts(["approxEqual"]))
+    await orch.run(report(set()))
+    assert agents.fix_kinds == [ValidationKind.COMPILE_ERROR]
+    assert not any(t == "mechanical_repair" for t, _ in events)
+
+
+async def test_fixer_prompt_too_large_is_not_a_model_error(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
+    msg = "targets need ~3591 tokens; budget is 2191"
+    agents = FakeAgents([GOOD], fixes=[ContextTooLarge(msg)])
+    orch, events = run(ws, FakeValidator(ws, [bad]), agents, max_fix_attempts=1, targets_per_iteration=1,
+                       max_iterations=1)
+    await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert ("validation_result", {"index": 1, "file": "a.go", "kind": "prompt_too_large", "output": msg,
+                                  "failed_tests": []}) in events
+    assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "prompt_too_large"}) in events
+    assert not any(d.get("kind") == "llm_error" or d.get("reason") == "llm_error" for _, d in events)
+    assert ws.read("a_test.go") is None

@@ -24,6 +24,7 @@ class ValidationKind(StrEnum):
     NO_GAIN = "no_gain"
     GUARD_REJECTED = "guard_rejected"
     LLM_ERROR = "llm_error"
+    PROMPT_TOO_LARGE = "prompt_too_large"  # the prompt could not fit MAX_PROMPT_TOKENS; no model call was made
 
 
 @dataclass

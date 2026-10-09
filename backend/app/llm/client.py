@@ -57,7 +57,8 @@ def _retry_after(headers: Any) -> float:
 _SIZE_HINT = re.compile(r"limit\D{0,3}(\d+)\D+requested\D{0,3}(\d+)", re.IGNORECASE)
 _MIN_COMPLETION = 1024
 _SIZE_GUIDANCE = ("Groq rejected the request size for this key's tokens-per-minute limit; "
-                  "set GROQ_MAX_COMPLETION_TOKENS lower (e.g. 4000).")
+                  "set GROQ_MAX_COMPLETION_TOKENS lower (e.g. 4000), and on a free-trial key (8K tokens/min) "
+                  "also set MAX_PROMPT_TOKENS=4500.")
 
 
 def _size_rejection(e: groq.APIStatusError) -> tuple[bool, int | None]:

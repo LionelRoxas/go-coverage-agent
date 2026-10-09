@@ -99,9 +99,11 @@ def render_context(inp: ContextInputs, budget_tokens: int) -> str:
     text = "\n\n".join([_header(inp), _declared(inp), _targets(inp)])
     if estimate_tokens(text) > budget_tokens:
         raise ContextTooLarge(f"targets need ~{estimate_tokens(text)} tokens; budget is {budget_tokens}")
-    text = _fit(text, "## Related declarations in this package", inp.referenced, budget_tokens, "```go\n", "\n```")
+    # Existing test names go before the optional related declarations so they are not crowded out;
+    # when only some fit, the most recent (last in the file) are kept.
     text = _fit(text, f"## Tests already in {inp.test_file} (signatures only; do not duplicate)",
-                [f"- {s}" for s in inp.existing_tests], budget_tokens)
+                [f"- {s}" for s in reversed(inp.existing_tests)], budget_tokens)
+    text = _fit(text, "## Related declarations in this package", inp.referenced, budget_tokens, "```go\n", "\n```")
     return text
 
 

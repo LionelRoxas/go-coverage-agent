@@ -51,3 +51,37 @@ def test_qualifier_stripping_preserves_comments_and_literals():
 }"""
     fixed, _ = mechanical_repair(snippet(code), "undefined: stats", "stats")
     assert fixed.code == code.replace("_ = stats.Mean(x)", "_ = Mean(x)")
+
+
+DUP = "gohelper: duplicate declaration: TestCaret_Uncovered"
+
+
+def test_renames_a_duplicate_test_declaration_to_the_first_free_suffix():
+    code = "// TestCaret_Uncovered covers the caret.\nfunc TestCaret_Uncovered(t *testing.T) {\n\tt.Log(\"TestCaret_Uncovered\")\n}\n"
+    fixed, description = mechanical_repair(snippet(code), DUP, "semver", taken=["TestCaret_Uncovered", "TestCaret_Uncovered_2"])
+    assert fixed.code == code.replace("func TestCaret_Uncovered(", "func TestCaret_Uncovered_3(")
+    assert description == "renamed duplicate test TestCaret_Uncovered to TestCaret_Uncovered_3"
+
+
+def test_rename_skips_names_used_elsewhere_in_the_snippet_and_is_word_bounded():
+    code = ("func TestCaret_Uncovered(t *testing.T) {}\n\nfunc TestCaret_Uncovered_2(t *testing.T) {}\n\n"
+            "func TestCaret_UncoveredMore(t *testing.T) {}\n")
+    fixed, description = mechanical_repair(snippet(code), DUP, "semver", taken=["TestCaret_Uncovered"])
+    assert fixed.code == code.replace("func TestCaret_Uncovered(", "func TestCaret_Uncovered_3(")
+    assert description == "renamed duplicate test TestCaret_Uncovered to TestCaret_Uncovered_3"
+
+
+def test_renames_benchmark_fuzz_and_example_duplicates():
+    for name, sig in (("BenchmarkX", "(b *testing.B)"), ("FuzzX", "(f *testing.F)"), ("ExampleX", "()")):
+        fixed, description = mechanical_repair(snippet(f"func {name}{sig} {{}}"), f"duplicate declaration: {name}", "p",
+                                               taken=[name])
+        assert fixed.code == f"func {name}_2{sig} {{}}" and description == f"renamed duplicate test {name} to {name}_2"
+
+
+def test_duplicate_is_left_to_the_fixer_when_not_renameable():
+    helper = "func approxEqual(a, b float64) bool { return a == b }"
+    assert mechanical_repair(snippet(helper), "duplicate declaration: approxEqual", "p", taken=["approxEqual"]) is None
+    referenced = "func TestA(t *testing.T) {}\n\nfunc TestB(t *testing.T) { TestA(t) }"
+    assert mechanical_repair(snippet(referenced), "duplicate declaration: TestA", "p", taken=["TestA"]) is None
+    absent = "func TestB(t *testing.T) {}"
+    assert mechanical_repair(snippet(absent), "duplicate declaration: TestA", "p", taken=["TestA"]) is None

@@ -4,6 +4,7 @@ import pytest
 from app.agents.context import (ContextInputs, ContextProvider, ContextTooLarge, annotate_source,
                                 go_version_rules, render_context, test_signatures)
 from app.gotools import GoPackage, Symbol
+from app.llm.client import estimate_tokens
 from app.models import CoverageReport, FuncCoverage, FuncInfo, FuncKey, PlanItem
 from app.workspace import Workspace
 
@@ -70,3 +71,20 @@ async def test_provider_builds_inputs(tmp_path):
     assert inp.package == "p" and inp.test_file == "a_test.go" and inp.declared == ["approxEqual"]
     assert inp.targets[0][0] == "Abs" and "return 0, ErrNeg  // UNCOVERED" in inp.targets[0][1]
     assert inp.referenced == ['var ErrNeg = errors.New("neg")']
+
+
+def test_existing_test_names_survive_a_tight_budget_before_related_declarations():
+    tests = [f"func TestOld{i}(t *testing.T)" for i in range(5)]
+    inp = inputs(existing_tests=tests)
+    budget = estimate_tokens(render_context(inputs(referenced=[], existing_tests=tests), 10_000)) + 2
+    tight = render_context(inp, budget)  # exactly room for the existing-tests section, none for related declarations
+    assert "## Tests already in a_test.go" in tight and all(t in tight for t in tests)
+    assert "ErrA" not in tight
+    assert tight.index("## Tests already in") > tight.index("func Abs() {}")
+
+
+def test_existing_test_names_keep_the_most_recent_when_only_some_fit():
+    tests = [f"func TestOld{i}(t *testing.T)" for i in range(40)]
+    base = render_context(inputs(referenced=[], existing_tests=[]), 10_000)
+    tight = render_context(inputs(existing_tests=tests), estimate_tokens(base) + 40)
+    assert "func TestOld39(t *testing.T)" in tight and "func TestOld0(t *testing.T)" not in tight

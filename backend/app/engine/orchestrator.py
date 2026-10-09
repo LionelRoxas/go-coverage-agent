@@ -174,8 +174,8 @@ class Orchestrator:
                             if result.accepted:
                                 break
                     if result.kind is ValidationKind.COMPILE_ERROR and repairs < MAX_MECHANICAL_REPAIRS:
-                        repaired = mechanical_repair(snip, result.output, package)
-                        if repaired is not None:  # forgotten import / self-qualified identifier: no LLM call needed
+                        repaired = mechanical_repair(snip, result.output, package, inputs.declared)
+                        if repaired is not None:  # forgotten import / self-qualified name / duplicate test name: no LLM call
                             repairs += 1
                             await self.emit("mechanical_repair", {**base, "repair": repairs, "description": repaired[1]})
                             ws.restore(snap)
@@ -196,8 +196,10 @@ class Orchestrator:
                 ws.restore(snap)
                 raise
             too_large = False
-            result = ValidationResult(ValidationKind.LLM_ERROR, str(e))
-            log.warning("LLM error for %s: %s", item.file, e)
+            # a fixer prompt that cannot fit even after degrading is a local check, not a model error
+            kind = ValidationKind.PROMPT_TOO_LARGE if isinstance(e, ContextTooLarge) else ValidationKind.LLM_ERROR
+            result = ValidationResult(kind, str(e))
+            log.warning("%s for %s: %s", kind.value, item.file, e)
             await self.emit("validation_result", {**base, **result.event()})
         except BaseException:  # incl. Cancelled, OSError, asyncio.CancelledError: never leave a candidate behind
             ws.restore(snap)

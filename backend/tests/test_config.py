@@ -17,3 +17,10 @@ def test_llm_configured_reflects_key(monkeypatch):
 def test_empty_max_completion_tokens_means_unset(monkeypatch):
     monkeypatch.setenv("GROQ_MAX_COMPLETION_TOKENS", "")
     assert Settings().groq_max_completion_tokens is None
+
+
+def test_max_prompt_tokens_default_and_env(monkeypatch):
+    monkeypatch.delenv("MAX_PROMPT_TOKENS", raising=False)
+    assert Settings(_env_file=None).max_prompt_tokens == 12000
+    monkeypatch.setenv("MAX_PROMPT_TOKENS", "4500")
+    assert Settings(_env_file=None).max_prompt_tokens == 4500
