@@ -6,7 +6,8 @@ import time
 import pytest
 
 from app.coverage import parse_profile, summarize
-from app.gotools import read_module_info, run
+from app.config import Settings
+from app.gotools import go_env, read_module_info, run
 
 pytestmark = pytest.mark.integration
 
@@ -56,3 +57,33 @@ async def test_run_cancel_event_stops_command(tmp_path):
     asyncio.get_running_loop().call_later(0.5, cancel.set)
     r = await run(["sleep", "30"], cwd=tmp_path, timeout=20, env={"PATH": os.environ["PATH"]}, cancel=cancel)
     assert r.cancelled and not r.timed_out
+
+
+async def test_run_caps_runaway_output_and_does_not_block(tmp_path):
+    r = await run(["sh", "-c", "yes | head -c 3000000"], cwd=tmp_path, timeout=20,
+                  env={"PATH": os.environ["PATH"]}, max_chars=1000)
+    assert r.exit_code == 0 and not r.timed_out
+    assert r.stdout.endswith("[output truncated]")
+    assert len(r.stdout) < 1100
+
+
+async def test_run_cancelled_task_kills_process_group(tmp_path):
+    # The shell records its own pid, then sleeps. Cancelling the awaiting task must kill the group;
+    # run() reaps the shell before re-raising, so os.kill(pid, 0) raising proves it is gone (not a zombie).
+    pidfile = tmp_path / "pid"
+    task = asyncio.ensure_future(run(["sh", "-c", f"echo $$ > {pidfile}; sleep 30"], cwd=tmp_path,
+                                     timeout=20, env={"PATH": os.environ["PATH"]}))
+    await asyncio.sleep(0.3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    pid = int(pidfile.read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+async def test_subprocess_env_hides_secrets(tmp_path, monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "secret")
+    r = await run(["sh", "-c", 'echo "${GROQ_API_KEY:-absent}"'], cwd=tmp_path, timeout=10,
+                  env=go_env(Settings()))
+    assert r.stdout.strip() == "absent"

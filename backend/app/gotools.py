@@ -48,9 +48,30 @@ class GoPackage:
     name: str
 
 
-def _cap(data: bytes, max_chars: int) -> str:
-    text = data.decode("utf-8", errors="replace")
-    return text if len(text) <= max_chars else text[:max_chars] + "\n…[output truncated]"
+_MARKER = "\n…[output truncated]"
+_CHUNK = 64 * 1024
+_REAP_TIMEOUT = 5.0
+JSON_MAX_CHARS = 50_000_000
+
+
+async def _drain(stream: asyncio.StreamReader | None, max_chars: int) -> tuple[str, bool]:
+    """Read to EOF, keeping at most ~max_chars of output; the rest is discarded so the child never blocks."""
+    limit = max_chars * 4  # a char is at most 4 bytes of UTF-8
+    buf = bytearray()
+    truncated = False
+    while stream is not None:
+        chunk = await stream.read(_CHUNK)
+        if not chunk:
+            break
+        room = limit - len(buf)
+        if room > 0:
+            buf += chunk[:room]
+        if len(chunk) > room:
+            truncated = True
+    text = bytes(buf).decode("utf-8", errors="replace")
+    if truncated or len(text) > max_chars:
+        return text[:max_chars] + _MARKER, True
+    return text, False
 
 
 def _kill_group(proc: asyncio.subprocess.Process) -> None:
@@ -58,6 +79,16 @@ def _kill_group(proc: asyncio.subprocess.Process) -> None:
         os.killpg(proc.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         pass
+
+
+async def _reap(proc: asyncio.subprocess.Process, io: asyncio.Future[Any]) -> None:
+    """After a kill, wait (bounded) for the process and readers so run() can never hang."""
+    try:
+        await asyncio.wait_for(asyncio.shield(proc.wait()), _REAP_TIMEOUT)
+    except (asyncio.TimeoutError, ProcessLookupError):
+        pass
+    if not io.done():
+        io.cancel()
 
 
 async def run(argv: list[str], cwd: Path, timeout: float, env: dict[str, str],
@@ -68,24 +99,32 @@ async def run(argv: list[str], cwd: Path, timeout: float, env: dict[str, str],
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
     )
-    comm = asyncio.ensure_future(proc.communicate())
-    waiters: set[asyncio.Future[Any]] = {comm}
+    io = asyncio.gather(_drain(proc.stdout, max_chars), _drain(proc.stderr, max_chars), proc.wait())
+    waiters: set[asyncio.Future[Any]] = {io}
     cancel_wait = asyncio.ensure_future(cancel.wait()) if cancel else None
     if cancel_wait:
         waiters.add(cancel_wait)
+    out, err = "", ""
     try:
         done, _ = await asyncio.wait(waiters, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
-        finished = comm in done
+        finished = io in done
         if not finished:
             _kill_group(proc)
-        out, err = await comm
+            await _reap(proc, io)
+        if io.done() and not io.cancelled():
+            (out, _), (err, _), _ = io.result()
+    except BaseException:
+        # The awaiting task was cancelled (or something broke): never orphan the process group.
+        _kill_group(proc)
+        await _reap(proc, io)
+        raise
     finally:
         if cancel_wait:
             cancel_wait.cancel()
     return CommandResult(
         argv=argv,
-        exit_code=proc.returncode if finished else -1,
-        stdout=_cap(out, max_chars), stderr=_cap(err, max_chars),
+        exit_code=proc.returncode if finished and proc.returncode is not None else -1,
+        stdout=out, stderr=err,
         duration_ms=int((time.monotonic() - started) * 1000),
         timed_out=not finished and not (cancel is not None and cancel.is_set()),
         cancelled=cancel is not None and cancel.is_set(),
@@ -132,12 +171,13 @@ class GoTools:
         self.cancel = cancel
         self._env = go_env(settings)
 
-    async def _run(self, argv: list[str], timeout: float | None = None) -> CommandResult:
+    async def _run(self, argv: list[str], timeout: float | None = None,
+                   max_chars: int | None = None) -> CommandResult:
         return await run(argv, self.root, timeout or self.settings.command_timeout_s, self._env,
-                         self.cancel, self.settings.max_output_chars)
+                         self.cancel, max_chars or self.settings.max_output_chars)
 
     async def list_packages(self, exclude: list[str]) -> list[GoPackage]:
-        r = await self._run(["go", "list", "-json", "./..."])
+        r = await self._run(["go", "list", "-json", "./..."], max_chars=JSON_MAX_CHARS)
         if r.exit_code != 0:
             raise GoToolError("go list failed", r)
         pkgs = []
@@ -161,7 +201,7 @@ class GoTools:
                                 f"-timeout={self.settings.test_timeout}", *[p.import_path for p in pkgs]])
 
     async def funcs(self) -> list[FuncInfo]:
-        r = await self._run(["gohelper", "funcs", "."])
+        r = await self._run(["gohelper", "funcs", "."], max_chars=JSON_MAX_CHARS)
         if r.exit_code != 0:
             raise GoToolError("gohelper funcs failed", r)
         return [FuncInfo(key=FuncKey(file=o["file"], receiver=o["receiver"], name=o["name"]),
@@ -169,7 +209,7 @@ class GoTools:
                          exported=o["exported"]) for o in json.loads(r.stdout)]
 
     async def decls(self, rel_dir: str) -> list[str]:
-        r = await self._run(["gohelper", "decls", rel_dir])
+        r = await self._run(["gohelper", "decls", rel_dir], max_chars=JSON_MAX_CHARS)
         if r.exit_code != 0:
             raise GoToolError("gohelper decls failed", r)
         return json.loads(r.stdout)
