@@ -1,7 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import JobPage from "./page";
 import { api, ApiError } from "@/lib/api";
 
@@ -14,8 +14,41 @@ vi.mock("@/lib/api", async (orig) => {
 vi.mock("@/components/CoverageChart", () => ({ CoverageChart: () => null }));
 vi.mock("@/components/TestFiles", () => ({ TestFiles: () => null }));
 
+class FakeEventSource {
+  static CLOSED = 2;
+  static last: FakeEventSource | null = null;
+  readyState = 1;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onmessage: ((m: { data: string }) => void) | null = null;
+  constructor(public url: string) {
+    FakeEventSource.last = this;
+  }
+  close() {
+    this.readyState = FakeEventSource.CLOSED;
+  }
+}
+
 describe("JobPage", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("EventSource", FakeEventSource);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("tells the user where accepted tests were saved when a run fails", async () => {
+    vi.mocked(api.job).mockResolvedValue({} as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    act(() => {
+      const send = (seq: number, type: string, data: object) =>
+        FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq, ts: 1, type, data }) });
+      send(0, "job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" });
+      send(1, "job_failed", { reason: "internal_error", message: "boom", output: "" });
+    });
+    expect(await screen.findByText("Run failed: boom")).toBeInTheDocument();
+    expect(screen.getByText("Any accepted tests were saved to ./output/gone/tests.")).toBeInTheDocument();
+  });
 
   it("explains that a run no longer exists when the API returns 404", async () => {
     vi.mocked(api.job).mockRejectedValue(new ApiError(404, "not_found", "no such job"));

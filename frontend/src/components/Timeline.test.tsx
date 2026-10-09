@@ -27,6 +27,18 @@ describe("Timeline", () => {
     expect(screen.getByText("Accepted +3.0 pp")).toBeInTheDocument();
   });
 
+  it("shows the description of an auto-fixed attempt, and no output block when it is empty", () => {
+    const withText = item({ attempts: [{ kind: "mechanical_repair", output: "added import strings", failedTests: [] }] });
+    const { container, rerender } = render(<Timeline iterations={[iteration([withText])]} />);
+    expect(screen.getByText("added import strings")).toBeInTheDocument();
+    expect(container.querySelectorAll("pre")).toHaveLength(1);
+
+    const legacy = item({ attempts: [{ kind: "mechanical_repair", output: "", failedTests: [] }] });
+    rerender(<Timeline iterations={[iteration([legacy])]} />);
+    expect(screen.getByText(`Attempt 1: ${ATTEMPT_LABEL.mechanical_repair}`)).toBeInTheDocument();
+    expect(container.querySelectorAll("pre")).toHaveLength(0);
+  });
+
   it("shows the rejection reason label for a rejected item", () => {
     render(<Timeline iterations={[iteration([item({ status: "rejected", rejectReason: "too_large" })])]} />);
     expect(screen.getByText(REJECTION_LABEL.too_large)).toBeInTheDocument();

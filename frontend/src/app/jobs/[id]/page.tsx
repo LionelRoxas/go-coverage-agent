@@ -90,6 +90,7 @@ export default function JobPage() {
       {state.failure && (
         <section role="alert" className="space-y-2 rounded-md border border-danger p-4">
           <h2 className="font-semibold">Run failed: {state.failure.message}</h2>
+          <p className="text-sm text-muted">Any accepted tests were saved to ./output/{id}/tests.</p>
           {state.failure.output && <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-surface p-2 font-mono text-xs">{state.failure.output}</pre>}
         </section>
       )}

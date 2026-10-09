@@ -28,7 +28,14 @@ export function useJobEvents(jobId: string) {
         const es = new EventSource(api.eventsUrl(jobId));
         source.current = es;
         es.onopen = () => patch({ connection: "open", error: null });
-        es.onerror = () => patch({ connection: "reconnecting" });
+        es.onerror = () => {
+          patch({ connection: "reconnecting" });
+          if (es.readyState !== EventSource.CLOSED) return; // the browser is retrying by itself
+          // The browser gave up (e.g. the backend restarted and forgot the job): find out whether it still exists.
+          api.job(jobId).catch((e) => {
+            if (!cancelled && e instanceof ApiError && e.status === 404) patch({ notFound: true });
+          });
+        };
         es.onmessage = (m) => {
           try {
             dispatch(JSON.parse(m.data));

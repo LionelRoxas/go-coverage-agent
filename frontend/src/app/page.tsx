@@ -127,6 +127,7 @@ export default function SetupPage() {
       <ul className="max-w-prose space-y-1 text-xs leading-relaxed text-muted">
         <li>Existing <code className="font-mono">_test.go</code> files are removed from a working copy. Your repository is never modified.</li>
         <li>Source code of the selected repository is sent to Groq.</li>
+        {health && <li>Tests are written by <span className="font-mono">{health.model}</span> on Groq.</li>}
         {health && <li>About <span className="font-mono">{tokens(health.tokens_left_today)}</span> Groq tokens left today on this machine.</li>}
       </ul>
 

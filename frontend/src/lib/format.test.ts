@@ -12,6 +12,8 @@ describe("format", () => {
     expect(duration(1859.6)).toBe("30m 59s");
     expect(tokens(950)).toBe("950");
     expect(tokens(152_300)).toBe("152.3k");
+    expect(tokens(2_000_000)).toBe("2.0M");
+    expect(tokens(1_500_000)).toBe("1.5M");
   });
 
   it("labels attempts and rejections separately", () => {

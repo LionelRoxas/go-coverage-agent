@@ -49,11 +49,48 @@ describe("reduce", () => {
       ev("iteration_started", { index: 1, percent: 0 }),
       ev("plan_created", { index: 1, items: [{ file: "mean.go", functions: ["Mean"], uncovered_statements: 4 }] }),
       ev("candidate_generated", { index: 1, file: "mean.go", test_file: "mean_test.go", test_plan: [], code: "x" }),
-      ev("mechanical_repair", { index: 1, file: "mean.go", repair: 'added import "math"' }),
+      ev("mechanical_repair", { index: 1, file: "mean.go", repair: 1, description: "added import math" }),
     ]);
     const item = s.iterations[0].items[0];
     expect(item.status).toBe("validating");
-    expect(item.attempts).toEqual([{ kind: "mechanical_repair", output: 'added import "math"', failedTests: [] }]);
+    expect(item.attempts).toEqual([{ kind: "mechanical_repair", output: "added import math", failedTests: [] }]);
+  });
+
+  const start = () => ev("job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" });
+
+  it("uses an empty output for a legacy mechanical_repair event without a description", () => {
+    seq = 0;
+    const s = run([
+      ev("job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" }),
+      ev("iteration_started", { index: 1, percent: 0 }),
+      ev("plan_created", { index: 1, items: [{ file: "mean.go", functions: ["Mean"], uncovered_statements: 4 }] }),
+      ev("mechanical_repair", { index: 1, file: "mean.go", repair: 1 }),
+    ]);
+    expect(s.iterations[0].items[0].attempts).toEqual([{ kind: "mechanical_repair", output: "", failedTests: [] }]);
+  });
+
+  it("points the activity at the next item still being written after an accept or reject", () => {
+    seq = 0;
+    const plan = () => ev("plan_created", { index: 1, items: [
+      { file: "a.go", functions: ["A"], uncovered_statements: 4 },
+      { file: "b.go", functions: ["B"], uncovered_statements: 3 },
+      { file: "c.go", functions: ["C"], uncovered_statements: 2 },
+    ] });
+    let s = run([start(), ev("iteration_started", { index: 1, percent: 0 }), plan(),
+                 ev("candidate_accepted", { index: 1, file: "a.go", test_file: "a_test.go", tests: ["TestA"], percent: 10, gain: 10 })]);
+    expect(s.activity).toBe("Writing tests for b.go…");
+    s = reduce(s, ev("candidate_rejected", { index: 1, file: "b.go", reason: "no_gain" }));
+    expect(s.activity).toBe("Writing tests for c.go…");
+    s = reduce(s, ev("candidate_rejected", { index: 1, file: "c.go", reason: "no_gain" }));
+    expect(s.activity).toBe("Writing tests for c.go…"); // nothing left to write: activity unchanged
+  });
+
+  it("maps a job_failed with reason cancelled to the cancelled status", () => {
+    seq = 0;
+    const s = run([start(), ev("job_failed", { reason: "cancelled", message: "Cancelled before the baseline finished.", output: "" })]);
+    expect(s.status).toBe("cancelled");
+    expect(s.activity).toBe("Cancelled.");
+    expect(s.failure).toBeUndefined();
   });
 
   it("ignores events it has already seen (reconnect replay)", () => {

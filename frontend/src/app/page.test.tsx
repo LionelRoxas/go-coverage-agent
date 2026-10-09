@@ -46,6 +46,13 @@ describe("SetupPage", () => {
     expect(startButton()).toBeDisabled();
   });
 
+  it("names the model that writes the tests", async () => {
+    setup();
+    render(<SetupPage />);
+    expect(await screen.findByText("m")).toBeInTheDocument();
+    expect(screen.getByText(/Tests are written by/)).toHaveTextContent("Tests are written by m on Groq.");
+  });
+
   it("enables Start with a key and a repo, and disables it for an invalid target", async () => {
     setup();
     const user = userEvent.setup();

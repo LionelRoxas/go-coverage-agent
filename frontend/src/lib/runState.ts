@@ -56,6 +56,12 @@ function withItem(s: RunState, index: number, file: string, fn: (item: ItemView)
   return withIteration(s, index, (it) => ({ ...it, items: it.items.map((i) => (i.file === file ? fn(i) : i)) }));
 }
 
+// After an item finishes, point the activity line at the next item still waiting for its tests.
+function nextWriting(s: RunState, index: number): string {
+  const next = s.iterations.find((it) => it.index === index)?.items.find((i) => i.status === "writing");
+  return next ? `Writing tests for ${next.file}…` : s.activity;
+}
+
 export type RunAction = JobEvent | { type: "reset" };
 
 export function reduce(state: RunState, ev: RunAction): RunState {
@@ -97,17 +103,20 @@ export function reduce(state: RunState, ev: RunAction): RunState {
         ...i, attempts: [...i.attempts, { kind: d.kind, output: d.output, failedTests: d.failed_tests }] }));
     case "mechanical_repair":
       return withItem(s, d.index, d.file, (i) => ({
-        ...i, attempts: [...i.attempts, { kind: "mechanical_repair", output: d.repair, failedTests: [] }] }));
+        ...i, attempts: [...i.attempts, { kind: "mechanical_repair", output: d.description ?? "", failedTests: [] }] }));
     case "tests_pruned":
       return withItem(s, d.index, d.file, (i) => ({ ...i, pruned: [...i.pruned, ...d.tests] }));
     case "fix_attempt":
       return { ...withItem(s, d.index, d.file, (i) => ({ ...i, status: "fixing" })),
                activity: `Fixing ${String(d.kind).replace("_", " ")} in ${d.file} (attempt ${d.attempt})…` };
-    case "candidate_accepted":
-      return { ...withItem(s, d.index, d.file, (i) => ({ ...i, status: "accepted", tests: d.tests, gain: d.gain })),
-               percent: d.percent };
-    case "candidate_rejected":
-      return withItem(s, d.index, d.file, (i) => ({ ...i, status: "rejected", rejectReason: d.reason }));
+    case "candidate_accepted": {
+      const next = withItem(s, d.index, d.file, (i) => ({ ...i, status: "accepted", tests: d.tests, gain: d.gain }));
+      return { ...next, percent: d.percent, activity: nextWriting(next, d.index) };
+    }
+    case "candidate_rejected": {
+      const next = withItem(s, d.index, d.file, (i) => ({ ...i, status: "rejected", rejectReason: d.reason }));
+      return { ...next, activity: nextWriting(next, d.index) };
+    }
     case "iteration_completed":
       return { ...withIteration(s, d.index, (it) => ({ ...it, endPercent: d.end_percent })),
                history: [...s.history, { label: `Iter ${d.index}`, percent: d.end_percent }] };
@@ -116,6 +125,8 @@ export function reduce(state: RunState, ev: RunAction): RunState {
       return { ...s, status: ev.type === "job_completed" ? "completed" : "cancelled", summary: d as Summary,
                percent: d.final_percent, activity: d.message };
     case "job_failed":
+      // cancelled before the baseline finished: there is no Summary, so the backend reports it as a failure reason
+      if (d.reason === "cancelled") return { ...s, status: "cancelled", activity: "Cancelled." };
       return { ...s, status: "failed", failure: { reason: d.reason, message: d.message, output: d.output },
                activity: d.message };
     default:
