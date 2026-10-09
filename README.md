@@ -179,8 +179,8 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <br><b>Coverage by iteration</b><br>Coverage after each of the 15 iterations, rising steadily from the 0% baseline and crossing the dashed 80% target line at the end.
 </td>
 <td valign="top">
-<a href="docs/screenshots/gallery-timeline.png"><img src="docs/screenshots/gallery-timeline.png" width="100%" alt="Expanded timeline item showing a compile failure, an auto-fix and a pruned failing test"></a>
-<br><b>Timeline item, expanded</b><br>One file's work in iteration 7: what the model decided to test, a compile failure (<code>undefined: strings</code>), a mechanical auto-fix with no LLM call, a failing test that is pruned, and the rest kept (Accepted +3.0 pp).
+<a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for norm.go showing three numbered attempts: a compile failure, an auto-fix that left 3 of 8 tests failing, and a prune that passed"></a>
+<br><b>Attempt trace, expanded</b><br>Every attempt for <code>norm.go</code> in iteration 1, numbered: ① written by the LLM, didn't compile (<code>undefined: strconv</code>); ② auto-fixed with no LLM call, 3 of 8 tests failed, each listed once with its first message (raw output behind a toggle); ③ the 3 failing tests removed, 5 kept, passed. Result: accepted at attempt 3, +4.9 pp.
 </td>
 </tr>
 <tr>
