@@ -1,7 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
 import { useRef, useState } from "react";
-import type { RepoInfo, Sample } from "@/lib/types";
+import type { RepoInfo, Sample, UploadLimits } from "@/lib/types";
 import { FolderUpload, type UploadFn } from "./FolderUpload";
 
 export type PickerTab = "samples" | "folders";
@@ -24,6 +24,8 @@ type Props = {
   onRefresh: () => Promise<void>;
   /** Uploads a chosen folder's files; resolves once the new module is listed and selected. */
   onUpload: UploadFn;
+  /** Upload limits reported by /api/health; the defaults are used when absent. */
+  uploadLimits?: UploadLimits;
   hostDir: string | null;
   samplesFailed?: boolean;
 };
@@ -82,7 +84,7 @@ function CopyLine({ text }: { text: string }) {
   );
 }
 
-export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange, onDownload, onRefresh, onUpload, hostDir, samplesFailed }: Props) {
+export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange, onDownload, onRefresh, onUpload, uploadLimits, hostDir, samplesFailed }: Props) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
@@ -165,7 +167,7 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
 
       {tab === "folders" && (
         <div role="tabpanel" id="panel-folders" aria-labelledby="tab-folders" className="space-y-4">
-          <FolderUpload onUpload={onUpload} />
+          <FolderUpload onUpload={onUpload} limits={uploadLimits} />
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted">
               {hostDir ? <>Go modules in <code className="break-all font-mono text-text">{hostDir}</code></> : <>Go modules in <code className="font-mono text-text">./repos</code></>}

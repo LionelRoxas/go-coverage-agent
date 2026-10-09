@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -220,27 +220,35 @@ describe("RepoPicker", () => {
     });
 
     const fileEntry = (path: string, size = 10) => ({
-      isFile: true, isDirectory: false, fullPath: `/${path}`,
+      isFile: true, isDirectory: false, fullPath: `/${path}`, name: path.split("/").pop()!,
       file: (ok: (f: File) => void) => ok(new File(["x".repeat(size)], path.split("/").pop()!)),
     });
-    const dirEntry = (path: string, children: unknown[]) => ({
-      isFile: false, isDirectory: true, fullPath: `/${path}`,
-      createReader: () => {
-        let sent = false;
-        return { readEntries: (ok: (e: unknown[]) => void) => { ok(sent ? [] : children); sent = true; } };
-      },
-    });
+    /** A directory whose reader hands out `batches` one per readEntries call, then an empty batch. */
+    const dirEntry = (path: string, ...batches: unknown[][]) => {
+      let opened = false;
+      return {
+        isFile: false, isDirectory: true, fullPath: `/${path}`, name: path.split("/").pop()!,
+        createReader: () => {
+          opened = true;
+          let i = 0;
+          return { readEntries: (ok: (e: unknown[]) => void) => ok(batches[i++] ?? []) };
+        },
+        get opened() { return opened; },
+      };
+    };
     const drop = (...entries: unknown[]) => ({
       dataTransfer: { items: entries.map((e) => ({ kind: "file", webkitGetAsEntry: () => e })) },
     });
 
-    it("reads a dropped folder recursively and uploads it", async () => {
+    it("reads a dropped folder recursively, never opening skipped folders, and uploads it", async () => {
       const onUpload = vi.fn<OnUpload>(async () => result());
       render(<UploadHarness onUpload={onUpload} />);
+      const nodeModules = dirEntry("myproj/node_modules", [fileEntry("myproj/node_modules/z.js")]);
+      const git = dirEntry("myproj/.git", [fileEntry("myproj/.git/HEAD")]);
       const tree = dirEntry("myproj", [
         fileEntry("myproj/go.mod"),
         dirEntry("myproj/pkg", [fileEntry("myproj/pkg/b.go")]),
-        dirEntry("myproj/node_modules", [fileEntry("myproj/node_modules/z.js")]),
+        nodeModules, git,
       ]);
       const zone = screen.getByTestId("folder-drop");
       fireEvent.dragOver(zone);
@@ -248,8 +256,71 @@ describe("RepoPicker", () => {
       fireEvent.drop(zone, drop(tree));
       await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(1));
       expect(onUpload.mock.calls[0][0].map((f) => f.path)).toEqual(["myproj/go.mod", "myproj/pkg/b.go"]);
-      expect(await screen.findByText(/Skipped: 1 in node_modules\./)).toBeInTheDocument();
+      expect(nodeModules.opened).toBe(false);
+      expect(git.opened).toBe(false);
+      expect(await screen.findByText(/Skipped: the \.git folder, 1 node_modules folder\./)).toBeInTheDocument();
       expect(zone).not.toHaveAttribute("data-over");
+    });
+
+    it("keeps reading a folder until readEntries returns an empty batch", async () => {
+      const onUpload = vi.fn<OnUpload>(async () => result());
+      render(<UploadHarness onUpload={onUpload} />);
+      const first = [fileEntry("myproj/go.mod"), ...Array.from({ length: 99 }, (_, i) => fileEntry(`myproj/a${i}.go`))];
+      const second = Array.from({ length: 50 }, (_, i) => fileEntry(`myproj/b${i}.go`));
+      fireEvent.drop(screen.getByTestId("folder-drop"), drop(dirEntry("myproj", first, second)));
+      await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(1));
+      expect(onUpload.mock.calls[0][0]).toHaveLength(150);
+    });
+
+    it("keeps the drop highlight while the pointer moves over the zone's own children", () => {
+      render(<UploadHarness onUpload={vi.fn<OnUpload>()} />);
+      const zone = screen.getByTestId("folder-drop");
+      fireEvent.dragOver(zone);
+      // jsdom's fireEvent.dragLeave drops relatedTarget, so dispatch the native event React listens to.
+      const leave = (to: Element) => fireEvent(zone, new MouseEvent("dragleave", { bubbles: true, relatedTarget: to }));
+      leave(screen.getByText("or drag the project folder here"));
+      expect(zone).toHaveAttribute("data-over", "true");
+      leave(document.body);
+      expect(zone).not.toHaveAttribute("data-over");
+    });
+
+    it("says it is saving once every byte is sent, in the same live region", async () => {
+      let progress!: (x: number) => void;
+      const onUpload = vi.fn<OnUpload>((_files, _name, p) => {
+        progress = p;
+        return new Promise<UploadResult>(() => {});
+      });
+      const user = userEvent.setup();
+      render(<UploadHarness onUpload={onUpload} />);
+      const live = within(screen.getByTestId("folder-drop")).getByRole("status");
+      await user.upload(screen.getByTestId("folder-input"), project());
+      await waitFor(() => expect(live).toHaveTextContent("Uploading 2 files"));
+      progress(1);
+      await waitFor(() => expect(live).toHaveTextContent("Saving on the server…"));
+      expect(within(screen.getByTestId("folder-drop")).getByRole("status")).toBe(live);
+    });
+
+    it("suggests a rename the backend won't cut back to the taken name, and focuses it", async () => {
+      const long = "p".repeat(70);
+      const onUpload = vi.fn<OnUpload>().mockRejectedValueOnce(new ApiError(409, "name_taken", "taken"));
+      const user = userEvent.setup();
+      render(<UploadHarness onUpload={onUpload} />);
+      await user.upload(screen.getByTestId("folder-input"), [picked(`${long}/go.mod`)]);
+      const box = await screen.findByLabelText("Upload as");
+      expect(box).toHaveValue(`${"p".repeat(62)}-2`);
+      expect((box as HTMLInputElement).value.length).toBeLessThanOrEqual(64);
+      expect(box).toHaveFocus();
+    });
+
+    it("uses the upload limits the backend reports", async () => {
+      const onUpload = vi.fn<OnUpload>();
+      const user = userEvent.setup();
+      render(<RepoPicker tab="folders" onTabChange={() => {}} samples={[]} folders={[]} value="" onChange={() => {}}
+                         onDownload={async () => {}} onRefresh={async () => {}} onUpload={onUpload} hostDir={null}
+                         uploadLimits={{ max_files: 1, max_bytes: 1024, max_file_bytes: 1024 }} />);
+      await user.upload(screen.getByTestId("folder-input"), project());
+      expect(await screen.findByRole("alert")).toHaveTextContent(/The upload limit is 1 files and 0 MB/);
+      expect(onUpload).not.toHaveBeenCalled();
     });
 
     it("asks for one folder when files are dropped", async () => {

@@ -174,7 +174,7 @@ export default function SetupPage() {
             <Step n={1} title="Choose a repository" done={!!selected}
                   hint="Pick a sample (it downloads the first time), or upload a Go project folder of your own (Your folders tab).">
               <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
-                          onDownload={download} onRefresh={reload} onUpload={upload} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
+                          onDownload={download} onRefresh={reload} onUpload={upload} uploadLimits={health?.upload_limits} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
               <div className="space-y-1.5">
                 <p className="text-sm text-muted">
                   {selected ? (

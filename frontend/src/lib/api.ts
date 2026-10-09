@@ -32,6 +32,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const unreachable = () =>
   new ApiError(0, "unreachable", `Can't reach the backend at ${API_URL}. Is \`docker compose up\` running?`);
 
+const UPLOAD_TIMEOUT_MS = 10 * 60_000;
+
 /** Multipart upload of a folder's files (part filename = path such as "myproj/pkg/a.go"), with upload progress 0..1. */
 function uploadRepo(files: PickedFile[], name?: string, onProgress?: (fraction: number) => void): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
@@ -43,6 +45,7 @@ function uploadRepo(files: PickedFile[], name?: string, onProgress?: (fraction: 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) onProgress?.(e.loaded / e.total);
     };
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
     xhr.onload = () => {
       let body: { error?: { code?: string; message?: string } } | null = null;
       try {
@@ -50,10 +53,15 @@ function uploadRepo(files: PickedFile[], name?: string, onProgress?: (fraction: 
       } catch {
         body = null;
       }
-      if (xhr.status >= 200 && xhr.status < 300 && body) resolve(body as UploadResult);
+      const ok = xhr.status >= 200 && xhr.status < 300;
+      if (ok && body) resolve(body as UploadResult);
+      else if (ok) reject(new ApiError(xhr.status, "bad_response", "The backend sent an unexpected reply; the upload may not have been saved. Press Refresh to check."));
       else reject(new ApiError(xhr.status, body?.error?.code ?? "http_error", body?.error?.message ?? `Upload failed (HTTP ${xhr.status}).`));
     };
     xhr.onerror = () => reject(unreachable());
+    xhr.onabort = () => reject(new ApiError(0, "aborted", "The upload was stopped before it finished. Try again."));
+    xhr.ontimeout = () => reject(new ApiError(0, "timeout",
+      `The upload took longer than ${UPLOAD_TIMEOUT_MS / 60_000} minutes and was stopped. Try again, or use HOST_REPOS_DIR for large projects.`));
     xhr.send(form);
   });
 }

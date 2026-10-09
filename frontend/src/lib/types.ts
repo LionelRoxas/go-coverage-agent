@@ -60,6 +60,7 @@ export type SkipReason = "git" | "vendor" | "node_modules" | "hidden" | "too_lar
 export type SkipCounts = Record<SkipReason, number>;
 /** POST /api/repos/upload: the saved module plus the files the backend skipped, by reason. */
 export type UploadResult = RepoInfo & { skipped: SkipCounts };
+export type UploadLimits = { max_files: number; max_bytes: number; max_file_bytes: number };
 
 export type Sample = {
   id: string;
@@ -81,6 +82,8 @@ export type Health = {
   min_daily_tokens_to_start?: number;
   storage_writable: boolean;
   host_repos_dir?: string | null;
+  /** Folder upload limits (UPLOAD_MAX_*). Older backends omit it. */
+  upload_limits?: UploadLimits;
 };
 
 export type JobSnapshot = {
