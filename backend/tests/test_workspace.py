@@ -1,4 +1,5 @@
 # AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+import os
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,13 @@ def test_resolve_repo_explains_host_paths(tmp_path):
         resolve_repo(tmp_path / "repos", str(elsewhere))
 
 
+@pytest.mark.parametrize("host_path", [r"C:\Users\me\code\stats", "~/code/stats"])
+def test_resolve_repo_explains_windows_and_home_paths_on_any_os(tmp_path, host_path):
+    make_repo(tmp_path)
+    with pytest.raises(WorkspaceError, match=r"\./repos"):
+        resolve_repo(tmp_path / "repos", host_path)
+
+
 def test_resolve_repo_requires_go_mod(tmp_path):
     (tmp_path / "repos" / "nomod").mkdir(parents=True)
     with pytest.raises(WorkspaceError, match="go.mod"):
@@ -58,6 +66,34 @@ def test_create_copies_without_git_and_leaves_source_untouched(tmp_path):
     assert removed == ["a_test.go"]
     assert (repo / "a_test.go").exists(), "source repo must never be modified"
     assert ws.scratch.is_dir() and not ws.scratch.is_relative_to(ws.root)
+
+
+def test_create_skips_symlinks_and_cleans_up_on_failure(tmp_path, monkeypatch):
+    repo = make_repo(tmp_path)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret")
+    try:
+        os.symlink(outside, repo / "link.txt")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available on this host")
+    ws = Workspace.create(tmp_path / "work", "job1", repo)
+    assert not os.path.lexists(ws.root / "link.txt")
+    assert (ws.root / "a.go").exists()
+
+    def boom(src, dst, ignore=None):
+        Path(dst).mkdir(parents=True)
+        raise OSError("disk full")
+
+    monkeypatch.setattr("app.workspace.shutil.copytree", boom)
+    with pytest.raises(OSError, match="disk full"):
+        Workspace.create(tmp_path / "work", "job2", repo)
+    assert not (tmp_path / "work" / "job2").exists()
+
+
+def test_seed_rejects_invalid_package_name(tmp_path):
+    ws = Workspace.create(tmp_path / "work", "job1", make_repo(tmp_path))
+    with pytest.raises(WorkspaceError, match="package name"):
+        ws.seed_packages([("sub", "bad name; rm")])
 
 
 def test_seed_packages_only_where_no_tests(tmp_path):
