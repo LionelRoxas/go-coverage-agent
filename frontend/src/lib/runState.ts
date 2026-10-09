@@ -56,7 +56,10 @@ function withItem(s: RunState, index: number, file: string, fn: (item: ItemView)
   return withIteration(s, index, (it) => ({ ...it, items: it.items.map((i) => (i.file === file ? fn(i) : i)) }));
 }
 
-export function reduce(state: RunState, ev: JobEvent): RunState {
+export type RunAction = JobEvent | { type: "reset" };
+
+export function reduce(state: RunState, ev: RunAction): RunState {
+  if (!("seq" in ev)) return initialState; // "reset": a different job was opened
   if (ev.seq <= state.lastSeq) return state;
   const s: RunState = { ...state, lastSeq: ev.seq };
   const d = ev.data;

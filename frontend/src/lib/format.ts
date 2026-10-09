@@ -16,6 +16,18 @@ export const STOP_REASON_LABEL: Record<StopReason, string> = {
   cancelled: "Cancelled",
 };
 
+// Why a single validation attempt did not pass (or was repaired without the model).
+export const ATTEMPT_LABEL: Record<string, string> = {
+  compile_error: "Didn't compile",
+  vet_error: "go vet failed",
+  test_failure: "Tests failed",
+  no_gain: "No new coverage",
+  guard_rejected: "Blocked by safety rules",
+  llm_error: "Model error",
+  mechanical_repair: "Auto-fixed (no LLM call)",
+};
+
+// Why a candidate was finally rejected.
 export const REJECTION_LABEL: Record<string, string> = {
   compile_error: "Didn't compile",
   vet_error: "go vet failed",
@@ -24,5 +36,4 @@ export const REJECTION_LABEL: Record<string, string> = {
   guard_rejected: "Blocked by safety rules",
   llm_error: "Model error",
   too_large: "Too large for one request",
-  mechanical_repair: "Auto-fixed (no LLM call)",
 };

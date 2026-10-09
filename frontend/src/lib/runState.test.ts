@@ -72,4 +72,57 @@ describe("reduce", () => {
     expect(s.status).toBe("failed");
     expect(s.failure?.reason).toBe("repo_does_not_build");
   });
+
+  const started = () => ev("job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" });
+  const planned = () => [
+    started(),
+    ev("iteration_started", { index: 1, percent: 0 }),
+    ev("plan_created", { index: 1, items: [{ file: "mean.go", functions: ["Mean"], uncovered_statements: 4 }] }),
+  ];
+
+  it("records rejections, pruned tests and model errors", () => {
+    seq = 0;
+    const s = run([
+      ...planned(),
+      ev("validation_result", { index: 1, file: "mean.go", kind: "llm_error", output: "model timed out", failed_tests: [] }),
+      ev("tests_pruned", { index: 1, file: "mean.go", tests: ["TestBad"] }),
+      ev("candidate_rejected", { index: 1, file: "mean.go", reason: "no_gain" }),
+    ]);
+    const item = s.iterations[0].items[0];
+    expect(item.attempts).toEqual([{ kind: "llm_error", output: "model timed out", failedTests: [] }]);
+    expect(item.pruned).toEqual(["TestBad"]);
+    expect(item.status).toBe("rejected");
+    expect(item.rejectReason).toBe("no_gain");
+  });
+
+  it("handles a cancelled job", () => {
+    seq = 0;
+    const summary = { stop_reason: "cancelled", message: "Cancelled by user", final_percent: 12.5 };
+    const s = run([started(), ev("job_cancelled", summary)]);
+    expect(s.status).toBe("cancelled");
+    expect(s.percent).toBe(12.5);
+    expect(s.activity).toBe("Cancelled by user");
+    expect(s.summary?.stop_reason).toBe("cancelled");
+  });
+
+  it("handles a plan with no items", () => {
+    seq = 0;
+    const s = run([started(), ev("iteration_started", { index: 1, percent: 0 }), ev("plan_created", { index: 1, items: [] })]);
+    expect(s.iterations[0].items).toEqual([]);
+    expect(s.activity).toBe("Iteration 1: choosing targets…");
+  });
+
+  it("ignores a lower-seq event even when its data differs", () => {
+    seq = 0;
+    const s = run([ev("job_started", { repo_path: "a", target_coverage: 80, options: {}, model: "m" }), ev("llm_call", { total_tokens: 99 })]);
+    const stale: JobEvent = { seq: 0, ts: 1, type: "llm_call", data: { total_tokens: 5 } };
+    expect(reduce(s, stale)).toBe(s);
+    expect(s.tokens).toBe(99);
+  });
+
+  it("resets to the initial state", () => {
+    seq = 0;
+    const s = run([started(), ev("llm_call", { total_tokens: 7 })]);
+    expect(reduce(s, { type: "reset" })).toBe(initialState);
+  });
 });
