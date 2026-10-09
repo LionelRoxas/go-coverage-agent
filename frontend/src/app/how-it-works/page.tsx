@@ -11,7 +11,7 @@ const STEPS = [
   { title: "Plan (no AI)", body: <>Ranks functions by uncovered statements. Picks up to 3 targets per iteration, each at most 8 functions or 100 statements.</> },
   { title: "Write (Groq)", body: <>The model writes table-driven Go tests from a compact context of the target code.</> },
   { title: "Validate (5 gates)", body: <>Import guard, merge, compile, <code className="font-mono">go vet</code>, then tests pass twice with coverage.</> },
-  { title: "Keep or roll back", body: <>Kept only if tests pass and covered blocks are a strict superset. Otherwise one mechanical repair or LLM fix, else rolled back to the snapshot.</> },
+  { title: "Keep or roll back", body: <>Kept only if tests pass and covered blocks are a strict superset. Otherwise it is repaired: simple compile fixes in code first, then up to 2 LLM fixes. If it still fails, it is rolled back to the snapshot.</> },
 ];
 
 const STOPS = ["Target reached", "Gains become marginal", "Iteration limit (20 by default)", "Token budget used", "No remaining targets"];
