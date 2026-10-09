@@ -44,6 +44,22 @@ describe("Timeline", () => {
     expect(screen.getByText(REJECTION_LABEL.too_large)).toBeInTheDocument();
   });
 
+  it("labels an oversized prompt honestly and still renders older model-error events", () => {
+    const tooLarge = item({
+      status: "rejected", rejectReason: "prompt_too_large",
+      attempts: [{ kind: "prompt_too_large", output: "targets need ~3591 tokens; budget is 2191", failedTests: [] }],
+    });
+    const legacy = item({
+      file: "stats/sum.go", status: "rejected", rejectReason: "llm_error",
+      attempts: [{ kind: "llm_error", output: "model timed out", failedTests: [] }],
+    });
+    render(<Timeline iterations={[iteration([tooLarge, legacy])]} />);
+    expect(screen.getByText("Prompt too large (no model call)")).toBeInTheDocument();
+    expect(screen.getByText("Attempt 1: Prompt too large (no model call)")).toBeInTheDocument();
+    expect(screen.getByText("Model error")).toBeInTheDocument();
+    expect(screen.getByText("Attempt 1: Model error")).toBeInTheDocument();
+  });
+
   it("shows a placeholder when there are no iterations", () => {
     render(<Timeline iterations={[]} />);
     expect(screen.getByText("Nothing yet.")).toBeInTheDocument();

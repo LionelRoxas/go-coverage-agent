@@ -19,6 +19,9 @@ describe("format", () => {
   it("labels attempts and rejections separately", () => {
     expect(ATTEMPT_LABEL.mechanical_repair).toBe("Auto-fixed (no LLM call)");
     expect(ATTEMPT_LABEL.llm_error).toBe("Model error");
+    expect(ATTEMPT_LABEL.prompt_too_large).toBe("Prompt too large (no model call)");
+    expect(REJECTION_LABEL.prompt_too_large).toBe("Prompt too large (no model call)");
+    expect(REJECTION_LABEL.llm_error).toBe("Model error");
     expect(REJECTION_LABEL.too_large).toBe("Too large for one request");
     expect(REJECTION_LABEL.mechanical_repair).toBeUndefined();
   });
