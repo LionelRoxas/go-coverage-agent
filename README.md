@@ -4,11 +4,7 @@ An autonomous agent that raises unit-test coverage for Go repositories. Give it 
 percentage. It measures coverage, plans what to test, asks an LLM to write idiomatic Go tests, compiles and runs
 them, keeps only the tests that pass and add coverage, and repeats until it hits the target or gains flatten out.
 
-![Results page](docs/screenshots/results-light.png)
-
-More screenshots: [setup (light)](docs/screenshots/setup-light.png), [setup (dark)](docs/screenshots/setup-dark.png),
-[live run](docs/screenshots/live-run.png), [results (dark)](docs/screenshots/results-dark.png),
-[setup (mobile)](docs/screenshots/setup-mobile.png), [results (mobile)](docs/screenshots/results-mobile.png).
+<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Results page for montanaflynn/stats showing 80.5% coverage against an 80% target and a Target reached summary card"></a>
 
 ## Quick start
 
@@ -90,6 +86,53 @@ coverage was **80.5%**.
 
 An earlier run on a free-trial key (8K tokens/min, 200K/day) reached 69.0% in about 28 minutes before hitting the then-default 10-iteration cap,
 mostly waiting on rate limits.
+
+## Screenshots
+
+<table>
+<tr>
+<td valign="top">
+<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup form with stats selected, 80 percent target and notices"></a>
+<br><b>Setup page</b><br>The repository (<code>stats</code>) is selected, the target is 80%, and the notices state that existing tests are removed from a working copy, source is sent to Groq, and how many tokens remain today.
+</td>
+<td valign="top">
+<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Header, coverage meter and summary card for the 80.5 percent run"></a>
+<br><b>Run summary</b><br>Header, coverage meter with the 80% target marker, and the summary card: stop reason, coverage 0.0% to 80.5%, 135 tests added in 34 test files, 4m 47s, 184.9k tokens.
+</td>
+</tr>
+<tr>
+<td valign="top">
+<a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage per iteration rising to the 80 percent target line"></a>
+<br><b>Coverage by iteration</b><br>Coverage after each of the 15 iterations, rising steadily from the 0% baseline and crossing the dashed 80% target line at the end.
+</td>
+<td valign="top">
+<a href="docs/screenshots/gallery-timeline.png"><img src="docs/screenshots/gallery-timeline.png" width="100%" alt="Expanded timeline item showing a compile failure, an auto-fix and a pruned failing test"></a>
+<br><b>Timeline item, expanded</b><br>One file's work in iteration 7: what the model decided to test, a compile failure (<code>undefined: strings</code>), a mechanical auto-fix with no LLM call, a failing test that is pruned, and the rest kept (Accepted +3.0 pp).
+</td>
+</tr>
+<tr>
+<td valign="top">
+<a href="docs/screenshots/gallery-testfile.png"><img src="docs/screenshots/gallery-testfile.png" width="100%" alt="Generated tests section with clip_test.go selected and highlighted Go code"></a>
+<br><b>Generated tests</b><br>Every accepted test file is browsable with syntax-highlighted Go, here <code>clip_test.go</code>, so the output can be reviewed before use.
+</td>
+<td valign="top">
+<a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Cancelled run page showing 8.6 percent coverage and the cancelled summary"></a>
+<br><b>Cancelled run</b><br>A real run that was cancelled early: 8.6% coverage, 8 tests in 2 files, and the message that accepted tests were kept.
+</td>
+</tr>
+<tr>
+<td valign="top">
+<a href="docs/screenshots/gallery-dark.png"><img src="docs/screenshots/gallery-dark.png" width="100%" alt="Summary and coverage chart in dark theme"></a>
+<br><b>Dark theme</b><br>The same summary and chart under a dark color scheme; the layout and target marker are unchanged.
+</td>
+<td valign="top">
+<a href="docs/screenshots/gallery-mobile.png"><img src="docs/screenshots/gallery-mobile.png" width="100%" alt="Results page on a 390 pixel wide phone screen"></a>
+<br><b>Mobile</b><br>The results page at 390 px wide: header, meter and summary reflow into a single column.
+</td>
+</tr>
+</table>
+
+Full-page captures: [setup (light)](docs/screenshots/setup-light.png), [setup (dark)](docs/screenshots/setup-dark.png), [setup (mobile)](docs/screenshots/setup-mobile.png), [results (light)](docs/screenshots/results-light.png), [results (dark)](docs/screenshots/results-dark.png), [results (mobile)](docs/screenshots/results-mobile.png), [live run](docs/screenshots/live-run.png).
 
 ## Configuration
 
