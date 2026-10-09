@@ -166,7 +166,7 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
       {error && <p role="alert" className="text-xs text-danger">Couldn&apos;t load runs: {error}</p>}
       {jobs && jobs.length === 0 && !error && (
         <p className="rounded-sm border border-dashed border-border px-3 py-4 text-sm text-muted">
-          No runs yet. Start one and it will appear here.
+          Pick a repository and press Start — your runs appear here.
         </p>
       )}
       {running.length > 0 && (

@@ -1,9 +1,11 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { RepoPicker, type PickerTab } from "@/components/RepoPicker";
 import { RunsPanel } from "@/components/RunsPanel";
+import { Step } from "@/components/Step";
 import { MIN_TOKENS_TO_START, TokenBudget, budgetBlocked } from "@/components/TokenBudget";
 import { api, ApiError } from "@/lib/api";
 import type { Health, JobOptions, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
@@ -123,70 +125,93 @@ export default function SetupPage() {
             No Groq API key configured. Add <code className="font-mono">GROQ_API_KEY</code> to <code className="font-mono">.env</code> and restart <code className="font-mono">docker compose</code>.
           </div>
         )}
-        <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
-                    onDownload={download} onRefresh={reload} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
-        <div className="space-y-1.5">
-          <p className="text-sm text-muted">
-            {selected ? (
-              <>Selected: <span className="font-mono text-text">{selected.path}</span> · <span className="font-mono">{selected.module}</span> · {selected.go_files} source files</>
-            ) : "Nothing selected yet. Pick a repository above."}
-          </p>
-          <p className="max-w-prose text-xs leading-relaxed text-muted">
-            {selected ? "Its" : "The selected repository's"} source code is sent to Groq{health ? <>, where <span className="font-mono">{health.model}</span> writes the tests</> : " to write the tests"}.
-            {" "}The agent works on a copy with the existing <code className="font-mono">_test.go</code> files removed; your repository is never modified.
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <label htmlFor="target" className="text-sm font-medium">Target coverage</label>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <input id="target" type="range" min={10} max={100} step={1} value={Math.min(100, Math.max(10, target || 10))}
-                   onChange={(e) => setTarget(Number(e.target.value))} className="w-full max-w-64 accent-[var(--accent)]" />
-            <div className="flex items-center gap-2">
-              <input type="number" min={1} max={100} value={Number.isNaN(target) ? "" : target} aria-label="Target coverage percent"
-                     onChange={(e) => setTarget(e.target.value === "" ? NaN : Number(e.target.value))}
-                     className={`w-20 ${inputCls}`} />
-              <span className="text-sm text-muted">%</span>
+        <ol aria-label="Steps to start a run">
+          <Step n={1} id="step-repo" title="Choose a repository" done={!!selected}
+                hint="Pick a sample (it downloads the first time) or one of your own Go projects under Your folders.">
+            <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
+                        onDownload={download} onRefresh={reload} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
+            <div className="space-y-1.5">
+              <p className="text-sm text-muted">
+                {selected ? (
+                  <>Selected: <span className="font-mono text-text">{selected.path}</span> · <span className="font-mono">{selected.module}</span> · {selected.go_files} source files</>
+                ) : "Nothing selected yet. Pick a repository above."}
+              </p>
+              <p className="max-w-prose text-xs leading-relaxed text-muted">
+                {selected ? "Its" : "The selected repository's"} source code is sent to Groq{health ? <>, where <span className="font-mono">{health.model}</span> writes the tests</> : " to write the tests"}.
+                {" "}The agent works on a copy with the existing <code className="font-mono">_test.go</code> files removed; your repository is never modified.
+              </p>
             </div>
-          </div>
-          {!targetValid && <p className="text-xs text-danger">Enter a target between 1 and 100.</p>}
-        </div>
+          </Step>
 
-        <details className="group max-w-xl">
-          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm text-muted hover:text-text [&::-webkit-details-marker]:hidden">
-            <svg aria-hidden viewBox="0 0 12 12" className="h-3 w-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2l4 4-4 4" /></svg>
-            Advanced options
-          </summary>
-          <div className="mt-3 grid gap-x-6 gap-y-4 rounded-sm border border-border bg-surface/60 p-4 sm:grid-cols-2">
-            {([
-              ["max_iterations", "Max iterations", 1, 30, 1],
-              ["min_gain", "Stop when an iteration gains less than (pp)", 0, 10, 0.5],
-              ["targets_per_iteration", "Files per iteration", 1, 5, 1],
-              ["max_fix_attempts", "Fix attempts per file", 0, 4, 1],
-            ] as const).map(([key, label, min, max, step]) => (
-              <label key={key} className="flex flex-col justify-between gap-1.5 text-sm">
-                <span className="block text-xs leading-snug text-muted">{label}</span>
-                <input type="number" min={min} max={max} step={step} value={opts[key]}
-                       onChange={(e) => setOpts({ ...opts, [key]: Number(e.target.value) })}
-                       className={`w-24 ${inputCls}`} />
-              </label>
-            ))}
-          </div>
-        </details>
+          <Step n={2} id="step-target" title="Set a target" done={targetValid}
+                hint="The share of the code you want tests to run. 80% is a good start; higher takes longer.">
+            <div className="space-y-2">
+              <label htmlFor="target" className="sr-only">Target coverage</label>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <input id="target" type="range" min={10} max={100} step={1} value={Math.min(100, Math.max(10, target || 10))}
+                       onChange={(e) => setTarget(Number(e.target.value))} className="w-full max-w-64 accent-[var(--accent)]" />
+                <div className="flex items-center gap-2">
+                  <input type="number" min={1} max={100} value={Number.isNaN(target) ? "" : target} aria-label="Target coverage percent"
+                         onChange={(e) => setTarget(e.target.value === "" ? NaN : Number(e.target.value))}
+                         className={`w-20 ${inputCls}`} />
+                  <span className="text-sm text-muted">%</span>
+                </div>
+              </div>
+              {!targetValid && <p className="text-xs text-danger">Enter a target between 1 and 100.</p>}
+            </div>
+          </Step>
 
-        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+          <Step n={3} id="step-advanced" title="Advanced options (optional)" optional
+                hint="The defaults work for most runs. Change them to limit how long a run keeps trying.">
+            <details className="group max-w-xl">
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm text-muted hover:text-text [&::-webkit-details-marker]:hidden">
+                <svg aria-hidden viewBox="0 0 12 12" className="h-3 w-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2l4 4-4 4" /></svg>
+                Show the four limits
+              </summary>
+              <div className="mt-3 grid gap-x-6 gap-y-4 rounded-sm border border-border bg-surface/60 p-4 sm:grid-cols-2">
+                {([
+                  ["max_iterations", "Max iterations", 1, 30, 1],
+                  ["min_gain", "Stop when an iteration gains less than (pp)", 0, 10, 0.5],
+                  ["targets_per_iteration", "Files per iteration", 1, 5, 1],
+                  ["max_fix_attempts", "Fix attempts per file", 0, 4, 1],
+                ] as const).map(([key, label, min, max, step]) => (
+                  <label key={key} className="flex flex-col justify-between gap-1.5 text-sm">
+                    <span className="block text-xs leading-snug text-muted">{label}</span>
+                    <input type="number" min={min} max={max} step={step} value={opts[key]}
+                           onChange={(e) => setOpts({ ...opts, [key]: Number(e.target.value) })}
+                           className={`w-24 ${inputCls}`} />
+                  </label>
+                ))}
+              </div>
+            </details>
+          </Step>
 
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <button type="submit" disabled={busy || !repo || !targetValid || !health?.llm_configured || running || noBudget}
-                    aria-describedby={noBudget ? "budget-reason" : undefined}
-                    className="shrink-0 rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-40">
-              {busy ? "Starting…" : "Start"}
-            </button>
-            {tokensLeft != null && <TokenBudget left={tokensLeft} min={minTokens} id="budget-reason" />}
-          </div>
-          {running && <p className="text-xs text-muted">A run is in progress. Follow it in Run history.</p>}
-        </div>
+          <Step n={4} id="step-start" title="Start the run" last
+                hint="It usually takes 1–5 minutes. You can leave this page; the run keeps going.">
+            {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <button type="submit" disabled={busy || !repo || !targetValid || !health?.llm_configured || running || noBudget}
+                        aria-describedby={noBudget ? "budget-reason" : undefined}
+                        className="shrink-0 rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-40">
+                  {busy ? "Starting…" : "Start"}
+                </button>
+                {tokensLeft != null && <TokenBudget left={tokensLeft} min={minTokens} id="budget-reason" />}
+              </div>
+              {running && <p className="text-xs text-muted">A run is in progress. Follow it in Run history.</p>}
+            </div>
+
+            <section aria-labelledby="next-heading" className="max-w-prose space-y-1.5 border-l-2 border-border pl-3 text-xs leading-relaxed text-muted">
+              <h3 id="next-heading" className="font-medium text-text">What happens next</h3>
+              <ul className="space-y-1">
+                <li>You land on the run page, which shows coverage and each step as it happens.</li>
+                <li>When it finishes, the new tests are saved in <code className="font-mono text-text">./output/&lt;run id&gt;/tests</code>.</li>
+                <li>For a plain explanation of what it does, read <Link href="/how-it-works" className="text-accent underline underline-offset-2">How it works</Link>.</li>
+              </ul>
+            </section>
+          </Step>
+        </ol>
       </form>
       <RunsPanel onJobs={onJobs} />
     </div>

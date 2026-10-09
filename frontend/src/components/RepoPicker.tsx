@@ -125,8 +125,7 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
   }
 
   return (
-    <section aria-labelledby="repo-heading" className="space-y-3">
-      <h2 id="repo-heading" className="text-sm font-medium">Repository</h2>
+    <div className="space-y-3">
       <div role="tablist" aria-label="Repository source" onKeyDown={onKeyDown} className="flex gap-1 border-b border-border">
         {TABS.map((t) => {
           const active = t.id === tab;
@@ -206,6 +205,6 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }

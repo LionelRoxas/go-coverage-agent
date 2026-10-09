@@ -30,7 +30,7 @@ describe("RunsPanel", () => {
   it("shows the empty state and the retention note", async () => {
     vi.mocked(api.jobs).mockResolvedValue([]);
     render(<RunsPanel />);
-    expect(await screen.findByText("No runs yet. Start one and it will appear here.")).toBeInTheDocument();
+    expect(await screen.findByText("Pick a repository and press Start — your runs appear here.")).toBeInTheDocument();
     expect(screen.getByText(/files stay in \.\/output/)).toBeInTheDocument();
   });
 

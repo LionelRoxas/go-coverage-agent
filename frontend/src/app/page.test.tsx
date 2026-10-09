@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SetupPage from "./page";
@@ -147,6 +147,48 @@ describe("SetupPage", () => {
     expect(screen.queryByText(/A run is in progress on/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "/jobs/job-1");
     expect(startButton()).toBeDisabled();
+  });
+
+  it("lays the form out as four numbered steps, each with a one-line hint, in order", async () => {
+    setup();
+    render(<SetupPage />);
+    const list = await screen.findByRole("list", { name: "Steps to start a run" });
+    const steps = within(list).getAllByRole("listitem").filter((li) => li.parentElement === list);
+    expect(steps.map((li) => within(li).getByRole("heading", { level: 2 }).textContent)).toEqual([
+      "Choose a repository", "Set a target", "Advanced options (optional)", "Start the run",
+    ]);
+    expect(within(steps[0]).getByText(/Pick a sample \(it downloads the first time\)/)).toHaveTextContent(
+      "Pick a sample (it downloads the first time) or one of your own Go projects under Your folders.");
+    expect(within(steps[1]).getByText(/share of the code/)).toHaveTextContent(
+      "The share of the code you want tests to run. 80% is a good start; higher takes longer.");
+    expect(within(steps[2]).getByText(/defaults work/i)).toBeInTheDocument();
+    expect(within(steps[3]).getByText(/1–5 minutes/)).toHaveTextContent(
+      "It usually takes 1–5 minutes. You can leave this page; the run keeps going.");
+    expect(within(steps[3]).getByRole("button", { name: "Start" })).toBeInTheDocument();
+    expect(within(steps[0]).getByRole("tablist", { name: "Repository source" })).toBeInTheDocument();
+    expect(within(steps[1]).getByRole("spinbutton", { name: "Target coverage percent" })).toBeInTheDocument();
+  });
+
+  it("marks the repository and target steps done once they are filled in", async () => {
+    setup();
+    render(<SetupPage />);
+    const list = await screen.findByRole("list", { name: "Steps to start a run" });
+    const steps = within(list).getAllByRole("listitem").filter((li) => li.parentElement === list);
+    await waitFor(() => expect(steps[0]).toHaveAttribute("data-done", "true"));
+    expect(steps[1]).toHaveAttribute("data-done", "true");
+    expect(steps[3]).toHaveAttribute("data-done", "false");
+    const user = userEvent.setup();
+    await user.clear(screen.getByRole("spinbutton", { name: "Target coverage percent" }));
+    expect(steps[1]).toHaveAttribute("data-done", "false");
+  });
+
+  it("explains what happens after Start, with the output path and a link to How it works", async () => {
+    setup();
+    render(<SetupPage />);
+    const next = await screen.findByRole("region", { name: "What happens next" });
+    expect(next).toHaveTextContent("./output/<run id>/tests");
+    expect(within(next).getByRole("link", { name: "How it works" })).toHaveAttribute("href", "/how-it-works");
+    expect(startButton().compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("starts a job and navigates to it", async () => {
