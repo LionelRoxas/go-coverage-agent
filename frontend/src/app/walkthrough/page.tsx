@@ -177,7 +177,7 @@ const KEEP = [
 ];
 
 const STOP_RULES = [
-  { term: <span className={m}>target_reached</span>, text: <>Coverage is at or above the target. Checked before each round and after every accepted target, not only at the end of a round.</> },
+  { term: <span className={m}>target_reached</span>, text: <>Coverage is at or above the target. Checked before each round and after every target, accepted or not, not only at the end of a round.</> },
   { term: <span className={m}>marginal_gains</span>, text: <>The last 2 rounds (<C>patience</C>) each gained less than 1 percentage point (<C>min_gain</C>).</> },
   { term: <span className={m}>max_iterations</span>, text: <>20 rounds by default (<C>max_iterations</C>, 1 to 30).</> },
   { term: <span className={m}>no_remaining_targets</span>, text: <>Every function with uncovered statements has failed twice or is too large for one request.</> },
@@ -196,7 +196,7 @@ const GLOSSARY: { term: string; def: ReactNode }[] = [
   { term: "Coverage", def: "Covered statements divided by all statements in the measured packages, as Go’s coverage profile reports them." },
   { term: "Block", def: "A run of statements that always execute together. The coverage profile has one line per block." },
   { term: "Round", def: "One pass of plan, write, validate and keep, repair or undo. Called an iteration in the code, the events and the API." },
-  { term: "Target", def: "One planned unit of work: up to 5 functions from one source file, at most 100 uncovered statements." },
+  { term: "Target", def: "One planned unit of work: up to 5 functions from one source file and at most 100 uncovered statements, unless one function alone is bigger." },
   { term: "Candidate", def: "The tests the model wrote for one target, as they go through the gates." },
   { term: "Writer and Fixer", def: "The two AI roles. The Writer writes new tests; the Fixer repairs a rejected candidate. Nothing else uses AI." },
   { term: "AI model", def: <>An AI that writes text and code, run by the company Groq: <C>openai/gpt-oss-120b</C>.</> },
@@ -289,7 +289,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
             <li>Rank the targets by uncovered statements and take up to 3 targets per round (<C>targets_per_iteration</C>, 1 to 5).</li>
           </ol>
           <p>Packing by file spends each request’s fixed cost where it buys the most: in the first stats run, targets over 40 statements cost about 1.9K tokens per percentage point, against about 3.7K for targets of 20 or fewer. If no target is left, the run stops with <C>no_remaining_targets</C>.</p>
-          <Pre caption="Run 26598ee5c57b, round 1, abridged. LoadRawData alone has 107 uncovered statements, so it is a target by itself.">{`{"seq": 4, "type": "plan_created", "data": {"index": 1, "items": [
+          <Pre caption="Run 26598ee5c57b, round 1, abridged (recorded before the 5-function cap; norm.go then held 8 functions). LoadRawData alone has 107 uncovered statements, so it is a target by itself.">{`{"seq": 4, "type": "plan_created", "data": {"index": 1, "items": [
   {"file": "load.go", "functions": ["LoadRawData"], "uncovered_statements": 107},
   …two more targets
 ]}}`}</Pre>
@@ -317,8 +317,8 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
           <p>The output allowance, <C>max_completion_tokens</C>, is the model’s maximum of 65,536, lowered to the key’s tokens-per-minute limit minus the prompt (at least 1,024) when that is smaller, so a long answer is not cut off mid-JSON.</p>
           <H3>When the answer goes wrong</H3>
           <ul className="list-disc space-y-1.5 pl-5 marker:text-muted">
-            <li><strong className="font-semibold">Cut off</strong> (finish reason <C>length</C>): retried one effort lower, <C>medium</C> to <C>low</C>. Cut off at <C>low</C>, the target is split in half and each half retried; a single function is skipped.</li>
-            <li><strong className="font-semibold">Malformed JSON</strong> (<C>400 json_validate_failed</C>): sampled once more; a second failure is treated like a cut-off answer and split.</li>
+            <li><strong className="font-semibold">Cut off</strong> (finish reason <C>length</C>): retried one effort lower, <C>medium</C> to <C>low</C>. Cut off at <C>low</C>, the first half of the target’s functions is retried right away; the rest stay in the pool for a later round. A single function is skipped for good (<C>too_large</C>).</li>
+            <li><strong className="font-semibold">Malformed JSON</strong> (<C>400 json_validate_failed</C>): sampled once more; a second failure is treated like a cut-off answer: the first half is retried and the rest go back to the pool.</li>
             <li><strong className="font-semibold">No answer within 240 s</strong> (<C>GROQ_TIMEOUT_S</C>): retried once at <C>low</C> effort, which answers fastest. A second timeout fails the target as <C>llm_timeout</C>. Same for the Fixer.</li>
             <li><strong className="font-semibold">Request too large for the key</strong>: retried once with the allowance clamped to the limit Groq names.</li>
             <li><strong className="font-semibold">Network or server errors</strong>: up to 3 retries with backoff. A rejected key (401) fails the job.</li>
@@ -418,7 +418,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
           <Pre caption="mean.go: the Mean function, columns illustrative. 4 statements, 3 ran: 75%. The empty-input return never ran.">{`mode: set
 github.com/montanaflynn/stats/mean.go:6.47,8.22 1 1
 github.com/montanaflynn/stats/mean.go:8.22,10.3 1 0
-github.com/montanaflynn/stats/mean.go:12.2,14.43 2 1`}</Pre>
+github.com/montanaflynn/stats/mean.go:12.2,15.2 2 1`}</Pre>
           <p>The module prefix is stripped from each path. A block listed more than once counts as run if any line says so. Coverage is covered statements ÷ all statements across the measured packages, as a percentage rounded to 2 decimals. Each block is assigned to the function whose line range (from <C>gohelper funcs</C>) contains its start, which gives the per-function numbers the planner sorts by.</p>
           <p>A package with no test file at all can be left out of the profile, depending on the Go version, and the total would then look better than it is. That is why every such package gets <C>zz_coverage_seed_test.go</C> during setup: its statements then count, at 0.</p>
           <H3>What “no new coverage” means</H3>

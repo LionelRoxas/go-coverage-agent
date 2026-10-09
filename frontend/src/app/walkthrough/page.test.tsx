@@ -54,7 +54,8 @@ describe("WalkthroughPage", () => {
     expect(write).toHaveTextContent("MAX_PROMPT_TOKENS");
     expect(write).toHaveTextContent("12,000");
     expect(write).toHaveTextContent("240 s");
-    expect(write).toHaveTextContent("split in half");
+    expect(write).toHaveTextContent("the first half of the target’s functions is retried right away; the rest stay in the pool for a later round");
+    expect(write).not.toHaveTextContent("each half");
   });
 
   it("states the validation, repair and stop rules", () => {

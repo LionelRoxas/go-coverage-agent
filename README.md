@@ -184,6 +184,8 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <br><b>Walkthrough page</b><br>The thorough version for technical readers at <code>/walkthrough</code>, linked from How it works. The table of contents follows the run in order (Start, Prepare, Measure, then Plan, Write, Validate and Keep, repair or undo grouped under Each round, then Stop), then reference sections: results and outputs, how the number is computed, safety and limits, and a glossary. Each section names the files that do the work and the events the browser sees, with the validation gates as a numbered chain, an event-stream sample and a coverage profile line.
 </td>
 <td valign="top">
+<a href="docs/screenshots/gallery-walkthrough-mobile.png"><img src="docs/screenshots/gallery-walkthrough-mobile.png" width="100%" alt="Walkthrough page on a phone-width screen with the table of contents in a box under the title"></a>
+<br><b>Walkthrough on mobile</b><br>The contents become a box under the title, in two columns from 640 px.
 </td>
 </tr>
 <tr>
