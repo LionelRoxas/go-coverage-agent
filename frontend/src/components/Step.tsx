@@ -9,12 +9,11 @@ type Props = {
   done?: boolean;
   optional?: boolean;
   last?: boolean;
-  id: string;
   children: ReactNode;
 };
 
 /** One numbered step of the New run form: a marker on a rail, an h2, a one-line hint, then the controls. */
-export function Step({ n, title, hint, done = false, optional = false, last = false, id, children }: Props) {
+export function Step({ n, title, hint, done = false, optional = false, last = false, children }: Props) {
   const marker = done
     ? "border-accent bg-accent text-on-accent"
     : optional
@@ -30,7 +29,7 @@ export function Step({ n, title, hint, done = false, optional = false, last = fa
       </div>
       <div className={`min-w-0 flex-1 space-y-3 ${last ? "" : "pb-8"}`}>
         <div className="space-y-1">
-          <h2 id={id} className="text-base font-semibold leading-6">{title}</h2>
+          <h2 className="text-base font-semibold leading-6">{title}</h2>
           <p className="max-w-prose text-sm leading-relaxed text-muted">{hint}</p>
         </div>
         {children}

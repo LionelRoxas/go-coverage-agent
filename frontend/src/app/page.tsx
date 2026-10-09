@@ -126,8 +126,8 @@ export default function SetupPage() {
           </div>
         )}
         <ol aria-label="Steps to start a run">
-          <Step n={1} id="step-repo" title="Choose a repository" done={!!selected}
-                hint="Pick a sample (it downloads the first time) or one of your own Go projects under Your folders.">
+          <Step n={1} title="Choose a repository" done={!!selected}
+                hint="Pick a sample (it downloads the first time) or a Go project from your ./repos folder (Your folders tab).">
             <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
                         onDownload={download} onRefresh={reload} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
             <div className="space-y-1.5">
@@ -143,7 +143,7 @@ export default function SetupPage() {
             </div>
           </Step>
 
-          <Step n={2} id="step-target" title="Set a target" done={targetValid}
+          <Step n={2} title="Set a target" done={targetValid}
                 hint="The share of the code you want tests to run. 80% is a good start; higher takes longer.">
             <div className="space-y-2">
               <label htmlFor="target" className="sr-only">Target coverage</label>
@@ -161,7 +161,7 @@ export default function SetupPage() {
             </div>
           </Step>
 
-          <Step n={3} id="step-advanced" title="Advanced options (optional)" optional
+          <Step n={3} title="Advanced options (optional)" optional
                 hint="The defaults work for most runs. Change them to limit how long a run keeps trying.">
             <details className="group max-w-xl">
               <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm text-muted hover:text-text [&::-webkit-details-marker]:hidden">
@@ -186,8 +186,8 @@ export default function SetupPage() {
             </details>
           </Step>
 
-          <Step n={4} id="step-start" title="Start the run" last
-                hint="It usually takes 1–5 minutes. You can leave this page; the run keeps going.">
+          <Step n={4} title="Start the run" last
+                hint="Usually 1–5 minutes on a paid Groq key; free-trial keys take much longer. You can leave this page; the run keeps going.">
             {error && <p role="alert" className="text-sm text-danger">{error}</p>}
 
             <div className="space-y-2">

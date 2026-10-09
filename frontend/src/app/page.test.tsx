@@ -158,12 +158,12 @@ describe("SetupPage", () => {
       "Choose a repository", "Set a target", "Advanced options (optional)", "Start the run",
     ]);
     expect(within(steps[0]).getByText(/Pick a sample \(it downloads the first time\)/)).toHaveTextContent(
-      "Pick a sample (it downloads the first time) or one of your own Go projects under Your folders.");
+      "Pick a sample (it downloads the first time) or a Go project from your ./repos folder (Your folders tab).");
     expect(within(steps[1]).getByText(/share of the code/)).toHaveTextContent(
       "The share of the code you want tests to run. 80% is a good start; higher takes longer.");
     expect(within(steps[2]).getByText(/defaults work/i)).toBeInTheDocument();
     expect(within(steps[3]).getByText(/1–5 minutes/)).toHaveTextContent(
-      "It usually takes 1–5 minutes. You can leave this page; the run keeps going.");
+      "Usually 1–5 minutes on a paid Groq key; free-trial keys take much longer. You can leave this page; the run keeps going.");
     expect(within(steps[3]).getByRole("button", { name: "Start" })).toBeInTheDocument();
     expect(within(steps[0]).getByRole("tablist", { name: "Repository source" })).toBeInTheDocument();
     expect(within(steps[1]).getByRole("spinbutton", { name: "Target coverage percent" })).toBeInTheDocument();
