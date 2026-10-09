@@ -1,5 +1,9 @@
 # AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
-from app.repos import list_repos
+import pytest
+
+from app.config import Settings
+from app.gotools import CommandResult
+from app.repos import clone_sample, list_repos
 
 
 def test_list_repos_finds_modules_two_levels_deep(tmp_path):
@@ -19,3 +23,47 @@ def test_list_repos_finds_modules_two_levels_deep(tmp_path):
 
 def test_list_repos_missing_dir_is_empty(tmp_path):
     assert list_repos(tmp_path / "nope") == []
+
+
+def _settings(tmp_path):
+    repos = tmp_path / "repos"
+    repos.mkdir()
+    return Settings(groq_api_key="k", repos_dir=repos, work_dir=tmp_path / "w", output_dir=tmp_path / "o")
+
+
+def _result(code):
+    return CommandResult(argv=[], exit_code=code, stdout="", stderr="fatal", duration_ms=1)
+
+
+async def test_clone_sample_missing_git_is_runtime_error(tmp_path, monkeypatch):
+    async def no_git(*a, **k):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr("app.repos.run", no_git)
+    with pytest.raises(RuntimeError, match="could not start"):
+        await clone_sample(_settings(tmp_path))
+
+
+async def test_clone_sample_failure_removes_partial_dest(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+
+    async def fail(argv, cwd, **k):
+        (settings.repos_dir / "stats").mkdir()
+        return _result(128)
+
+    monkeypatch.setattr("app.repos.run", fail)
+    with pytest.raises(RuntimeError, match="git clone failed"):
+        await clone_sample(settings)
+    assert not (settings.repos_dir / "stats").exists()
+
+
+async def test_clone_sample_without_go_mod_is_runtime_error(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+
+    async def ok(argv, cwd, **k):
+        (settings.repos_dir / "stats").mkdir()
+        return _result(0)
+
+    monkeypatch.setattr("app.repos.run", ok)
+    with pytest.raises(RuntimeError, match="no go.mod"):
+        await clone_sample(settings)

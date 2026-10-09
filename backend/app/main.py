@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import ApiError, router
 from app.config import Settings
@@ -23,7 +24,7 @@ async def detect_go_version() -> str:
         proc = await asyncio.create_subprocess_exec("go", "version", stdout=asyncio.subprocess.PIPE)
         out, _ = await proc.communicate()
         return out.decode().split()[2] if proc.returncode == 0 else "unknown"
-    except (FileNotFoundError, IndexError):
+    except (OSError, IndexError):
         return "unknown"
 
 
@@ -55,6 +56,18 @@ def create_app(settings: Settings | None = None, manager: JobManager | None = No
         where = ".".join(str(p) for p in first.get("loc", [])[1:])
         return JSONResponse({"error": {"code": "invalid_request", "message": f"{where}: {first.get('msg')}"}},
                             status_code=400)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http(_: Request, e: StarletteHTTPException) -> JSONResponse:
+        code = {404: "not_found", 405: "method_not_allowed"}.get(e.status_code, "http_error")
+        return JSONResponse({"error": {"code": code, "message": str(e.detail)}},
+                            status_code=e.status_code, headers=getattr(e, "headers", None))
+
+    @app.exception_handler(Exception)
+    async def _unhandled(_: Request, e: Exception) -> JSONResponse:
+        log.error("Unhandled error", exc_info=e)
+        return JSONResponse({"error": {"code": "internal_error", "message": "Internal server error"}},
+                            status_code=500)
 
     return app
 

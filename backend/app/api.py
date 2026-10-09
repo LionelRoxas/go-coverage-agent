@@ -1,6 +1,7 @@
 # AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
 from __future__ import annotations
 
+import asyncio
 import os
 
 from fastapi import APIRouter, Request
@@ -42,7 +43,8 @@ async def health(request: Request) -> dict:
 
 @router.get("/repos")
 async def repos(request: Request) -> list[dict]:
-    return [r.model_dump() for r in list_repos(request.app.state.settings.repos_dir)]
+    found = await asyncio.to_thread(list_repos, request.app.state.settings.repos_dir)
+    return [r.model_dump() for r in found]
 
 
 @router.post("/repos/sample")

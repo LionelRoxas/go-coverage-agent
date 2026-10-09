@@ -1,6 +1,4 @@
 # AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
-import asyncio
-
 import httpx
 import pytest
 
@@ -17,7 +15,7 @@ def summary():
 
 
 @pytest.fixture
-def env(tmp_path):
+async def env(tmp_path):
     repos = tmp_path / "repos"
     (repos / "stats").mkdir(parents=True)
     (repos / "stats" / "go.mod").write_text("module github.com/montanaflynn/stats\n\ngo 1.17\n")
@@ -35,7 +33,24 @@ def env(tmp_path):
     manager = JobManager(settings, runner=runner)
     app = create_app(settings, manager)
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
-    return client, manager
+    yield client, manager
+    await client.aclose()
+
+
+def make_env(tmp_path, runner, **overrides):
+    repos = tmp_path / "repos"
+    (repos / "stats").mkdir(parents=True)
+    (repos / "stats" / "go.mod").write_text("module m\n")
+    kw = dict(groq_api_key="k", repos_dir=repos, work_dir=tmp_path / "work", output_dir=tmp_path / "out")
+    kw.update(overrides)
+    settings = Settings(**kw)
+    manager = JobManager(settings, runner=runner)
+    app = create_app(settings, manager)
+    return app, manager
+
+
+def client_for(app, **kw):
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app, **kw), base_url="http://test")
 
 
 async def test_health(env):
@@ -76,3 +91,83 @@ async def test_errors_use_error_envelope(env):
     r = await client.post("/api/jobs", json={"repo_path": "stats", "target_coverage": 500})
     assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_request"
     assert (await client.get("/api/jobs/nope")).status_code == 404
+
+
+async def noop_runner(job, emit, cancel):
+    return summary()
+
+
+async def test_conflict_cancel_and_listing(tmp_path):
+    async def slow(job, emit, cancel):
+        await cancel.wait()
+        return summary()
+
+    app, manager = make_env(tmp_path, slow)
+    async with client_for(app) as client:
+        job_id = (await client.post("/api/jobs", json={"repo_path": "stats"})).json()["job_id"]
+        r = await client.post("/api/jobs", json={"repo_path": "stats"})
+        assert r.status_code == 409 and r.json()["error"]["code"] == "job_running"
+        assert [j["id"] for j in (await client.get("/api/jobs")).json()] == [job_id]
+        r = await client.post(f"/api/jobs/{job_id}/cancel")
+        assert r.status_code == 200 and r.json()["id"] == job_id
+        await manager.get(job_id).task
+        assert (await client.post("/api/jobs/nope/cancel")).status_code == 404
+
+
+async def test_budget_low_is_429(tmp_path):
+    app, manager = make_env(tmp_path, noop_runner)
+    manager.ledger.add(manager.settings.daily_token_budget)
+    async with client_for(app) as client:
+        r = await client.post("/api/jobs", json={"repo_path": "stats"})
+        assert r.status_code == 429 and r.json()["error"]["code"] == "daily_budget_low"
+
+
+async def test_llm_not_configured_is_400(tmp_path):
+    app, _ = make_env(tmp_path, noop_runner, groq_api_key="")
+    async with client_for(app) as client:
+        r = await client.post("/api/jobs", json={"repo_path": "stats"})
+        assert r.status_code == 400 and r.json()["error"]["code"] == "llm_not_configured"
+
+
+async def test_sample_clone_failure_is_502(env, monkeypatch):
+    client, _ = env
+
+    async def boom(settings):
+        raise RuntimeError("git clone failed: nope")
+
+    monkeypatch.setattr("app.api.clone_sample", boom)
+    r = await client.post("/api/repos/sample")
+    assert r.status_code == 502 and r.json()["error"]["code"] == "clone_failed"
+
+
+async def test_unknown_route_and_wrong_method_use_envelope(env):
+    client, _ = env
+    r = await client.get("/api/nothing")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "not_found"
+    r = await client.delete("/api/health")
+    assert r.status_code == 405 and r.json()["error"]["code"] == "method_not_allowed"
+    assert "GET" in r.headers.get("allow", "")
+
+
+async def test_unaccepted_existing_file_is_404(env):
+    client, manager = env
+    job_id = (await client.post("/api/jobs", json={"repo_path": "stats"})).json()["job_id"]
+    await manager.get(job_id).task
+    extra = manager.settings.work_dir / job_id / "repo" / "secret.go"
+    extra.write_text("package stats\n")
+    assert extra.is_file()
+    r = await client.get(f"/api/jobs/{job_id}/files/secret.go")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "file_not_found"
+
+
+async def test_unhandled_exception_is_500_envelope(tmp_path):
+    app, manager = make_env(tmp_path, noop_runner)
+
+    def explode():
+        raise ValueError("secret detail")
+
+    manager.list = explode
+    async with client_for(app, raise_app_exceptions=False) as client:
+        r = await client.get("/api/jobs")
+    assert r.status_code == 500
+    assert r.json() == {"error": {"code": "internal_error", "message": "Internal server error"}}
