@@ -154,7 +154,7 @@ export default function SetupPage() {
         <div className="min-w-0 max-w-2xl space-y-4">
           <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight sm:text-[2.25rem]">Fill the gaps in a Go project’s tests</h1>
           <p className="max-w-[38rem] text-lg leading-relaxed text-muted">
-            An AI model writes tests for the code no test runs yet. Each one is run for real, and only those that pass and check new code are kept.
+            Point it at a Go project and it writes unit tests with AI, keeping only the ones that pass and test code no other test reaches.
           </p>
           <p className="text-sm text-muted">
             New to this? <Link href="/how-it-works" className="text-accent underline underline-offset-4">How it works</Link> explains each step in plain words.
