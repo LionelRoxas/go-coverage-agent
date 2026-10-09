@@ -66,12 +66,12 @@ describe("SetupPage", () => {
     expect(screen.getByText("Enter a target between 1 and 100.")).toBeInTheDocument();
   });
 
-  it("shows a link to a running job and disables Start", async () => {
+  it("disables Start while a job runs and points to the Runs panel, without the old banner", async () => {
     setup({ jobs: [runningJob] });
     render(<SetupPage />);
-    const link = await screen.findByRole("link", { name: "View it" });
-    expect(link).toHaveAttribute("href", "/jobs/job-1");
-    expect(screen.getByText(/A run is in progress on/)).toBeInTheDocument();
+    expect(await screen.findByText(/Follow it in the Runs panel/)).toBeInTheDocument();
+    expect(screen.queryByText(/A run is in progress on/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "/jobs/job-1");
     expect(startButton()).toBeDisabled();
   });
 

@@ -1,9 +1,9 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { RepoPicker } from "@/components/RepoPicker";
+import { RunsPanel } from "@/components/RunsPanel";
 import { api, ApiError } from "@/lib/api";
 import { tokens } from "@/lib/format";
 import type { Health, JobOptions, JobSnapshot, RepoInfo } from "@/lib/types";
@@ -18,7 +18,7 @@ export default function SetupPage() {
   const router = useRouter();
   const [health, setHealth] = useState<Health | null>(null);
   const [repos, setRepos] = useState<RepoInfo[]>([]);
-  const [running, setRunning] = useState<JobSnapshot | null>(null);
+  const [running, setRunning] = useState(false);
   const [repo, setRepo] = useState("");
   const [target, setTarget] = useState(80);
   const [opts, setOpts] = useState(DEFAULTS);
@@ -27,15 +27,16 @@ export default function SetupPage() {
   const [cloning, setCloning] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.health(), api.repos(), api.jobs()])
-      .then(([h, r, j]) => {
+    Promise.all([api.health(), api.repos()])
+      .then(([h, r]) => {
         setHealth(h);
         setRepos(r);
         setRepo((cur) => cur || r[0]?.path || "");
-        setRunning(j.find((x) => x.status === "running") ?? null);
       })
       .catch((e) => setError(e.message));
   }, []);
+
+  const onJobs = useCallback((jobs: JobSnapshot[]) => setRunning(jobs.some((j) => j.status === "running")), []);
 
   async function useSample() {
     setCloning(true);
@@ -67,7 +68,8 @@ export default function SetupPage() {
   const targetValid = Number.isFinite(target) && target >= 1 && target <= 100;
 
   return (
-    <form onSubmit={start} className="space-y-8">
+    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12">
+    <form onSubmit={start} className="min-w-0 space-y-8">
       <section>
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Raise Go test coverage, autonomously</h1>
         <p className="mt-3 max-w-prose text-sm leading-relaxed text-muted">
@@ -81,13 +83,6 @@ export default function SetupPage() {
           No Groq API key configured. Add <code className="font-mono">GROQ_API_KEY</code> to <code className="font-mono">.env</code> and restart <code className="font-mono">docker compose</code>.
         </div>
       )}
-      {running && (
-        <div className="rounded-sm border border-border border-l-4 border-l-accent bg-surface px-4 py-3 text-sm">
-          A run is in progress on <span className="break-all font-mono">{running.request.repo_path}</span>.{" "}
-          <Link className="text-accent underline underline-offset-4" href={`/jobs/${running.id}`}>View it</Link>
-        </div>
-      )}
-
       <RepoPicker repos={repos} value={repo} onChange={setRepo} onUseSample={useSample} cloning={cloning} />
 
       <div className="space-y-2">
@@ -133,10 +128,13 @@ export default function SetupPage() {
 
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
 
-      <button type="submit" disabled={busy || !repo || !targetValid || !health?.llm_configured || !!running}
+      <button type="submit" disabled={busy || !repo || !targetValid || !health?.llm_configured || running}
               className="rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-40">
         {busy ? "Starting…" : "Start"}
       </button>
+      {running && <p className="text-xs text-muted">A run is in progress. Follow it in the Runs panel.</p>}
     </form>
+    <RunsPanel onJobs={onJobs} />
+    </div>
   );
 }

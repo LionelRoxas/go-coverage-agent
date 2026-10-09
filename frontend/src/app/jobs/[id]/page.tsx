@@ -13,6 +13,10 @@ import { api } from "@/lib/api";
 import { duration, tokens } from "@/lib/format";
 import { useJobEvents } from "@/lib/useJobEvents";
 
+function AllRuns() {
+  return <Link href="/" className="inline-block text-sm text-muted hover:text-accent">← All runs</Link>;
+}
+
 function useElapsed(startedAt?: number, running?: boolean) {
   const [now, setNow] = useState(() => Date.now() / 1000);
   useEffect(() => {
@@ -44,24 +48,31 @@ export default function JobPage() {
 
   if (notFound) {
     return (
-      <p className="text-sm">
-        This run no longer exists (the backend was restarted). <Link className="text-accent underline-offset-4 hover:underline" href="/">Start a new one</Link>.
-      </p>
+      <div className="space-y-4">
+        <AllRuns />
+        <p className="text-sm">
+          This run no longer exists (the backend was restarted). <Link className="text-accent underline-offset-4 hover:underline" href="/">Start a new one</Link>.
+        </p>
+      </div>
     );
   }
 
   if (error && state.status === "connecting") {
     return (
+      <div className="space-y-4">
+      <AllRuns />
       <section role="alert" className="space-y-2 rounded-md border border-danger p-4">
         <h1 className="font-semibold">Couldn&apos;t load this run</h1>
         <p className="text-sm">{error}</p>
         <Link className="text-sm text-accent underline-offset-4 hover:underline" href="/">Back to setup</Link>
       </section>
+      </div>
     );
   }
 
   return (
     <div className="space-y-8">
+      <AllRuns />
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="break-all font-mono text-lg font-semibold">{state.repoPath ?? "…"}</h1>

@@ -55,6 +55,13 @@ describe("JobPage", () => {
     render(<JobPage />);
     expect(await screen.findByText(/This run no longer exists/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Start a new one" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "← All runs" })).toHaveAttribute("href", "/");
+  });
+
+  it("links back to all runs from the job view", async () => {
+    vi.mocked(api.job).mockResolvedValue({} as never);
+    render(<JobPage />);
+    expect(await screen.findByRole("link", { name: "← All runs" })).toHaveAttribute("href", "/");
   });
 
   it("shows a load error with a way back when the job cannot be loaded", async () => {
