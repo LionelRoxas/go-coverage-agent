@@ -1,0 +1,35 @@
+{
+  "business": {
+    "headline": "The share of the stats code checked by tests rose from 0% to 81.1%, past the 80% goal.",
+    "outcome": "The run reached its goal in 11 rounds and stopped there. It added 109 tests in 29 test files, and each one passes and checks code that no other test reached.",
+    "efficiency": "It took 5.2 minutes and about 175K tokens, roughly 2,159 tokens per percentage point gained. 27 of the 31 accepted drafts passed on their first check, so little was spent on repairs.",
+    "risks": [
+      "A few small parts of the library still have no tests at all, such as the code that clips, rescales and smooths values.",
+      "The tests describe what the code does today; if that behaviour is wrong, a test can lock it in."
+    ],
+    "recommendation": "Adopt the new tests now, and plan a short follow-up run for the parts that are still untested."
+  },
+  "technical": {
+    "headline": "Statement coverage of github.com/montanaflynn/stats went from 0% to 81.07% with 109 new tests in 29 files.",
+    "what_was_tested": "The tests exercise the statistics core, including load.go, norm.go, regression.go, correlation.go and describe.go. They are table-driven internal tests in package stats that use only the standard library.",
+    "where_tests_live": "The 29 test files are in output/e2de1ca387cb/tests. Copy them into the module root of the stats repo, next to the source files they test.",
+    "gaps": [
+      { "file": "clip.go", "detail": "12 uncovered statements; no test reaches it yet." },
+      { "file": "geometric_distribution.go", "detail": "12 uncovered statements." },
+      { "file": "rescale.go", "detail": "11 uncovered statements." },
+      { "file": "zscore.go", "detail": "11 uncovered statements." },
+      { "file": "ewma.go", "detail": "10 uncovered statements." }
+    ],
+    "suspected_bugs": [],
+    "rejected_or_failed": "No target was rejected. 3 failing tests were pruned before their files were accepted and the Fixer was called once; there were no mechanical repairs, timeouts or rate-limit waits.",
+    "how_to_run": "Copy the files from output/e2de1ca387cb/tests into the module root, then run `go test ./...` and `go test -cover ./...` there.",
+    "next_steps": [
+      "Add tests for clip.go, geometric_distribution.go, rescale.go, zscore.go and ewma.go.",
+      "Review the tests in ttest_test.go, distances_test.go and quartile_test.go, where failing cases were pruned.",
+      "Run the suite in CI so coverage stays above 80%."
+    ]
+  },
+  "dropped_sentences": 0,
+  "tokens": { "prompt_tokens": 2950, "completion_tokens": 1480, "total_tokens": 4430 },
+  "cost_usd": { "input": 0.013, "output": 0.0558, "total": 0.0688 }
+}

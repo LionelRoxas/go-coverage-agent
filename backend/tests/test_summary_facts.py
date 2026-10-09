@@ -49,7 +49,7 @@ def test_tests_and_files():
     summary, _ = load()
     f = facts()
     assert f.tests_added == summary.tests_added and f.tests_added_count == 109
-    assert f.test_files == summary.test_files and len(f.test_files) == 29
+    assert f.test_files == summary.test_files and f.test_files_count == len(f.test_files) == 29
     assert len(f.per_file) == 54
     assert f.per_file[0].model_dump() == {"file": "describe.go", "before": 0.0, "after": 100.0}
     low = [(x.file, x.percent, x.uncovered_statements) for x in f.lowest_files]

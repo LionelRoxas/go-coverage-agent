@@ -72,6 +72,7 @@ class RunFacts(BaseModel):
     rate_limit_wait_s: float
     tests_added_count: int
     tests_added: list[str]
+    test_files_count: int
     test_files: list[str]
     tests_dir: str  # where the generated test files were exported, relative to the project folder
     per_file: list[FileFact]
@@ -156,6 +157,7 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
         llm_timeouts=sum(d.get("kind") == "llm_timeout" for d in by_type.get("validation_result", [])),
         rate_limit_waits=len(waits), rate_limit_wait_s=round(sum(float(d.get("seconds", 0)) for d in waits), 1),
         tests_added_count=len(summary.tests_added), tests_added=list(summary.tests_added),
-        test_files=list(summary.test_files), tests_dir=f"output/{job_id}/tests",
+        test_files_count=len(summary.test_files), test_files=list(summary.test_files),
+        tests_dir=f"output/{job_id}/tests",
         per_file=per_file, lowest_files=lows[:LOWEST_FILES], suspected_bugs=list(summary.suspected_bugs),
     )

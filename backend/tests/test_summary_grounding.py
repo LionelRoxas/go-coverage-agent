@@ -13,7 +13,8 @@ def facts(**kw) -> RunFacts:
         cost_usd=CostFacts(input_usd=0.0125, output_usd=0.0549, total_usd=0.0674), llm_calls=[],
         targets_accepted=31, targets_rejected=0, rejected_reasons={}, first_check_passes=27, llm_fixes=1,
         mechanical_repairs=0, pruned_tests=3, llm_timeouts=0, rate_limit_waits=0, rate_limit_wait_s=0.0,
-        tests_added_count=109, tests_added=["TestMean", "TestNormPpf"], test_files=["mean_test.go", "norm_test.go"],
+        tests_added_count=109, tests_added=["TestMean", "TestNormPpf"], test_files_count=29,
+        test_files=["mean_test.go", "norm_test.go"],
         tests_dir="output/e2de1ca387cb/tests",
         per_file=[FileFact(file="mean.go", before=0.0, after=100.0), FileFact(file="norm.go", before=0.0, after=94.37)],
         lowest_files=[LowFile(file="clip.go", percent=0.0, uncovered_statements=12)],
@@ -95,3 +96,17 @@ def test_file_paths_and_test_names_must_exist():
 def test_no_cost_in_facts_means_no_dollar_amounts():
     out, dropped = ground(summary(business={"efficiency": "It cost $0.07. It was quick."}), facts(cost_usd=None))
     assert dropped == 1 and out.business.efficiency == "It was quick."
+
+
+def test_the_hand_written_screenshot_summary_is_grounded_in_the_real_run():
+    """tests/fixtures/run_e2de1ca387cb/ai_summary.json is the summary shown in docs/screenshots/gallery-summary-ai.png
+    (frontend/src/lib/fixtures/aiSummary.ts); written by hand from that run's facts, since no Groq call was made."""
+    import json
+    from pathlib import Path
+
+    from tests.test_summary_facts import facts as run_facts
+
+    data = json.loads((Path(__file__).parent / "fixtures" / "run_e2de1ca387cb" / "ai_summary.json").read_text("utf-8"))
+    written = RunSummary.model_validate(data)
+    out, dropped = ground(written, run_facts(price_input_per_m=0.15, price_output_per_m=0.60))
+    assert dropped == 0 and out == written
