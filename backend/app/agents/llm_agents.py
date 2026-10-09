@@ -5,16 +5,20 @@ from __future__ import annotations
 import re
 from functools import cache
 from pathlib import Path
+from typing import Sequence
 
 from app.agents.context import ContextInputs, ContextTooLarge, render_context
+from app.agents.history import AttemptRecord, render_history
 from app.llm.client import LLMClient, estimate_tokens
 from app.models import PlanItem, TestSnippet, TokenUsage
-from app.validator import ValidationResult
+from app.validator import ValidationKind, ValidationResult
 
 _PROMPTS = Path(__file__).parent / "prompts"
 _TOP_DECL = re.compile(r"^(?:func|type|var|const)\b", re.M)
 _DECL_NAME = re.compile(r"^(?:func\s+(?:\([^)]*\)\s*)?|type\s+|var\s+|const\s+)(\w+)")
 _WORD = re.compile(r"\w+")
+PRUNED_NO_GAIN = ("Removing the failing tests left no new coverage: the tests that reached the uncovered lines were the "
+                  "ones that failed. Keep them and correct their expected values (observed values are in the history).")
 
 
 @cache
@@ -43,7 +47,8 @@ def _first_lines(text: str, limit: int) -> str:
     return ("\n".join(kept) if kept else text[:limit]) + "\n…[truncated]…"
 
 
-def _relevant_parts(snippet: TestSnippet, result: ValidationResult, limit: int) -> str | None:
+def _relevant_parts(snippet: TestSnippet, result: ValidationResult, limit: int,
+                    extra: Sequence[str] = ()) -> str | None:
     """Whole top-level declarations only, never cut mid-function: those the validator pointed at (failed tests,
     declarations at the error lines, names in its output) that fit in `limit` characters; when it pointed at none,
     the leading declarations that fit. None when not even one whole declaration fits."""
@@ -53,7 +58,7 @@ def _relevant_parts(snippet: TestSnippet, result: ValidationResult, limit: int) 
         return code if len(code) <= limit else None
     starts[0] = 0
     chunks = [code[a:b].strip("\n") for a, b in zip(starts, starts[1:] + [len(code)])]
-    named = set(result.failed_tests) | set(result.error_decls) | set(_WORD.findall(result.output))
+    named = set(result.failed_tests) | set(result.error_decls) | set(_WORD.findall(result.output)) | set(extra)
     pointed = [c for c in chunks if (m := _DECL_NAME.match(c.lstrip())) and m.group(1) in named]
     kept: list[str] = []
     size = 0
@@ -76,6 +81,11 @@ class Agents:
         self.llm = llm
         self.max_prompt_tokens = max_prompt_tokens
 
+    @property
+    def last_effort(self) -> str | None:
+        """The reasoning effort the last successful call actually used (lowered after a truncated answer)."""
+        return self.llm.last_effort
+
     def _user(self, system: str, inputs: ContextInputs, task: str) -> str:
         budget = self.max_prompt_tokens - estimate_tokens(system) - estimate_tokens(task) - 20
         return f"{render_context(inputs, budget)}\n\n{task}"
@@ -87,35 +97,47 @@ class Agents:
         return await self.llm.complete(role="writer", system=system, user=self._user(system, inputs, task),
                                        schema=TestSnippet)
 
-    def _fix_tasks(self, item: PlanItem, snippet: TestSnippet, result: ValidationResult) -> list[str]:
+    def _fix_tasks(self, item: PlanItem, snippet: TestSnippet, result: ValidationResult,
+                   history: Sequence[AttemptRecord] = ()) -> list[str]:
         """Fixer tasks from fullest to smallest. Related declarations are already optional inside render_context;
-        after that the validator output is cut to its first lines, then the code to whole relevant declarations, then the code is omitted."""
+        after that the earlier-attempts history is cut to its first and latest failures with observed values, then
+        the validator output to its first lines, then the code to whole relevant declarations, then the code is omitted."""
         imports = ", ".join(snippet.imports) or "(none)"
         plan = "".join(f"- {sc.target}: {sc.scenario}\n" for sc in snippet.test_plan)
         plan_block = f"Test plan you declared:\n{plan}" if plan else ""
         out = result.output
+        earlier, current = list(history[:-1]), (history[-1] if history else None)
+        pruned = current.pruned if current is not None else ()
+        goal = f"Return a corrected replacement snippet for {_labels(item)}."
+        if result.kind is ValidationKind.NO_GAIN and pruned and any(
+                r.kind == ValidationKind.TEST_FAILURE.value and set(r.failed_tests) & set(pruned) for r in earlier):
+            goal += f" {PRUNED_NO_GAIN}"
+        full_history, short_history = render_history(earlier), render_history(earlier, minimal=True)
 
-        def task(code: str | None, output: str, with_plan: bool = True) -> str:
+        def task(code: str | None, output: str, past: str, with_plan: bool = True) -> str:
             shown = (f"```go\n{code}\n```" if code is not None
                      else "(the rejected code is omitted to fit the prompt; write a fresh replacement)")
-            return (f"## Rejected snippet (kind: {result.kind.value})\nImports you declared: {imports}\n"
+            return (f"{past + chr(10) * 2 if past else ''}"
+                    f"## Rejected snippet (kind: {result.kind.value})\nImports you declared: {imports}\n"
                     f"{plan_block if with_plan else ''}{shown}\n\n"
                     f"## Validator output\n```\n{output}\n```\n\n"
-                    f"## Task\nReturn a corrected replacement snippet for {_labels(item)}.")
+                    f"## Task\n{goal}")
 
         return [
-            task(_trim(snippet.code, 5000), _trim(out, 2500)),
-            task(_trim(snippet.code, 5000), _first_lines(out, 800)),
-            task(_relevant_parts(snippet, result, 2500), _first_lines(out, 800)),
-            task(_relevant_parts(snippet, result, 1000), _first_lines(out, 300), with_plan=False),
-            task(None, _first_lines(out, 300), with_plan=False),
+            task(_trim(snippet.code, 5000), _trim(out, 2500), full_history),
+            task(_trim(snippet.code, 5000), _trim(out, 2500), short_history),
+            task(_trim(snippet.code, 5000), _first_lines(out, 800), short_history),
+            task(_relevant_parts(snippet, result, 2500, pruned), _first_lines(out, 800), short_history),
+            task(_relevant_parts(snippet, result, 1000, pruned), _first_lines(out, 300), short_history, with_plan=False),
+            task(None, _first_lines(out, 300), short_history, with_plan=False),
         ]
 
-    async def fix(self, item: PlanItem, inputs: ContextInputs, snippet: TestSnippet,
-                  result: ValidationResult) -> tuple[TestSnippet, TokenUsage]:
+    async def fix(self, item: PlanItem, inputs: ContextInputs, snippet: TestSnippet, result: ValidationResult,
+                  history: Sequence[AttemptRecord] = ()) -> tuple[TestSnippet, TokenUsage]:
+        """`history`: this item's checks so far, oldest first, ending with the one that produced `result`."""
         system = load_prompt("fixer")
         error: ContextTooLarge | None = None
-        for task in self._fix_tasks(item, snippet, result):
+        for task in self._fix_tasks(item, snippet, result, history):
             try:
                 user = self._user(system, inputs, task)
             except ContextTooLarge as e:  # degrade instead of failing; only the targets plus the minimal task are fatal

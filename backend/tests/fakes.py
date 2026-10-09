@@ -11,9 +11,11 @@ class FakeLLM:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls: list[dict] = []
+        self.last_effort: str | None = None
 
     async def complete(self, *, role, system, user, schema):
         self.calls.append({"role": role, "system": system, "user": user, "schema": schema})
+        self.last_effort = {"writer": "medium", "fixer": "high"}.get(role)
         item = self.responses.pop(0)
         if isinstance(item, Exception):
             raise item

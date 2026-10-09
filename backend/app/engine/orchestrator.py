@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from app.agents.context import ContextTooLarge
+from app.agents.history import AttemptRecord, attempt_record
 from app.agents.planner import plan
 from app.agents.repair import mechanical_repair
 from app.engine.policy import StopPolicy, stop_message
@@ -114,7 +115,8 @@ class Orchestrator:
         self.tokens = self.tokens.add(usage)
         await self.emit("llm_call", {"index": self.index, "file": item.file, "role": role,
                                      "prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens,
-                                     "total_tokens": self.tokens.total})
+                                     "total_tokens": self.tokens.total,
+                                     "reasoning_effort": self.deps.agents.last_effort})
         return snip
 
     async def _validate(self, base: dict[str, Any], coro: Awaitable[ValidationResult]) -> ValidationResult:
@@ -150,6 +152,7 @@ class Orchestrator:
         snap = ws.snapshot([test_file, "go.mod", "go.sum"])
         snip: TestSnippet | None = None
         half = False
+        history: list[AttemptRecord] = []  # every check of this candidate, oldest first, for the Fixer
         try:
             try:
                 # render_context (inside agents.write) is where ContextTooLarge is actually raised
@@ -162,6 +165,7 @@ class Orchestrator:
                 too_large = False
                 await self._generated(base, test_file, snip)
                 result = await self._validate(base, validator.validate(test_file, package, snip, self.report))
+                history.append(attempt_record("writer", result))
                 attempts = repairs = 0
                 while not result.accepted:
                     self._check()
@@ -171,6 +175,7 @@ class Orchestrator:
                             await self.emit("tests_pruned", {**base, "tests": doomed})
                             result = await self._validate(
                                 base, validator.prune_and_check(test_file, doomed, self.report, result.new_tests))
+                            history.append(attempt_record(f"prune of [{', '.join(doomed)}]", result, pruned=doomed))
                             if result.accepted:
                                 break
                     if result.kind is ValidationKind.COMPILE_ERROR and repairs < MAX_MECHANICAL_REPAIRS:
@@ -182,15 +187,18 @@ class Orchestrator:
                             snip = repaired[0]
                             await self._generated(base, test_file, snip)
                             result = await self._validate(base, validator.validate(test_file, package, snip, self.report))
+                            history.append(attempt_record(f"auto_fix: {repaired[1]}", result))
                             continue
                     if attempts >= self.opts.max_fix_attempts:
                         break
                     attempts += 1
                     await self.emit("fix_attempt", {**base, "attempt": attempts, "kind": result.kind.value})
                     ws.restore(snap)
-                    snip = await self._call("fixer", item, self.deps.agents.fix(item, inputs, snip, result))
+                    snip = await self._call("fixer", item,
+                                            self.deps.agents.fix(item, inputs, snip, result, list(history)))
                     await self._generated(base, test_file, snip)
                     result = await self._validate(base, validator.validate(test_file, package, snip, self.report))
+                    history.append(attempt_record(f"llm_fix {attempts}", result))
         except (LLMError, ContextTooLarge) as e:
             if isinstance(e, (LLMBudgetExhausted, LLMFatal, LLMCancelled)):
                 ws.restore(snap)

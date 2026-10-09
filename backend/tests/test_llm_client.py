@@ -79,7 +79,7 @@ async def test_success_parses_and_counts_usage(tmp_path):
     assert out.answer == "hi" and usage.total == 150
     kw = fake.calls[0]
     assert kw["response_format"]["json_schema"]["strict"] is True
-    assert kw["reasoning_effort"] == "low"
+    assert kw["reasoning_effort"] == "medium" and llm.last_effort == "medium"  # the writer's default
     assert kw["max_completion_tokens"] == 65536
     assert llm.ledger.used_today() == 150
 
@@ -113,7 +113,8 @@ async def test_long_429_means_daily_cap(tmp_path):
 
 
 async def test_truncation_at_low_effort_fails_without_retry(tmp_path):
-    llm, fake, _ = make(tmp_path, [Raw(Completion("{", "length"))])
+    llm, fake, _ = make(tmp_path, [Raw(Completion("{", "length"))],
+                        settings=Settings(groq_api_key="k", groq_writer_reasoning_effort="low"))
     with pytest.raises(LLMOutputTooLarge, match="truncated"):
         await call(llm)
     assert len(fake.calls) == 1
@@ -128,7 +129,7 @@ async def test_unset_completion_cap_is_omitted(tmp_path):
 
 async def test_second_truncation_after_effort_retry_is_output_too_large(tmp_path):
     fake = FakeGroq([Raw(Completion("{", "length")), Raw(Completion("{", "length"))])
-    llm = GroqLLM(Settings(groq_api_key="k", groq_reasoning_effort="medium"),
+    llm = GroqLLM(Settings(groq_api_key="k", groq_writer_reasoning_effort="medium"),
                   UsageLedger(tmp_path / "u.json", 190_000), RateLimiter(), client=fake, sleep=_no_sleep)
     with pytest.raises(LLMOutputTooLarge):
         await call(llm)
@@ -186,7 +187,7 @@ async def test_network_errors_back_off_then_fail(tmp_path):
 
 async def test_higher_effort_truncation_retries_once_at_low(tmp_path):
     fake = FakeGroq([Raw(Completion("{", "length")), Raw(Completion('{"answer": "ok"}', "stop"))])
-    llm = GroqLLM(Settings(groq_api_key="k", groq_reasoning_effort="medium"),
+    llm = GroqLLM(Settings(groq_api_key="k", groq_writer_reasoning_effort="medium"),
                   UsageLedger(tmp_path / "u.json", 190_000), RateLimiter(),
                   client=fake, sleep=_no_sleep)
     out, usage = await call(llm)
@@ -321,3 +322,28 @@ async def test_unrelated_429_is_still_a_rate_limit_wait(tmp_path):
     llm, fake, slept = make(tmp_path, [err, Raw(Completion('{"answer": "ok"}', "stop"))])
     await call(llm)
     assert slept == [5.0] and fake.calls[0]["max_completion_tokens"] == fake.calls[1]["max_completion_tokens"]
+
+
+async def test_each_role_sends_its_own_effort(tmp_path):
+    llm, fake, _ = make(tmp_path, [Raw(Completion('{"answer": "a"}', "stop")), Raw(Completion('{"answer": "b"}', "stop"))],
+                        settings=Settings(groq_api_key="k", groq_writer_reasoning_effort="low",
+                                          groq_fixer_reasoning_effort="high"))
+    await llm.complete(role="writer", system="s", user="u", schema=Out)
+    assert llm.last_effort == "low"
+    await llm.complete(role="fixer", system="s", user="u", schema=Out)
+    assert [c["reasoning_effort"] for c in fake.calls] == ["low", "high"] and llm.last_effort == "high"
+
+
+async def test_high_effort_truncation_steps_down_through_medium_to_low(tmp_path):
+    script = [Raw(Completion("{", "length")), Raw(Completion("{", "length")), Raw(Completion('{"answer": "ok"}', "stop"))]
+    llm, fake, _ = make(tmp_path, script)
+    out, usage = await llm.complete(role="fixer", system="s", user="u", schema=Out)  # fixer default: high
+    assert out.answer == "ok" and usage.total == 450
+    assert [c["reasoning_effort"] for c in fake.calls] == ["high", "medium", "low"] and llm.last_effort == "low"
+
+
+async def test_truncation_at_every_effort_is_output_too_large(tmp_path):
+    llm, fake, _ = make(tmp_path, [Raw(Completion("{", "length")) for _ in range(3)])
+    with pytest.raises(LLMOutputTooLarge, match="truncated"):
+        await llm.complete(role="fixer", system="s", user="u", schema=Out)
+    assert [c["reasoning_effort"] for c in fake.calls] == ["high", "medium", "low"]

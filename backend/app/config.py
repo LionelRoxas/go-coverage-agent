@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+Effort = Literal["low", "medium", "high"]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
@@ -19,7 +21,8 @@ class Settings(BaseSettings):
 
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
-    groq_reasoning_effort: Literal["low", "medium", "high"] = "low"
+    groq_writer_reasoning_effort: Effort = "medium"
+    groq_fixer_reasoning_effort: Effort = "high"
     groq_max_completion_tokens: int | None = 65536  # model maximum; empty env value -> None: omit the field (Groq then applies a smaller default)
     call_token_reservation: int = 16000  # pacing/ledger reserve per call (>= MAX_PROMPT_TOKENS + expected output); never sent to Groq
     max_prompt_tokens: int = 12000  # MAX_PROMPT_TOKENS; free-trial keys (8K tokens/min) should set 4500
@@ -37,6 +40,7 @@ class Settings(BaseSettings):
     max_output_chars: int = 20_000
     cors_origins: list[str] = ["http://localhost:3000"]
     host_repos_dir_display: str | None = None  # display only (HOST_REPOS_DIR_DISPLAY); never used as a path
+
 
     @property
     def llm_configured(self) -> bool:

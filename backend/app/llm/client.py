@@ -56,6 +56,7 @@ def _retry_after(headers: Any) -> float:
 
 _SIZE_HINT = re.compile(r"limit\D{0,3}(\d+)\D+requested\D{0,3}(\d+)", re.IGNORECASE)
 _MIN_COMPLETION = 1024
+_LOWER_EFFORT = {"high": "medium", "medium": "low"}  # step-down after a truncated answer
 _SIZE_GUIDANCE = ("Groq rejected the request size for this key's tokens-per-minute limit; "
                   "set GROQ_MAX_COMPLETION_TOKENS lower (e.g. 4000), and on a free-trial key (8K tokens/min) "
                   "also set MAX_PROMPT_TOKENS=4500.")
@@ -72,6 +73,8 @@ def _size_rejection(e: groq.APIStatusError) -> tuple[bool, int | None]:
 
 
 class LLMClient(Protocol):
+    last_effort: str | None  # reasoning effort of the last successful call
+
     async def complete(self, *, role: str, system: str, user: str, schema: type[T]) -> tuple[T, TokenUsage]: ...
 
 
@@ -87,6 +90,7 @@ class GroqLLM:
         self.s, self.ledger, self.limiter = settings, ledger, limiter
         self._emit, self._sleep, self._cancel = emit, sleep, cancel
         self._client = client or groq.AsyncGroq(api_key=settings.groq_api_key, max_retries=0, timeout=120.0)
+        self.last_effort: str | None = None
 
     async def _wait(self, seconds: float, reason: str) -> None:
         if self._emit:
@@ -127,8 +131,8 @@ class GroqLLM:
         if self.ledger.remaining() < self.s.call_token_reservation:
             raise LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
 
-        effort = self.s.groq_reasoning_effort
-        truncated = False
+        effort: str = (self.s.groq_fixer_reasoning_effort if role == "fixer"
+                       else self.s.groq_writer_reasoning_effort)
         rate_retries = net_retries = 0
         json_retried = False
         spent = TokenUsage()
@@ -214,12 +218,15 @@ class GroqLLM:
             self.ledger.add(usage.total)
             choice = completion.choices[0]
             if choice.finish_reason == "length":
-                # Retrying only helps if we can lower the reasoning effort; otherwise it re-spends the same tokens.
-                if truncated or effort == "low":
+                # Retrying only helps at a lower reasoning effort (high -> medium -> low); otherwise it re-spends
+                # the same tokens.
+                if effort not in _LOWER_EFFORT:
                     raise LLMOutputTooLarge("the model's answer was truncated; skipping this target")
-                truncated, effort = True, "low"
+                effort = _LOWER_EFFORT[effort]
                 continue
             try:
-                return schema.model_validate_json(choice.message.content or ""), spent
+                parsed = schema.model_validate_json(choice.message.content or "")
             except ValidationError as e:
                 raise LLMError(f"model output does not match {schema.__name__} ({e.error_count()} errors)") from e
+            self.last_effort = effort
+            return parsed, spent

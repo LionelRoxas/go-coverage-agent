@@ -24,3 +24,34 @@ def test_max_prompt_tokens_default_and_env(monkeypatch):
     assert Settings(_env_file=None).max_prompt_tokens == 12000
     monkeypatch.setenv("MAX_PROMPT_TOKENS", "4500")
     assert Settings(_env_file=None).max_prompt_tokens == 4500
+
+
+EFFORT_VARS = ("GROQ_REASONING_EFFORT", "GROQ_WRITER_REASONING_EFFORT", "GROQ_FIXER_REASONING_EFFORT")
+
+
+def _clear_effort(monkeypatch):
+    for name in EFFORT_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_reasoning_effort_defaults_per_role(monkeypatch):
+    _clear_effort(monkeypatch)
+    s = Settings(_env_file=None)
+    assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("medium", "high")
+
+
+def test_role_effort_env_vars(monkeypatch):
+    _clear_effort(monkeypatch)
+    monkeypatch.setenv("GROQ_WRITER_REASONING_EFFORT", "low")
+    monkeypatch.setenv("GROQ_FIXER_REASONING_EFFORT", "medium")
+    s = Settings(_env_file=None)
+    assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("low", "medium")
+
+
+
+def test_old_single_effort_variable_is_ignored(monkeypatch):
+    _clear_effort(monkeypatch)
+    monkeypatch.setenv("GROQ_REASONING_EFFORT", "low")
+    s = Settings(_env_file=None)
+    assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("medium", "high")
+    assert not hasattr(s, "groq_reasoning_effort")

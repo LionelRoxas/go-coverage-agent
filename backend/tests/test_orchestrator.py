@@ -52,8 +52,9 @@ class FakeValidator:
 class FakeAgents:
     def __init__(self, writes, fixes=(), too_large_when_multi=False, usage=10):
         self.writes, self.fixes, self.usage = list(writes), list(fixes), usage
-        self.write_items, self.fix_kinds = [], []
+        self.write_items, self.fix_kinds, self.histories = [], [], []
         self.too_large_when_multi = too_large_when_multi
+        self.last_effort = "medium"
 
     async def write(self, item, inputs):
         if self.too_large_when_multi and len(item.functions) > 1:
@@ -64,8 +65,9 @@ class FakeAgents:
             raise r
         return r, TokenUsage(prompt_tokens=self.usage, completion_tokens=5)
 
-    async def fix(self, item, inputs, snip, result):
+    async def fix(self, item, inputs, snip, result, history=()):
         self.fix_kinds.append(result.kind)
+        self.histories.append(list(history))
         r = self.fixes.pop(0)
         if isinstance(r, Exception):
             raise r
@@ -358,3 +360,73 @@ async def test_repeated_duplicates_stop_after_the_mechanical_cap_then_go_to_the_
     repairs = [d["description"] for t, d in events if t == "mechanical_repair"]
     assert repairs == [f"renamed duplicate test {n} to {n}_2" for n in names[:MAX_MECHANICAL_REPAIRS]]
     assert agents.fix_kinds == [ValidationKind.COMPILE_ERROR] and summary.tests_added == ["TestA"]
+
+
+# output/7ef641efb870, iteration 7 (constraints.go): go test -count=2 prints every failure twice
+EVIDENCE_FAILURE = """--- FAIL: TestParse (0.00s)
+    --- FAIL: TestParse/!=_1.x (0.00s)
+        constraints_test.go:721: minorDirty = true, want false
+--- FAIL: TestNotEqual (0.00s)
+    constraints_test.go:772: expected error for minor dirty equality, got nil
+--- FAIL: TestParse (0.00s)
+    --- FAIL: TestParse/!=_1.x (0.00s)
+        constraints_test.go:721: minorDirty = true, want false
+--- FAIL: TestNotEqual (0.00s)
+    constraints_test.go:772: expected error for minor dirty equality, got nil
+FAIL"""
+FIX_FAILURE = "--- FAIL: TestMajorX (0.00s)\n    constraints_test.go:702: unexpected dirty flags: dirty=true minorDirty=true\n"
+NO_GAIN = ValidationResult(ValidationKind.NO_GAIN, "the new tests executed no previously uncovered statements")
+
+
+class RealContexts:
+    async def inputs_for(self, item, rep):
+        from app.agents.context import ContextInputs
+        return ContextInputs(module="m", package="p", go_version="1.22", source_file="a.go", test_file="a_test.go",
+                             targets=[("A", "func A() {\n\tx := 1  // UNCOVERED\n}")], declared=[], referenced=[],
+                             existing_tests=[])
+
+
+async def test_fixer_sees_the_assertion_failures_that_pruning_hid(ws):
+    """writer -> test_failure -> prune -> no_gain -> fixer -> test_failure -> prune -> no_gain -> fixer: each fixer
+    prompt carries the earlier observed values, not just "no new coverage"."""
+    from app.agents.llm_agents import PRUNED_NO_GAIN, Agents
+    from tests.fakes import FakeLLM
+    first = ValidationResult(ValidationKind.TEST_FAILURE, EVIDENCE_FAILURE, failed_tests=["TestParse", "TestNotEqual"],
+                             new_tests=["TestParse", "TestNotEqual", "TestOther"])
+    second = ValidationResult(ValidationKind.TEST_FAILURE, FIX_FAILURE, failed_tests=["TestMajorX"],
+                              new_tests=["TestMajorX", "TestOther"])
+    v = FakeValidator(ws, [first, second, accepted({"A:1", "A:2"})], prune_results=[NO_GAIN, NO_GAIN])
+    llm = FakeLLM([GOOD, GOOD, GOOD])
+    orch, _ = run(ws, v, Agents(llm, max_prompt_tokens=12_000), target=50, max_fix_attempts=2,
+                  targets_per_iteration=1, contexts=RealContexts())
+    summary = await orch.run(report(set()))
+    assert summary.final_percent == 50.0
+    fixes = [c["user"] for c in llm.calls if c["role"] == "fixer"]
+    assert len(fixes) == 2
+    assert "TestParse/!=_1.x: constraints_test.go:721: minorDirty = true, want false" in fixes[0]
+    assert "1. writer -> test_failure (TestParse, TestNotEqual)" in fixes[0] and PRUNED_NO_GAIN in fixes[0]
+    assert "minorDirty = true, want false" in fixes[1] and "unexpected dirty flags: dirty=true minorDirty=true" in fixes[1]
+    assert "2. prune of [TestParse, TestNotEqual] -> no_gain" in fixes[1] and "3. llm_fix 1 -> test_failure" in fixes[1]
+
+
+async def test_history_records_each_check_with_its_source(ws):
+    failing = ValidationResult(ValidationKind.TEST_FAILURE, EVIDENCE_FAILURE, failed_tests=["TestParse"],
+                               new_tests=["TestParse", "TestOther"])
+    missing = ValidationResult(ValidationKind.COMPILE_ERROR, "./a_test.go:3:2: undefined: strings")
+    v = FakeValidator(ws, [missing, failing, accepted({"A:1", "A:2"})], prune_results=[NO_GAIN])
+    agents = FakeAgents([snippet("func TestA(t *testing.T) { strings.ToLower(\"\") }")], fixes=[GOOD])
+    orch, _ = run(ws, v, agents, target=50, max_fix_attempts=1, targets_per_iteration=1)
+    await orch.run(report(set()))
+    [history] = agents.histories
+    assert [r.source for r in history] == ["writer", "auto_fix: added import strings",
+                                           "prune of [TestParse]"]
+    assert [r.kind for r in history] == ["compile_error", "test_failure", "no_gain"]
+    assert history[-1].pruned == ("TestParse",)
+
+
+async def test_llm_call_event_carries_the_reasoning_effort(ws):
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"})])
+    orch, events = run(ws, v, FakeAgents([GOOD]), target=50)
+    await orch.run(report(set()))
+    [call] = [d for t, d in events if t == "llm_call"]
+    assert call["reasoning_effort"] == "medium" and call["role"] == "writer"
