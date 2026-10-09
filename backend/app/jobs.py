@@ -15,7 +15,6 @@ from app.llm.limits import RateLimiter, UsageLedger
 from app.models import Event, JobRequest, JobStatus, StopReason, Summary
 
 log = logging.getLogger(__name__)
-TERMINAL = {"job_completed", "job_cancelled", "job_failed"}
 
 
 class JobConflict(Exception):
@@ -155,7 +154,9 @@ class JobManager:
             try:
                 out = self.settings.output_dir / job.id
                 out.mkdir(parents=True, exist_ok=True)
-                (out / "events.jsonl").write_text("".join(e.model_dump_json() + "\n" for e in job.events))
-            except OSError:
-                log.warning("could not write events.jsonl for job %s", job.id)
-            job.close()
+                (out / "events.jsonl").write_text(
+                    "".join(e.model_dump_json() + "\n" for e in job.events), encoding="utf-8")
+            except Exception:  # noqa: BLE001 — never let artifact writing block close()
+                log.warning("could not write events.jsonl for job %s", job.id, exc_info=True)
+            finally:
+                job.close()

@@ -1,5 +1,7 @@
 # AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
 import asyncio
+import json
+from pathlib import Path
 
 import pytest
 
@@ -54,7 +56,7 @@ async def test_stream_replays_and_tails_without_duplicates(tmp_path):
     async def collect():
         return [e.type async for e in job.stream()]
 
-    early, late = asyncio.create_task(collect()), None
+    early = asyncio.create_task(collect())
     await asyncio.sleep(0)
     gate.set()
     await finish(job)
@@ -101,3 +103,50 @@ async def test_failures_become_job_failed_events(tmp_path):
     job = manager(tmp_path, crashing).start(JobRequest(repo_path="stats"))
     await finish(job)
     assert job.events[-1].data["reason"] == "internal_error"
+
+
+async def test_events_jsonl_ends_with_terminal_event(tmp_path):
+    async def runner(job, emit, cancel):
+        return summary()
+
+    job = manager(tmp_path, runner).start(JobRequest(repo_path="stats"))
+    await finish(job)
+    lines = (tmp_path / job.id / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    assert json.loads(lines[-1])["type"] == "job_completed"
+
+
+async def test_write_failure_still_closes_job(tmp_path, monkeypatch):
+    async def runner(job, emit, cancel):
+        return summary()
+
+    def boom(self, *a, **k):
+        raise UnicodeEncodeError("cp1252", "x", 0, 1, "bad")
+
+    monkeypatch.setattr(Path, "write_text", boom)
+    job = manager(tmp_path, runner).start(JobRequest(repo_path="stats"))
+    stream = asyncio.create_task(_collect(job))
+    await finish(job)
+    assert job.finished and job.status is JobStatus.COMPLETED
+    assert (await asyncio.wait_for(stream, 1))[-1] == "job_completed"
+
+
+async def _collect(job):
+    return [e.type async for e in job.stream()]
+
+
+async def test_early_stream_close_removes_subscriber(tmp_path):
+    gate = asyncio.Event()
+
+    async def runner(job, emit, cancel):
+        await gate.wait()
+        return summary()
+
+    job = manager(tmp_path, runner).start(JobRequest(repo_path="stats"))
+    await asyncio.sleep(0)
+    gen = job.stream()
+    assert (await gen.__anext__()).type == "job_started"
+    assert len(job._subscribers) == 1
+    await gen.aclose()
+    assert job._subscribers == []
+    gate.set()
+    await finish(job)
