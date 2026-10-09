@@ -89,7 +89,7 @@ class Orchestrator:
         end = self.report.percent
         self.iterations.append(IterationRecord(index=index, start_percent=start, end_percent=end,
                                                accepted=accepted, rejected=rejected))
-        self.gains.append(end - start)
+        self.gains.append(round(end - start, 2))
         await self.emit("iteration_completed", {"index": index, "start_percent": start, "end_percent": end,
                                                 "accepted": accepted, "rejected": rejected})
 
@@ -113,12 +113,22 @@ class Orchestrator:
 
     async def _validate(self, base: dict[str, Any], coro: Awaitable[ValidationResult]) -> ValidationResult:
         result = await coro
+        if self.cancel.is_set():  # gotools reports a cancelled run as a failure; do not misreport it
+            raise Cancelled()
         await self.emit("validation_result", {**base, **result.event()})
         return result
 
     async def _generated(self, base: dict[str, Any], test_file: str, snip: TestSnippet) -> None:
         await self.emit("candidate_generated", {**base, "test_file": test_file, "code": snip.code,
                                                 "test_plan": [s.model_dump() for s in snip.test_plan]})
+
+    async def _too_large(self, item: PlanItem, base: dict[str, Any]) -> bool:
+        """Context too big: retry with a single function, or skip the item for good."""
+        if len(item.functions) > 1:
+            return await self._attempt(item.model_copy(update={"functions": item.functions[:1]}))
+        self.skipped.update(item.functions)
+        await self.emit("candidate_rejected", {**base, "reason": "too_large"})
+        return False
 
     async def _attempt(self, item: PlanItem) -> bool:
         self._check()
@@ -128,11 +138,7 @@ class Orchestrator:
         try:
             inputs = await self.deps.contexts.inputs_for(item, self.report)
         except ContextTooLarge:
-            if len(item.functions) > 1:
-                return await self._attempt(item.model_copy(update={"functions": item.functions[:1]}))
-            self.skipped.update(item.functions)
-            await self.emit("candidate_rejected", {**base, "reason": "too_large"})
-            return False
+            return await self._too_large(item, base)
 
         snap = ws.snapshot([test_file, "go.mod", "go.sum"])
         snip: TestSnippet | None = None
@@ -141,36 +147,42 @@ class Orchestrator:
                 # render_context (inside agents.write) is where ContextTooLarge is actually raised
                 snip = await self._call("writer", item, self.deps.agents.write(item, inputs))
             except ContextTooLarge:
-                ws.restore(snap)
-                if len(item.functions) > 1:
-                    return await self._attempt(item.model_copy(update={"functions": item.functions[:1]}))
-                self.skipped.update(item.functions)
-                await self.emit("candidate_rejected", {**base, "reason": "too_large"})
-                return False
-            await self._generated(base, test_file, snip)
-            result = await self._validate(base, validator.validate(test_file, package, snip, self.report))
-            attempts = 0
-            while not result.accepted and attempts < self.opts.max_fix_attempts:
-                self._check()
-                if result.kind is ValidationKind.TEST_FAILURE:
-                    doomed = [n for n in result.failed_tests if n in result.new_tests]
-                    if doomed and len(doomed) == len(result.failed_tests) and len(doomed) < len(result.new_tests):
-                        await self.emit("tests_pruned", {**base, "tests": doomed})
-                        result = await self._validate(
-                            base, validator.prune_and_check(test_file, doomed, self.report, result.new_tests))
-                        if result.accepted:
-                            break
-                attempts += 1
-                await self.emit("fix_attempt", {**base, "attempt": attempts, "kind": result.kind.value})
-                ws.restore(snap)
-                snip = await self._call("fixer", item, self.deps.agents.fix(item, inputs, snip, result))
+                too_large = True
+            else:
+                too_large = False
                 await self._generated(base, test_file, snip)
                 result = await self._validate(base, validator.validate(test_file, package, snip, self.report))
-        except (LLMBudgetExhausted, LLMFatal, Cancelled):
+                attempts = 0
+                while not result.accepted:
+                    self._check()
+                    if result.kind is ValidationKind.TEST_FAILURE:
+                        doomed = [n for n in result.failed_tests if n in result.new_tests]
+                        if doomed and len(doomed) == len(result.failed_tests) and len(doomed) < len(result.new_tests):
+                            await self.emit("tests_pruned", {**base, "tests": doomed})
+                            result = await self._validate(
+                                base, validator.prune_and_check(test_file, doomed, self.report, result.new_tests))
+                            if result.accepted:
+                                break
+                    if attempts >= self.opts.max_fix_attempts:
+                        break
+                    attempts += 1
+                    await self.emit("fix_attempt", {**base, "attempt": attempts, "kind": result.kind.value})
+                    ws.restore(snap)
+                    snip = await self._call("fixer", item, self.deps.agents.fix(item, inputs, snip, result))
+                    await self._generated(base, test_file, snip)
+                    result = await self._validate(base, validator.validate(test_file, package, snip, self.report))
+        except (LLMError, ContextTooLarge) as e:
+            if isinstance(e, (LLMBudgetExhausted, LLMFatal, LLMCancelled)):
+                ws.restore(snap)
+                raise
+            too_large = False
+            result = ValidationResult(ValidationKind.LLM_ERROR, str(e))
+        except BaseException:  # incl. Cancelled, OSError, asyncio.CancelledError: never leave a candidate behind
             ws.restore(snap)
             raise
-        except (LLMError, ContextTooLarge) as e:
-            result = ValidationResult(ValidationKind.LLM_ERROR, str(e))
+        if too_large:
+            ws.restore(snap)
+            return await self._too_large(item, base)
 
         if result.accepted and result.report is not None:
             gain = round(result.report.percent - self.report.percent, 2)

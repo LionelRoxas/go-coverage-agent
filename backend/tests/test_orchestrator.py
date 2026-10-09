@@ -5,7 +5,7 @@ import pytest
 
 from app.agents.context import ContextTooLarge
 from app.engine.orchestrator import Orchestrator, RunDeps
-from app.llm.client import LLMBudgetExhausted, LLMFatal
+from app.llm.client import LLMBudgetExhausted, LLMError, LLMFatal
 from app.models import (CoverageReport, FileCoverage, FuncCoverage, FuncKey, JobOptions, JobRequest, StopReason,
                         TokenUsage)
 from app.validator import ValidationKind, ValidationResult
@@ -48,8 +48,8 @@ class FakeValidator:
 
 
 class FakeAgents:
-    def __init__(self, writes, fixes=(), too_large_when_multi=False):
-        self.writes, self.fixes = list(writes), list(fixes)
+    def __init__(self, writes, fixes=(), too_large_when_multi=False, usage=10):
+        self.writes, self.fixes, self.usage = list(writes), list(fixes), usage
         self.write_items, self.fix_kinds = [], []
         self.too_large_when_multi = too_large_when_multi
 
@@ -60,11 +60,14 @@ class FakeAgents:
         r = self.writes.pop(0)
         if isinstance(r, Exception):
             raise r
-        return r, TokenUsage(prompt_tokens=10, completion_tokens=5)
+        return r, TokenUsage(prompt_tokens=self.usage, completion_tokens=5)
 
     async def fix(self, item, inputs, snip, result):
         self.fix_kinds.append(result.kind)
-        return self.fixes.pop(0), TokenUsage(prompt_tokens=10, completion_tokens=5)
+        r = self.fixes.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r, TokenUsage(prompt_tokens=10, completion_tokens=5)
 
 
 class FakeContexts:
@@ -168,3 +171,62 @@ async def test_context_too_large_splits_multi_function_items(ws):
     orch, _ = run(ws, v, agents, target=50)
     await orch.run(report(set(), funcs=funcs))
     assert len(agents.write_items[0].functions) == 1
+
+
+async def test_cancel_during_validation_is_cancelled_not_rejected(ws):
+    cancel = asyncio.Event()
+
+    class CancellingValidator(FakeValidator):
+        async def validate(self, test_file, package, snip, prev):
+            r = await super().validate(test_file, package, snip, prev)
+            cancel.set()
+            return r
+
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "cancelled")
+    orch, events = run(ws, CancellingValidator(ws, [bad]), FakeAgents([GOOD]), cancel=cancel, max_fix_attempts=0)
+    summary = await orch.run(report(set()))
+    assert summary.stop_reason is StopReason.CANCELLED
+    assert not any(t == "candidate_rejected" for t, _ in events)
+    assert ws.read("a_test.go") is None
+
+
+async def test_unexpected_error_rolls_back_and_propagates(ws):
+    class Boom(FakeValidator):
+        async def validate(self, test_file, package, snip, prev):
+            self.ws.write_test(test_file, "package p\n// merged\n")
+            raise RuntimeError("disk on fire")
+
+    orch, _ = run(ws, Boom(ws, []), FakeAgents([GOOD]))
+    with pytest.raises(RuntimeError):
+        await orch.run(report(set()))
+    assert ws.read("a_test.go") is None
+
+
+async def test_prunes_even_when_no_fix_attempts_allowed(ws):
+    failing = ValidationResult(ValidationKind.TEST_FAILURE, "--- FAIL: TestBad", failed_tests=["TestBad"],
+                               new_tests=["TestGood", "TestBad"])
+    v = FakeValidator(ws, [failing], prune_results=[accepted({"A:1"}, tests=["TestGood"])])
+    agents = FakeAgents([GOOD])
+    orch, _ = run(ws, v, agents, target=25, max_fix_attempts=0)
+    summary = await orch.run(report(set()))
+    assert v.pruned == [["TestBad"]] and agents.fix_kinds == []
+    assert summary.tests_added == ["TestGood"]
+
+
+async def test_fixer_llm_error_rejects_and_rolls_back(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
+    agents = FakeAgents([GOOD], fixes=[LLMError("schema failure")])
+    orch, events = run(ws, FakeValidator(ws, [bad]), agents, max_fix_attempts=1, targets_per_iteration=1,
+                       max_iterations=1)
+    await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "llm_error"}) in events
+    assert ws.read("a_test.go") is None
+
+
+async def test_job_token_budget_stops_run(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
+    agents = FakeAgents([GOOD], usage=20_000)
+    orch, _ = run(ws, FakeValidator(ws, [bad]), agents, max_fix_attempts=1, max_llm_tokens=10_000)
+    summary = await orch.run(report(set()))
+    assert summary.stop_reason is StopReason.BUDGET_EXHAUSTED
+    assert ws.read("a_test.go") is None
