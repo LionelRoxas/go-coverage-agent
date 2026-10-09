@@ -34,9 +34,9 @@ class Raw:
     async def parse(self): return self._c  # the real AsyncAPIResponse.parse is a coroutine
 
 
-def http_error(cls, status, headers=None):
+def http_error(cls, status, headers=None, message="err", body=None):
     req = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
-    return cls("err", response=httpx.Response(status, headers=headers or {}, request=req), body=None)
+    return cls(message, response=httpx.Response(status, headers=headers or {}, request=req), body=body)
 
 
 class FakeGroq:
@@ -205,3 +205,28 @@ async def test_cancel_during_hanging_request_leaves_no_tasks(tmp_path):
     assert fake.cancelled
     others = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     assert others == []
+
+
+def _json_failed():
+    return http_error(groq.BadRequestError, 400, message="Error code: 400 - json_validate_failed",
+                      body={"error": {"code": "json_validate_failed"}})
+
+
+async def test_json_validate_failed_is_retried_once(tmp_path):
+    llm, fake, _ = make(tmp_path, [_json_failed(), Raw(Completion('{"answer": "ok"}', "stop"))])
+    out, _ = await call(llm)
+    assert out.answer == "ok" and len(fake.calls) == 2
+
+
+async def test_second_json_validate_failed_raises(tmp_path):
+    llm, fake, _ = make(tmp_path, [_json_failed(), _json_failed()])
+    with pytest.raises(LLMError, match="400"):
+        await call(llm)
+    assert len(fake.calls) == 2
+
+
+async def test_other_400_fails_immediately(tmp_path):
+    llm, fake, _ = make(tmp_path, [http_error(groq.BadRequestError, 400)])
+    with pytest.raises(LLMError, match="400"):
+        await call(llm)
+    assert len(fake.calls) == 1

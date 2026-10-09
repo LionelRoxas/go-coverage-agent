@@ -15,11 +15,15 @@ _PROMPTS = Path(__file__).parent / "prompts"
 
 @cache
 def load_prompt(name: str) -> str:
-    return (_PROMPTS / f"{name}.md").read_text()
+    return (_PROMPTS / f"{name}.md").read_text(encoding="utf-8")
 
 
 def _trim(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[:limit] + "\n…[truncated]"
+    """Keep the head and the tail, since failing assertions usually sit at the end of tool output."""
+    if len(text) <= limit:
+        return text
+    head = int(limit * 0.6)
+    return f"{text[:head]}\n…[truncated]…\n{text[-(limit - head):]}"
 
 
 def _labels(item: PlanItem) -> str:
@@ -45,7 +49,11 @@ class Agents:
     async def fix(self, item: PlanItem, inputs: ContextInputs, snippet: TestSnippet,
                   result: ValidationResult) -> tuple[TestSnippet, TokenUsage]:
         system = load_prompt("fixer")
-        task = (f"## Rejected snippet (kind: {result.kind.value})\n```go\n{_trim(snippet.code, 5000)}\n```\n\n"
+        imports = ", ".join(snippet.imports) or "(none)"
+        plan = "".join(f"- {sc.target}: {sc.scenario}\n" for sc in snippet.test_plan)
+        plan_block = f"Test plan you declared:\n{plan}" if plan else ""
+        task = (f"## Rejected snippet (kind: {result.kind.value})\nImports you declared: {imports}\n"
+                f"{plan_block}```go\n{_trim(snippet.code, 5000)}\n```\n\n"
                 f"## Validator output\n```\n{_trim(result.output, 2500)}\n```\n\n"
                 f"## Task\nReturn a corrected replacement snippet for {_labels(item)}.")
         return await self.llm.complete(role="fixer", system=system, user=self._user(system, inputs, task),

@@ -36,4 +36,14 @@ async def test_fix_trims_huge_tool_output():
     llm = FakeLLM([snippet("func TestMean(t *testing.T) {}")])
     result = ValidationResult(ValidationKind.TEST_FAILURE, "x" * 50_000)
     await Agents(llm, max_prompt_tokens=4500).fix(ITEM, INPUTS, snippet("func TestMean(t *testing.T) {}"), result)
-    assert len(llm.calls[0]["user"]) < 4500 * 3.5
+    user = llm.calls[0]["user"]
+    assert len(user) < 4500 * 3.5 and "…[truncated]…" in user and "x" * 50_000 not in user
+
+
+async def test_fix_shows_declared_imports_and_plan():
+    llm = FakeLLM([snippet("func TestMean(t *testing.T) {}")])
+    bad = snippet("func TestMean(t *testing.T) { math.Abs(1) }", imports=("testing", "math"),
+                  plan=[("empty input", "Mean")])
+    await Agents(llm, max_prompt_tokens=2000).fix(ITEM, INPUTS, bad, ValidationResult(ValidationKind.VET_ERROR, "boom"))
+    user = llm.calls[0]["user"]
+    assert "Imports you declared: testing, math" in user and "- Mean: empty input" in user

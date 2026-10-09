@@ -8,4 +8,4 @@ How to handle each rejection kind:
 - no_gain: the tests ran but executed no new statements. Target the lines marked `// UNCOVERED` directly by constructing inputs that reach those branches.
 - guard_rejected: the snippet broke a hard rule listed in the output. Remove the offending import or construct.
 
-Every rule from the original task still applies: same package, standard library only, table-driven tests, no t.Parallel, and `code` without a package clause or imports.
+Every rule from the original task still applies: same package, standard library only, table-driven tests, no t.Parallel, and `code` without a package clause or imports. Every package referenced in `code` (`testing`, `math`, `errors`, `strings`, ...) must be listed in `imports`, and every listed import must be used.

@@ -108,6 +108,7 @@ class GroqLLM:
         effort = self.s.groq_reasoning_effort
         truncated = False
         rate_retries = net_retries = 0
+        json_retried = False
         spent = TokenUsage()
         response_format = {"type": "json_schema", "json_schema": {
             "name": schema.__name__, "strict": True, "schema": to_strict_schema(schema)}}
@@ -144,6 +145,9 @@ class GroqLLM:
                 await self._sleep_cancellable(2.0 ** net_retries)
                 continue
             except groq.APIStatusError as e:
+                if e.status_code == 400 and not json_retried and "json_validate_failed" in f"{e.body} {e.message}":
+                    json_retried = True  # strict-mode flake: the model skipped required fields; sample once more
+                    continue
                 raise LLMError(f"Groq returned {e.status_code}: {e.message}") from e
 
             self.limiter.update(raw.headers)
