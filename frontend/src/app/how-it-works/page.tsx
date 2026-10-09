@@ -1,42 +1,38 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { type SectionId, walkthroughHref } from "../walkthrough/sections";
 
 export const metadata: Metadata = { title: "How it works" };
 
-const WALKTHROUGH = "https://claude.ai/artifact/RxXGC2s7651iEFZDF3kYQ8";
+type Step = { title: string; plain: string; more: SectionId };
 
-const code = "font-mono text-[0.8125rem]";
-
-type Step = { title: string; plain: string; tech: ReactNode };
-
-// Plain text for someone who has never written a test; `tech` is the precise version (checked against backend/app).
+// Plain text for someone who has never written a test; the precise version of each step is on the Walkthrough page.
 const STEPS: Step[] = [
   {
     title: "Make a safe copy and measure",
     plain: "It works on a copy of your project, so your own files are never changed. It removes the copy’s existing tests, so it starts from zero and the result shows only what this tool wrote. Then it measures how much of the code is checked.",
-    tech: <>The repository is copied into a scratch workspace; by default every existing <code className={code}>_test.go</code> file is deleted from the copy. A seed test file in each package makes untested packages count too. The baseline comes from <code className={code}>go test -count=2 -covermode=set -coverprofile</code>: covered statements divided by all statements.</>,
+    more: "prepare",
   },
   {
     title: "Pick what to work on (no AI)",
     plain: "It finds the parts of the code that no test reaches yet. It picks a few at a time, biggest gaps first. This step follows fixed rules, so it uses no AI.",
-    tech: <>A deterministic planner groups each file’s functions with uncovered statements, largest first, into one item of at most 5 functions or 100 uncovered statements (a larger single function goes alone), then takes up to 3 items per round. Functions that failed twice, or that are too large for one request, are skipped.</>,
+    more: "plan",
   },
   {
     title: "Write the checks (AI)",
     plain: "It sends that code to an AI model, which writes new tests for the lines nothing checks yet. It also lists the tests that already exist, so the AI does not repeat them.",
-    tech: <>The Writer calls Groq (<code className={code}>openai/gpt-oss-120b</code>, reasoning effort <code className={code}>medium</code>). The request holds the target functions with uncovered lines marked <code className={code}>{"// UNCOVERED"}</code>, the names of existing tests, and nearby code, capped at <code className={code}>MAX_PROMPT_TOKENS</code> (12,000). An answer too large to finish is retried at <code className={code}>low</code> effort, then the item is split in half and retried.</>,
+    more: "write",
   },
   {
     title: "Try them out",
     plain: "It runs the new tests for real. They must be valid code the computer accepts, pass twice in a row, and run code that no test ran before. Tests that would use the network or start other programs are refused before they run.",
-    tech: <>Five gates in order: a guard (standard-library or same-module imports only; no <code className={code}>os/exec</code>, <code className={code}>net</code>, <code className={code}>unsafe</code>, <code className={code}>syscall</code>, process starts or build tags), merge into the package’s test file, compile, <code className={code}>go vet</code>, then <code className={code}>go test -count=2</code> with a coverage profile. The covered statements must be a strict superset of the previous set: nothing lost, something gained.</>,
+    more: "validate",
   },
   {
     title: "Keep, repair or undo",
     plain: "Tests that fail are dropped if the rest still work. Small slips are fixed automatically without AI; harder ones go back to the AI, with everything tried so far, for up to 2 more tries. If nothing works, the change is undone, so the project is never left broken.",
-    tech: <>Prune: when only new tests fail, and not all of them, they are removed and the rest re-checked. Mechanical repairs (no model call, up to 3): forgotten imports added, self-qualified names fixed, a duplicate <code className={code}>Test…</code> name renamed to <code className={code}>_2</code>, <code className={code}>_3</code>; stray characters around import paths are cleaned on every answer. The Fixer (<code className={code}>medium</code> effort) gets a compact history of every earlier attempt, including failing assertions and their observed values; up to 2 Fixer attempts. Any Groq timeout (Writer or Fixer) is retried once at <code className={code}>low</code> effort. Otherwise the test file, <code className={code}>go.mod</code> and <code className={code}>go.sum</code> are rolled back to the snapshot taken before the attempt.</>,
+    more: "keep",
   },
 ];
 
@@ -49,47 +45,15 @@ const STOPS = [
 ];
 
 const RESULTS = [
-  { id: "stats", repo: "montanaflynn/stats", what: "ready-made code for statistics", from: 0, to: 80.75, label: "0% → 80.75%", rounds: 12, time: "about 4 minutes" },
-  { id: "semver", repo: "Masterminds/semver", what: "ready-made code for comparing version numbers", from: 1.43, to: 84.59, label: "1.4% → 84.6%", rounds: 4, time: "about 2 minutes" },
-];
-
-const GLOSSARY = [
-  { term: "Test", def: "A small program that runs a piece of the code and checks the answer is right." },
-  { term: "Coverage", def: "The share of the code’s lines that at least one test runs." },
-  { term: "AI model", def: "An AI that writes text and code, run by the company Groq. It writes and fixes the tests. Nothing else in the loop uses AI." },
+  { id: "stats", repo: "montanaflynn/stats", what: "Ready-made code for statistics", from: 0, to: 80.75, label: "0% → 80.75%", rounds: 12, time: "about 4 minutes" },
+  { id: "semver", repo: "Masterminds/semver", what: "Ready-made code for comparing version numbers", from: 1.43, to: 84.59, label: "1.4% → 84.6%", rounds: 4, time: "about 2 minutes" },
 ];
 
 // Ten "lines of code", eight of them run by a test. Widths vary so it reads as code, not a progress bar.
 const LINES = [72, 54, 88, 40, 64, 80, 30, 58, 76, 46];
 const UNCOVERED = new Set([3, 7]);
 
-type Explainer = { id: string; title: string; plain: string; tech: ReactNode };
-
-// Two short explanations under "What coverage means"; `tech` was checked against backend/app (gotools, validator, workspace).
-const COUNTING: Explainer[] = [
-  {
-    id: "how-counted",
-    title: "How the number is counted",
-    plain: "While the tests run, Go marks each small piece of the code as “ran” or “never ran”. The percentage is the pieces that ran divided by all the pieces. Code with no tests at all still counts in the total, so nothing is hidden.",
-    tech: <>The measurement is <code className={code}>go test -count=2 -covermode=set -coverprofile</code>. The profile lists blocks: file, line range, statement count, and whether the block ran (0 or 1). Coverage is covered statements divided by total statements. A seed test file in each package without tests makes untested packages count in the total.</>,
-  },
-  {
-    id: "no-new-coverage",
-    title: "What “no new coverage” means",
-    plain: "A new test only counts if it runs at least one piece of code that no earlier test ran. A test that only re-runs code already checked can be perfectly correct, but it adds nothing, so it isn’t kept. This also happens when the only tests that reached new code were the ones that failed.",
-    tech: <>The set of covered blocks before is compared with the set after. A candidate is accepted only if the after set is a strict superset of the before set. An identical set is rejected as no gain (“executed no previously uncovered statements”); a lost block is rejected as no gain (“made previously covered statements uncovered”).</>,
-  },
-];
-
 const h2 = "text-xl font-semibold tracking-tight";
-
-function Chevron() {
-  return (
-    <svg aria-hidden viewBox="0 0 16 16" className="h-3.5 w-3.5 transition-transform group-open:rotate-90 motion-reduce:transition-none" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m6 3 5 5-5 5" />
-    </svg>
-  );
-}
 
 function CoverageLines() {
   return (
@@ -142,24 +106,10 @@ export default function HowItWorksPage() {
           <h2 id="coverage-heading" className={h2}>What “coverage” means</h2>
           <p className="leading-relaxed text-muted">
             Coverage is the share of the code’s lines that the tests actually run. 80% means 8 in 10 lines are run by at least one test.
-            The other 2 could be broken and no test would notice.
+            The other 2 could be broken and no test would notice. Code with no tests at all still counts in the total, so nothing is hidden.
           </p>
         </div>
         <CoverageLines />
-        <div className="grid gap-6 sm:col-span-2 sm:grid-cols-2">
-          {COUNTING.map((e) => (
-            <div key={e.id} data-testid={e.id} className="space-y-2">
-              <h3 className="font-semibold">{e.title}</h3>
-              <p className="leading-relaxed text-muted">{e.plain}</p>
-              <details className="group">
-                <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-sm font-medium text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
-                  <span>Technical detail<span className="sr-only">: {e.title}</span></span><Chevron />
-                </summary>
-                <p className="mt-2 border-l-2 border-border pl-3 text-sm leading-relaxed text-muted">{e.tech}</p>
-              </details>
-            </div>
-          ))}
-        </div>
       </section>
 
       <section id="loop" aria-labelledby="loop-heading" className="space-y-6">
@@ -168,7 +118,6 @@ export default function HowItWorksPage() {
           <p className="leading-relaxed text-muted">Five steps. Steps 2 to 5 form one round, and rounds repeat until it can stop.</p>
         </div>
         <div className="mx-auto max-w-3xl lg:max-w-none">
-          {/* Drawn above the row so an open Technical detail (which only grows cards downward) never moves it. */}
           <div aria-hidden data-testid="loop-phases" className="mb-1 hidden grid-cols-5 items-end gap-3 text-xs lg:grid">
             <div className="space-y-1.5 text-muted">
               <p className="text-center">Once at the start</p>
@@ -200,12 +149,13 @@ export default function HowItWorksPage() {
                     <h3 className="font-semibold lg:text-[0.9375rem] lg:leading-snug">{s.title}</h3>
                     <p className="leading-relaxed text-muted lg:text-sm">{s.plain}</p>
                   </div>
-                  <details className={`group min-w-0 self-start pb-8 pt-2.5 lg:rounded-b-md lg:border lg:border-t-0 lg:px-4 lg:pb-4 lg:pt-3 ${card}`}>
-                    <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-sm font-medium text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
-                      <span>Technical detail<span className="sr-only">: {s.title}</span></span><Chevron />
-                    </summary>
-                    <p className="mt-2 border-l-2 border-border pl-3 text-sm leading-relaxed text-muted">{s.tech}</p>
-                  </details>
+                  {/* Row 2 of the card's subgrid, so every Read more link sits at the same height. */}
+                  <div className={`min-w-0 pb-8 pt-2 lg:rounded-b-md lg:border lg:border-t-0 lg:px-4 lg:pb-4 lg:pt-3 ${card}`}>
+                    <Link href={walkthroughHref(s.more)}
+                          className="rounded-sm text-sm font-medium text-accent underline-offset-4 hover:underline">
+                      Read more<span className="sr-only">: {s.title}</span> <span aria-hidden>→</span>
+                    </Link>
+                  </div>
                   <RepeatBracket index={i} />
                 </li>
               );
@@ -241,6 +191,7 @@ export default function HowItWorksPage() {
           <h2 id="trust-heading" className={h2}>Can I trust the number?</h2>
           <ul className="space-y-3 leading-relaxed text-muted">
             <li>Only tests that pass, twice in a row, are kept.</li>
+            <li>A new test also has to run at least one piece of code that no earlier test ran. One that only repeats what is already checked adds nothing, so it isn’t kept.</li>
             <li>A failing test is dropped or undone, so it never counts toward the number.</li>
             <li>The result was also checked independently: an earlier stats run (which reached 80.51%) had its kept tests re-run in a fresh copy of the project. They all passed and measured 80.5%.</li>
           </ul>
@@ -254,36 +205,26 @@ export default function HowItWorksPage() {
         </div>
         <ul className="divide-y divide-border rounded-md border border-border bg-surface">
           {RESULTS.map((r) => (
-            <li key={r.id} data-testid={`result-${r.id}`} className="space-y-3 p-4 sm:p-5">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <p><span className="font-mono text-sm">{r.repo}</span> <span className="text-sm text-muted">({r.what})</span></p>
-                <p className="font-mono text-lg font-semibold tabular-nums">{r.label}</p>
+            <li key={r.id} data-testid={`result-${r.id}`} className="grid gap-x-6 gap-y-2 p-4 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center">
+              <div className="min-w-0">
+                <p className="font-mono text-sm">{r.repo}</p>
+                <p className="text-sm text-muted">{r.what}: {r.rounds} rounds, {r.time}</p>
               </div>
-              <div aria-hidden className="relative h-2 rounded-full bg-border">
-                <span className="absolute inset-y-0 rounded-full bg-accent" style={{ left: `${r.from}%`, width: `${r.to - r.from}%` }} />
-                <span className="absolute -inset-y-1 left-[80%] w-0.5 bg-text" title="80% goal" />
+              <div className="space-y-1.5">
+                <p className="font-mono font-semibold tabular-nums sm:text-right">{r.label}</p>
+                <div aria-hidden className="relative h-1.5 rounded-full bg-border">
+                  <span className="absolute inset-y-0 rounded-full bg-accent" style={{ left: `${r.from}%`, width: `${r.to - r.from}%` }} />
+                  <span className="absolute -inset-y-1 left-[80%] w-0.5 bg-text" title="80% goal" />
+                </div>
               </div>
-              <p className="text-sm text-muted">{r.rounds} rounds, {r.time}. The goal line is at 80%.</p>
             </li>
           ))}
         </ul>
       </section>
 
-      <section aria-labelledby="glossary-heading" className="space-y-4">
-        <h2 id="glossary-heading" className={h2}>Words used on this page</h2>
-        <dl className="grid gap-4 sm:grid-cols-3">
-          {GLOSSARY.map((g) => (
-            <div key={g.term} className="space-y-1">
-              <dt className="font-medium">{g.term}</dt>
-              <dd className="text-sm leading-relaxed text-muted">{g.def}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
-
       <footer className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-border pt-6">
         <Link href="/" className="inline-block rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent">Start a run →</Link>
-        <a href={WALKTHROUGH} target="_blank" rel="noopener noreferrer" className="text-sm text-accent underline-offset-4 hover:underline">Full walkthrough <span aria-hidden>↗</span></a>
+        <Link href="/walkthrough" className="text-sm font-medium text-accent underline-offset-4 hover:underline">Read the full walkthrough →</Link>
       </footer>
     </div>
   );

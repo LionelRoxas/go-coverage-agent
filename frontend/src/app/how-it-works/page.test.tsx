@@ -1,7 +1,8 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import WalkthroughPage from "../walkthrough/page";
 import HowItWorksPage from "./page";
 
 const STEP_TITLES = [
@@ -12,6 +13,8 @@ const STEP_TITLES = [
   "Keep, repair or undo",
 ];
 
+const steps = () => screen.getAllByRole("listitem").filter((li) => li.hasAttribute("data-step"));
+
 describe("HowItWorksPage", () => {
   it("explains the tool and coverage in plain words", () => {
     render(<HowItWorksPage />);
@@ -20,49 +23,37 @@ describe("HowItWorksPage", () => {
     expect(screen.getByRole("img", { name: "8 of 10 lines run by a test: 80% coverage" })).toBeInTheDocument();
   });
 
-  it("explains how the number is counted and what no new coverage means, each with a collapsed Technical detail", () => {
+  it("lists the five plain steps in one ordered list, in order", () => {
     render(<HowItWorksPage />);
-    for (const [id, plain, tech] of [
-      ["how-counted", /pieces that ran divided by all the pieces/, /-covermode=set/],
-      ["no-new-coverage", /runs at least one piece of code that no earlier test ran/, /strict superset/],
-    ] as const) {
-      const block = screen.getByTestId(id);
-      expect(within(block).getByText(plain)).toBeInTheDocument();
-      const details = block.querySelector("details");
-      expect(details).not.toBeNull();
-      expect(details).not.toHaveAttribute("open");
-      expect(within(block).getByText(tech)).toBeInTheDocument();
-    }
-    expect(within(screen.getByTestId("how-counted")).getByRole("heading", { level: 3 })).toHaveTextContent("How the number is counted");
-    expect(within(screen.getByTestId("no-new-coverage")).getByRole("heading", { level: 3 })).toHaveTextContent("What “no new coverage” means");
+    const s = steps();
+    expect(s.map((li) => within(li).getByRole("heading", { level: 3 }).textContent)).toEqual(STEP_TITLES);
+    expect(s.every((li) => li.parentElement === s[0].parentElement)).toBe(true);
+    expect(s[0].parentElement!.tagName).toBe("OL");
+    expect(s.map((li) => li.getAttribute("data-step"))).toEqual(["1", "2", "3", "4", "5"]);
   });
 
-  it("lists the five plain steps in order, each with a collapsed Technical detail", () => {
-    render(<HowItWorksPage />);
-    const steps = screen.getAllByRole("listitem").filter((li) => li.hasAttribute("data-step"));
-    expect(steps.map((li) => within(li).getByRole("heading", { level: 3 }).textContent)).toEqual(STEP_TITLES);
-    for (const li of steps) {
-      const details = li.querySelector("details");
-      expect(details).not.toBeNull();
-      expect(details).not.toHaveAttribute("open");
-      const title = within(li).getByRole("heading", { level: 3 }).textContent;
-      expect(details!.querySelector("summary")).toHaveTextContent(`Technical detail: ${title}`);
-    }
-    // the precise version still names the real values
-    expect(within(steps[1]).getByText(/up to 3 items per round/)).toBeInTheDocument();
-    expect(within(steps[1]).getByText(/at most 5 functions or 100 uncovered statements/)).toBeInTheDocument();
-    expect(within(steps[2]).getByText(/openai\/gpt-oss-120b/)).toBeInTheDocument();
-    expect(within(steps[3]).getByText(/-count=2/)).toBeInTheDocument();
-    expect(within(steps[4]).getByText(/history of every earlier attempt/)).toBeInTheDocument();
+  it("has no Technical detail disclosures, glossary or counting detail any more", () => {
+    const { container } = render(<HowItWorksPage />);
+    expect(container.querySelector("details")).toBeNull();
+    expect(screen.queryByText(/Technical detail/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Words used on this page" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "How the number is counted" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/strict superset|-covermode|openai\/gpt-oss-120b/)).not.toBeInTheDocument();
   });
 
-  it("keeps the steps in one real ordered list", () => {
+  it("gives each step one Read more link to an existing Walkthrough section", () => {
     render(<HowItWorksPage />);
-    const steps = screen.getAllByRole("listitem").filter((li) => li.hasAttribute("data-step"));
-    expect(steps).toHaveLength(5);
-    expect(steps.every((li) => li.parentElement === steps[0].parentElement)).toBe(true);
-    expect(steps[0].parentElement!.tagName).toBe("OL");
-    expect(steps.map((li) => li.getAttribute("data-step"))).toEqual(["1", "2", "3", "4", "5"]);
+    const hrefs = steps().map((li) => {
+      const links = within(li).getAllByRole("link");
+      expect(links).toHaveLength(1);
+      expect(links[0]).toHaveTextContent(/^Read more/);
+      expect(links[0]).toHaveAccessibleName(`Read more: ${within(li).getByRole("heading", { level: 3 }).textContent}`);
+      return links[0].getAttribute("href")!;
+    });
+    expect(hrefs).toEqual(["/walkthrough#prepare", "/walkthrough#plan", "/walkthrough#write", "/walkthrough#validate", "/walkthrough#keep"]);
+    cleanup();
+    const { container } = render(<WalkthroughPage />);
+    for (const h of hrefs) expect(container.querySelector(`section[id="${h.split("#")[1]}"]`)).not.toBeNull();
   });
 
   it("marks step 1 as once and steps 2 to 5 as the repeated round", () => {
@@ -77,7 +68,6 @@ describe("HowItWorksPage", () => {
   it("shows the repeat connector from step 5 back to step 2, wide and narrow, hidden from screen readers", () => {
     render(<HowItWorksPage />);
     const wide = screen.getByTestId("repeat-connector");
-    // above the row, inside the phase labels, so an open detail cannot move it away from the cards
     expect(screen.getByTestId("loop-phases")).toContainElement(wide);
     expect(wide).toHaveAttribute("aria-hidden");
     expect(wide).toHaveTextContent(/^repeat until the goal or a stop rule$/);
@@ -86,12 +76,13 @@ describe("HowItWorksPage", () => {
     expect(narrow).toHaveTextContent("Back to step 2: repeat until the goal or a stop rule");
   });
 
-  it("shows the stop rules, the trust notes, the measured results and the links", () => {
+  it("keeps the stop rules, a short trust list with the no-new-coverage sentence, and the measured results", () => {
     render(<HowItWorksPage />);
     for (const t of ["It reached the goal", "The last rounds added very little", "It ran out of rounds (20 by default)",
                      "It used up its AI budget", "Nothing is left that it can work on"]) {
       expect(screen.getByText(t)).toBeInTheDocument();
     }
+    expect(screen.getByText(/at least one piece of code that no earlier test ran/)).toBeInTheDocument();
     expect(screen.getByText(/re-run in a fresh copy of the project/)).toBeInTheDocument();
     const stats = screen.getByTestId("result-stats");
     expect(stats).toHaveTextContent("0% → 80.75%");
@@ -101,9 +92,13 @@ describe("HowItWorksPage", () => {
     expect(semver).toHaveTextContent("1.4% → 84.6%");
     expect(semver).toHaveTextContent("4 rounds");
     expect(semver).toHaveTextContent("about 2 minutes");
+  });
+
+  it("ends with Start a run and an internal link to the full walkthrough, and no external artifact link", () => {
+    const { container } = render(<HowItWorksPage />);
     expect(screen.getByRole("link", { name: /Start a run/ })).toHaveAttribute("href", "/");
-    const w = screen.getByRole("link", { name: "Full walkthrough" });
-    expect(w).toHaveAttribute("href", "https://claude.ai/artifact/RxXGC2s7651iEFZDF3kYQ8");
-    expect(w).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    expect(screen.getByRole("link", { name: /Read the full walkthrough/ })).toHaveAttribute("href", "/walkthrough");
+    expect(container.querySelector('a[href*="claude.ai"]')).toBeNull();
+    expect(container.querySelector('a[target="_blank"]')).toBeNull();
   });
 });
