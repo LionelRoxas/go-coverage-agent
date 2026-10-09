@@ -1,6 +1,10 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 export MSYS_NO_PATHCONV := 1
-GO_IMAGE := golang:$(strip $(file <.go-version))
+GO_VERSION := $(strip $(file <.go-version))
+ifeq ($(GO_VERSION),)
+GO_VERSION := $(strip $(shell cat .go-version))
+endif
+GO_IMAGE := golang:$(GO_VERSION)
 .PHONY: up backend-image test test-go test-backend test-integration test-frontend build-frontend
 up:
 	docker compose up --build
