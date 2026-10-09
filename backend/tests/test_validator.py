@@ -106,3 +106,22 @@ async def test_no_gain_messages_distinguish_loss_from_equal(tmp_path):
     assert r.output == "the new tests made previously covered statements uncovered"
     r = await make(tmp_path / "2", FakeTools(profile=profile)).validate("a_test.go", "m", SNIP, prev(["a.go:1.1,2.2"]))
     assert r.output == "the new tests executed no previously uncovered statements"
+
+
+async def test_compile_and_vet_errors_name_the_declarations_their_lines_point_at(tmp_path):
+    merged = ("package m\n\nimport \"testing\"\n\nfunc TestOld(t *testing.T) {}\n\n"
+              "func TestA(t *testing.T) {\n\tx := 1\n}\n\nfunc TestB(t *testing.T) {\n\tFoo()\n}\n")
+    tools = FakeTools(compile_r=fail("# m\n./a_test.go:12:2: undefined: Foo\n./a_test.go:8:2: declared and not used: x"))
+    v = make(tmp_path, tools)
+    v.ws.write_test("a_test.go", merged)
+    r = await v.validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.COMPILE_ERROR and r.error_decls == ["TestB", "TestA"]
+    v2 = make(tmp_path / "2", FakeTools(vet_r=fail("vet: other_test.go:12:2: x")))
+    v2.ws.write_test("a_test.go", merged)
+    assert (await v2.validate("a_test.go", "m", SNIP, prev())).error_decls == []
+
+
+async def test_snippet_parse_errors_name_the_snippet_declaration(tmp_path):
+    tools = FakeTools(merge_r=fail("gohelper: snippet: snippet.go:8:30: expected ';', found 'EOF'"))
+    r = await make(tmp_path, tools).validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.COMPILE_ERROR and r.error_decls == ["TestB"]

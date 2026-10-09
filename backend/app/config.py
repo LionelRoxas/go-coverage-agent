@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     groq_reasoning_effort: Literal["low", "medium", "high"] = "low"
     groq_max_completion_tokens: int | None = 65536  # model maximum; empty env value -> None: omit the field (Groq then applies a smaller default)
-    call_token_reservation: int = 8000  # pacing/ledger reserve per call; never sent to Groq
+    call_token_reservation: int = 16000  # pacing/ledger reserve per call (>= MAX_PROMPT_TOKENS + expected output); never sent to Groq
     max_prompt_tokens: int = 12000  # MAX_PROMPT_TOKENS; free-trial keys (8K tokens/min) should set 4500
     daily_token_budget: int = 2_000_000
     min_daily_tokens_to_start: int = 20_000

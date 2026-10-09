@@ -71,11 +71,29 @@ def test_rename_skips_names_used_elsewhere_in_the_snippet_and_is_word_bounded():
     assert description == "renamed duplicate test TestCaret_Uncovered to TestCaret_Uncovered_3"
 
 
-def test_renames_benchmark_fuzz_and_example_duplicates():
-    for name, sig in (("BenchmarkX", "(b *testing.B)"), ("FuzzX", "(f *testing.F)"), ("ExampleX", "()")):
+def test_renames_benchmark_and_fuzz_duplicates():
+    for name, sig in (("BenchmarkX", "(b *testing.B)"), ("FuzzX", "(f *testing.F)"), ("Test_x", "(t *testing.T)"),
+                      ("Test2", "(t *testing.T)")):
         fixed, description = mechanical_repair(snippet(f"func {name}{sig} {{}}"), f"duplicate declaration: {name}", "p",
                                                taken=[name])
         assert fixed.code == f"func {name}_2{sig} {{}}" and description == f"renamed duplicate test {name} to {name}_2"
+
+
+def test_example_duplicates_are_not_renamed_and_left_to_the_fixer():
+    # go vet rejects ExampleX_2 (malformed example suffix), and an Example without `// Output:` adds no coverage
+    for name in ("ExampleX", "ExampleX_Method", "Example_suffix"):
+        code = f"func {name}() {{}}"
+        assert mechanical_repair(snippet(code), f"duplicate declaration: {name}", "p", taken=[name]) is None
+
+
+def test_names_go_test_does_not_run_are_not_renamed():
+    code = "func Testable(t *testing.T) {}"
+    assert mechanical_repair(snippet(code), "duplicate declaration: Testable", "p", taken=["Testable"]) is None
+
+
+def test_method_named_like_a_test_is_not_renamed():
+    code = "type suite struct{}\n\nfunc (s *suite) TestX(t *testing.T) {}"
+    assert mechanical_repair(snippet(code), "duplicate declaration: TestX", "p", taken=["TestX"]) is None
 
 
 def test_duplicate_is_left_to_the_fixer_when_not_renameable():

@@ -22,7 +22,10 @@ STD_IMPORTS = {
 }
 _UNDEFINED = re.compile(r"undefined: (\w+)")
 _DUPLICATE = re.compile(r"duplicate declaration: (\w+)")
-_TEST_FUNC = re.compile(r"(?:Test|Benchmark|Fuzz|Example)\w*")
+# Names `go test` runs as tests: the prefix alone, or followed by a non-lowercase character (so not `Testable`).
+# Examples are left to the Fixer: `ExampleX_2` is a malformed example name for go vet, and an Example without
+# `// Output:` is never run, so it adds no coverage.
+_TEST_FUNC = re.compile(r"(?:Test|Benchmark|Fuzz)(?:[A-Z0-9_]\w*)?")
 _WORD = re.compile(r"\w+")
 
 

@@ -2,6 +2,7 @@
 """Decides whether a candidate test snippet is kept: guard → merge → compile → vet → test → coverage."""
 from __future__ import annotations
 
+import posixpath
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -14,6 +15,7 @@ from app.models import CoverageReport, FuncInfo, TestSnippet
 from app.workspace import Workspace
 
 _FAIL = re.compile(r"^\s*--- FAIL: (\S+)", re.M)
+_TOP_DECL = re.compile(r"^(?:func\s+(?:\([^)]*\)\s*)?|type\s+|var\s+|const\s+)(\w+)")
 
 
 class ValidationKind(StrEnum):
@@ -34,6 +36,7 @@ class ValidationResult:
     failed_tests: list[str] = field(default_factory=list)
     report: CoverageReport | None = None
     new_tests: list[str] = field(default_factory=list)
+    error_decls: list[str] = field(default_factory=list)  # top-level declarations that compile/vet error lines point at
 
     @property
     def accepted(self) -> bool:
@@ -58,6 +61,22 @@ def parse_failed_tests(output: str) -> list[str]:
     return names
 
 
+def error_lines(output: str, filename: str) -> list[int]:
+    """Line numbers of `<filename>:<line>:` positions in tool output (any directory prefix, not a longer file name)."""
+    return [int(n) for n in re.findall(rf"(?:^|[\s/(]){re.escape(filename)}:(\d+):", output, re.M)]
+
+
+def decls_at(src: str, lines: list[int]) -> list[str]:
+    """Names of the top-level declarations enclosing the given 1-based lines of `src`, in first-mention order."""
+    starts = [(n, m.group(1)) for n, text in enumerate(src.splitlines(), 1) if (m := _TOP_DECL.match(text))]
+    names: list[str] = []
+    for line in lines:
+        enclosing = [name for start, name in starts if start <= line]
+        if enclosing and enclosing[-1] not in names:
+            names.append(enclosing[-1])
+    return names
+
+
 class Validator:
     def __init__(self, ws: Workspace, tools: Any, packages: list[GoPackage], funcs: list[FuncInfo], module: str):
         self.ws, self.tools, self.packages, self.funcs, self.module = ws, tools, packages, funcs, module
@@ -77,11 +96,17 @@ class Validator:
         if problems:
             return ValidationResult(ValidationKind.GUARD_REJECTED, "\n".join(problems), new_tests=new_tests)
         snippet_path = self.ws.scratch / "snippet.go"
-        snippet_path.write_text(render_snippet(package, snippet), encoding="utf-8")
+        rendered = render_snippet(package, snippet)
+        snippet_path.write_text(rendered, encoding="utf-8")
         r = await self.tools.merge(test_file, snippet_path)
         if r.exit_code != 0:
-            return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests)
-        return await self.check(prev, new_tests)
+            return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests,
+                                    error_decls=decls_at(rendered, error_lines(r.combined, "snippet.go")))
+        result = await self.check(prev, new_tests)
+        if result.kind in (ValidationKind.COMPILE_ERROR, ValidationKind.VET_ERROR):
+            merged = self.ws.read(test_file) or ""
+            result.error_decls = decls_at(merged, error_lines(result.output, posixpath.basename(test_file)))
+        return result
 
     async def prune_and_check(self, test_file: str, names: list[str], prev: CoverageReport,
                               new_tests: list[str]) -> ValidationResult:

@@ -87,9 +87,39 @@ async def test_fix_omits_the_code_as_a_last_resort():
     assert "undefined: foo" in user and "TestFail" not in user and "omitted" in user
 
 
-async def test_fix_raises_context_too_large_only_when_targets_alone_do_not_fit():
+async def test_fix_raises_context_too_large_only_when_targets_plus_minimal_task_do_not_fit():
     llm = FakeLLM([])
     result = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: foo")
-    with pytest.raises(ContextTooLarge, match="targets need"):
+    with pytest.raises(ContextTooLarge, match="targets need .*the targets plus the Fixer's minimal task"):
         await Agents(llm, max_prompt_tokens=900).fix(ITEM, BIG_INPUTS, _two_tests(), result)
     assert llm.calls == []
+
+
+def _three_tests() -> TestSnippet:
+    def fn(name: str) -> str:
+        return f"func {name}(t *testing.T) {{\n" + f"\tt.Log(\"{name.lower()}\")\n" * 30 + "\tt.Log(\"end\")\n}\n"
+    return snippet("\n".join(fn(n) for n in ("TestOne", "TestTwo", "TestThree")))
+
+
+def _code_block(user: str) -> str:
+    return user.split("```go\n")[-1].split("\n```")[0]
+
+
+async def test_fix_shrinks_compile_errors_to_whole_declarations_the_error_lines_point_at():
+    llm = FakeLLM([snippet("func TestTwo(t *testing.T) {}")])
+    output = "# stats\n./mean_test.go:52:2: undefined: foo\n" + "note: more context\n" * 100
+    result = ValidationResult(ValidationKind.COMPILE_ERROR, output, error_decls=["TestTwo"])
+    await Agents(llm, max_prompt_tokens=2100).fix(ITEM, BIG_INPUTS, _three_tests(), result)
+    code = _code_block(llm.calls[0]["user"])  # the rejected snippet is the last Go block in the prompt
+    assert code.startswith("func TestTwo(t *testing.T) {") and code.endswith("\tt.Log(\"end\")\n}")
+    assert "TestOne" not in code and "TestThree" not in code and "…[truncated]…" not in code
+
+
+async def test_fix_keeps_whole_leading_declarations_when_no_line_points_anywhere():
+    llm = FakeLLM([snippet("func TestOne(t *testing.T) {}")])
+    output = "vet: something odd happened\n" * 100
+    result = ValidationResult(ValidationKind.VET_ERROR, output)
+    await Agents(llm, max_prompt_tokens=2000).fix(ITEM, BIG_INPUTS, _three_tests(), result)
+    code = _code_block(llm.calls[0]["user"])
+    assert code.startswith("func TestOne(t *testing.T) {") and code.endswith("\tt.Log(\"end\")\n}")
+    assert "TestTwo" not in code and "…[truncated]…" not in code

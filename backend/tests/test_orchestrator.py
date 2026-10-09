@@ -344,3 +344,17 @@ async def test_fixer_prompt_too_large_is_not_a_model_error(ws):
     assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "prompt_too_large"}) in events
     assert not any(d.get("kind") == "llm_error" or d.get("reason") == "llm_error" for _, d in events)
     assert ws.read("a_test.go") is None
+
+
+async def test_repeated_duplicates_stop_after_the_mechanical_cap_then_go_to_the_fixer(ws):
+    from app.engine.orchestrator import MAX_MECHANICAL_REPAIRS
+    names = ["TestA", "TestB", "TestC", "TestD"]
+    many = snippet("\n\n".join(f"func {n}(t *testing.T) {{}}" for n in names))
+    dups = [ValidationResult(ValidationKind.COMPILE_ERROR, f"gohelper: duplicate declaration: {n}") for n in names]
+    v = FakeValidator(ws, [*dups, accepted({"A:1", "A:2"})])
+    agents = FakeAgents([many], fixes=[GOOD])
+    orch, events = run(ws, v, agents, target=50, max_fix_attempts=1, contexts=FakeContexts(names))
+    summary = await orch.run(report(set()))
+    repairs = [d["description"] for t, d in events if t == "mechanical_repair"]
+    assert repairs == [f"renamed duplicate test {n} to {n}_2" for n in names[:MAX_MECHANICAL_REPAIRS]]
+    assert agents.fix_kinds == [ValidationKind.COMPILE_ERROR] and summary.tests_added == ["TestA"]
