@@ -37,20 +37,27 @@ def _clear_effort(monkeypatch):
 def test_reasoning_effort_defaults_per_role(monkeypatch):
     _clear_effort(monkeypatch)
     s = Settings(_env_file=None)
-    assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("medium", "high")
+    assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("medium", "medium")
 
 
 def test_role_effort_env_vars(monkeypatch):
     _clear_effort(monkeypatch)
     monkeypatch.setenv("GROQ_WRITER_REASONING_EFFORT", "low")
-    monkeypatch.setenv("GROQ_FIXER_REASONING_EFFORT", "medium")
+    monkeypatch.setenv("GROQ_FIXER_REASONING_EFFORT", "high")  # still accepted
     s = Settings(_env_file=None)
-    assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("low", "medium")
+    assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("low", "high")
 
 
 def test_old_single_effort_variable_is_ignored(monkeypatch):
     _clear_effort(monkeypatch)
     monkeypatch.setenv("GROQ_REASONING_EFFORT", "low")
     s = Settings(_env_file=None)
-    assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("medium", "high")
+    assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("medium", "medium")
     assert not hasattr(s, "groq_reasoning_effort")
+
+
+def test_groq_timeout_default_and_env(monkeypatch):
+    monkeypatch.delenv("GROQ_TIMEOUT_S", raising=False)
+    assert Settings(_env_file=None).groq_timeout_s == 240
+    monkeypatch.setenv("GROQ_TIMEOUT_S", "90")
+    assert Settings(_env_file=None).groq_timeout_s == 90

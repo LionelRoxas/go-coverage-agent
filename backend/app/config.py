@@ -22,8 +22,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     groq_writer_reasoning_effort: Effort = "medium"
-    groq_fixer_reasoning_effort: Effort = "high"
+    groq_fixer_reasoning_effort: Effort = "medium"  # "high" was too slow (job 86b6d88b558c: still waiting after ~114 s)
     groq_max_completion_tokens: int | None = 65536  # model maximum; empty env value -> None: omit the field (Groq then applies a smaller default)
+    groq_timeout_s: float = 240.0  # GROQ_TIMEOUT_S: how long one Groq request may take before the item fails
     call_token_reservation: int = 16000  # pacing/ledger reserve per call (>= MAX_PROMPT_TOKENS + expected output); never sent to Groq
     max_prompt_tokens: int = 12000  # MAX_PROMPT_TOKENS; free-trial keys (8K tokens/min) should set 4500
     daily_token_budget: int = 2_000_000

@@ -1,5 +1,5 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-from app.agents.repair import mechanical_repair
+from app.agents.repair import clean_imports, mechanical_repair
 from tests.fakes import snippet
 
 
@@ -103,3 +103,31 @@ def test_duplicate_is_left_to_the_fixer_when_not_renameable():
     assert mechanical_repair(snippet(referenced), "duplicate declaration: TestA", "p", taken=["TestA"]) is None
     absent = "func TestB(t *testing.T) {}"
     assert mechanical_repair(snippet(absent), "duplicate declaration: TestA", "p", taken=["TestA"]) is None
+
+
+# job 86b6d88b558c: the Writer's `imports` held `testing\` (a stray backslash from JSON escaping); the guard rejected it
+def test_cleans_the_stray_backslash_from_job_86b6d88b558c():
+    fixed, description = clean_imports(snippet("x", imports=("testing\\", "strings")))
+    assert fixed.imports == ["testing", "strings"] and fixed.code == "x"
+    assert description == "cleaned import path 'testing\\' → 'testing'"
+
+
+def test_cleans_quotes_whitespace_and_doubled_backslashes():
+    fixed, description = clean_imports(snippet("x", imports=('"fmt"', " strings ", "`math/rand`", "'errors'",
+                                                              "\\sort\\\\", '"bytes\\"')))
+    assert fixed.imports == ["fmt", "strings", "math/rand", "errors", "sort", "bytes"]
+    assert description.count("cleaned import path") == 6
+    assert "cleaned import path ' strings ' → 'strings'" in description
+
+
+def test_valid_paths_are_left_alone():
+    assert clean_imports(snippet("x", imports=("testing", "net/http", "github.com/a/b/v3"))) is None
+
+
+def test_inner_characters_are_never_changed():
+    fixed, _ = clean_imports(snippet("x", imports=(' "a b" ', "net\\http")))
+    assert fixed.imports == ["a b", "net\\http"]  # still invalid: the guard rejects it
+
+
+def test_a_path_of_only_cosmetic_characters_is_kept_for_the_guard():
+    assert clean_imports(snippet("x", imports=('""',))) is None

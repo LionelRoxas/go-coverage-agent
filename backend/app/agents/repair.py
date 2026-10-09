@@ -44,6 +44,26 @@ def _rename_duplicate_test(code: str, name: str, taken: Iterable[str]) -> tuple[
     return decl.sub(f"func {name}_{n}", code), f"{name}_{n}"
 
 
+_COSMETIC = " \t\r\n\"'`\\"  # whitespace, quotes and backslashes the model leaves around an import path
+
+
+def clean_imports(snippet: TestSnippet) -> tuple[TestSnippet, str] | None:
+    """Strip whitespace, quotes and backslashes from both ends of each import path, or None when none had any.
+
+    Job 86b6d88b558c: the Writer's `imports` held `testing\\` (a stray backslash from JSON escaping) and the guard
+    rejected the candidate. Only the ends are touched, so a path's identity never changes and an invalid path
+    is still rejected by the guard; a path made only of such characters is left for the guard to reject."""
+    imports, notes = [], []
+    for imp in snippet.imports:
+        cleaned = imp.strip(_COSMETIC) or imp
+        if cleaned != imp:
+            notes.append(f"cleaned import path '{imp}' → '{cleaned}'")
+        imports.append(cleaned)
+    if not notes:
+        return None
+    return snippet.model_copy(update={"imports": imports}), "; ".join(notes)
+
+
 def mechanical_repair(snippet: TestSnippet, output: str, package: str,
                       taken: Iterable[str] = ()) -> tuple[TestSnippet, str] | None:
     """Return (corrected snippet, human description), or None when nothing in the compiler output is mechanically fixable.

@@ -17,6 +17,7 @@ from app.models import TokenUsage
 
 T = TypeVar("T", bound=BaseModel)
 Emit = Callable[[str, dict[str, Any]], Awaitable[None]]
+OnRequest = Callable[[str], Awaitable[None]]  # called with the reasoning effort right before each request to Groq
 
 
 class LLMError(Exception):
@@ -25,6 +26,10 @@ class LLMError(Exception):
 
 class LLMOutputTooLarge(LLMError):
     """The answer did not fit in the output limit (truncated, or Groq could not finish the JSON): ask for less."""
+
+
+class LLMTimeout(LLMError):
+    """Groq did not answer within GROQ_TIMEOUT_S; the item fails without retrying the wait."""
 
 
 class LLMBudgetExhausted(LLMError):
@@ -75,7 +80,8 @@ def _size_rejection(e: groq.APIStatusError) -> tuple[bool, int | None]:
 class LLMClient(Protocol):
     last_effort: str | None  # reasoning effort of the last successful call
 
-    async def complete(self, *, role: str, system: str, user: str, schema: type[T]) -> tuple[T, TokenUsage]: ...
+    async def complete(self, *, role: str, system: str, user: str, schema: type[T],
+                       on_request: OnRequest | None = None) -> tuple[T, TokenUsage]: ...
 
 
 class GroqLLM:
@@ -89,7 +95,8 @@ class GroqLLM:
                  cancel: asyncio.Event | None = None):
         self.s, self.ledger, self.limiter = settings, ledger, limiter
         self._emit, self._sleep, self._cancel = emit, sleep, cancel
-        self._client = client or groq.AsyncGroq(api_key=settings.groq_api_key, max_retries=0, timeout=120.0)
+        self._client = client or groq.AsyncGroq(api_key=settings.groq_api_key, max_retries=0,
+                                                       timeout=settings.groq_timeout_s)
         self.last_effort: str | None = None
 
     async def _wait(self, seconds: float, reason: str) -> None:
@@ -124,7 +131,8 @@ class GroqLLM:
             if pending:  # let the cancelled tasks finish so none are left orphaned
                 await asyncio.wait(pending)
 
-    async def complete(self, *, role: str, system: str, user: str, schema: type[T]) -> tuple[T, TokenUsage]:
+    async def complete(self, *, role: str, system: str, user: str, schema: type[T],
+                       on_request: OnRequest | None = None) -> tuple[T, TokenUsage]:
         prompt_tokens = estimate_tokens(system) + estimate_tokens(user)
         if prompt_tokens > self.s.max_prompt_tokens:
             raise LLMError(f"prompt is ~{prompt_tokens} tokens, over the {self.s.max_prompt_tokens} limit")
@@ -168,6 +176,8 @@ class GroqLLM:
             if wait > 0:
                 await self._wait(wait, "tpm")
                 self.limiter.reset()
+            if on_request is not None:
+                await on_request(effort)
             try:
                 raw = await self._request(
                     model=self.s.groq_model,
@@ -190,6 +200,8 @@ class GroqLLM:
                 rate_retries += 1
                 await self._wait(retry_after, "429")
                 continue
+            except groq.APITimeoutError as e:  # before APIConnectionError, its base class
+                raise LLMTimeout(f"Groq did not answer within {self.s.groq_timeout_s:g} s") from e
             except (groq.APIConnectionError, groq.InternalServerError) as e:
                 if net_retries >= self.MAX_NET_RETRIES:
                     raise LLMError(f"Groq is unreachable: {e}") from e

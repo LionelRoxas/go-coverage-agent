@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from app.config import Settings
-from app.llm.client import GroqLLM, LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge
+from app.llm.client import GroqLLM, LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge, LLMTimeout
 from app.llm.limits import RateLimiter, UsageLedger
 
 
@@ -336,14 +336,39 @@ async def test_each_role_sends_its_own_effort(tmp_path):
 
 async def test_high_effort_truncation_steps_down_through_medium_to_low(tmp_path):
     script = [Raw(Completion("{", "length")), Raw(Completion("{", "length")), Raw(Completion('{"answer": "ok"}', "stop"))]
-    llm, fake, _ = make(tmp_path, script)
-    out, usage = await llm.complete(role="fixer", system="s", user="u", schema=Out)  # fixer default: high
+    llm, fake, _ = make(tmp_path, script, settings=Settings(groq_api_key="k", groq_fixer_reasoning_effort="high"))
+    out, usage = await llm.complete(role="fixer", system="s", user="u", schema=Out)
     assert out.answer == "ok" and usage.total == 450
     assert [c["reasoning_effort"] for c in fake.calls] == ["high", "medium", "low"] and llm.last_effort == "low"
 
 
 async def test_truncation_at_every_effort_is_output_too_large(tmp_path):
-    llm, fake, _ = make(tmp_path, [Raw(Completion("{", "length")) for _ in range(3)])
+    llm, fake, _ = make(tmp_path, [Raw(Completion("{", "length")) for _ in range(3)], settings=Settings(groq_api_key="k", groq_fixer_reasoning_effort="high"))
     with pytest.raises(LLMOutputTooLarge, match="truncated"):
         await llm.complete(role="fixer", system="s", user="u", schema=Out)
     assert [c["reasoning_effort"] for c in fake.calls] == ["high", "medium", "low"]
+
+
+async def test_timeout_fails_at_once_with_the_configured_seconds(tmp_path):
+    req = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    llm, fake, slept = make(tmp_path, [groq.APITimeoutError(request=req)],
+                            settings=Settings(groq_api_key="k", groq_timeout_s=240))
+    with pytest.raises(LLMTimeout, match=r"^Groq did not answer within 240 s$"):
+        await call(llm)
+    assert len(fake.calls) == 1 and slept == []  # waiting the full timeout again would only double the wait
+
+
+def test_sdk_client_uses_the_configured_timeout(tmp_path):
+    llm = GroqLLM(Settings(groq_api_key="k", groq_timeout_s=33), UsageLedger(tmp_path / "u.json", 1), RateLimiter())
+    assert llm._client.timeout == 33
+
+
+async def test_on_request_runs_before_each_request_with_the_effort_sent(tmp_path):
+    seen = []
+    llm, fake, _ = make(tmp_path, [Raw(Completion("{}", "length")), Raw(Completion('{"answer": "a"}', "stop"))],
+                        settings=Settings(groq_api_key="k", groq_fixer_reasoning_effort="high"))
+
+    async def on_request(effort):
+        seen.append((effort, len(fake.calls)))
+    await llm.complete(role="fixer", system="s", user="u", schema=Out, on_request=on_request)
+    assert seen == [("high", 0), ("medium", 1)]

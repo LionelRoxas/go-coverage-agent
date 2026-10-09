@@ -6,7 +6,7 @@ import pytest
 
 from app.agents.context import ContextTooLarge
 from app.engine.orchestrator import Orchestrator, RunDeps
-from app.llm.client import LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge
+from app.llm.client import LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge, LLMTimeout
 from app.models import (CoverageReport, FileCoverage, FuncCoverage, FuncKey, JobOptions, JobRequest, StopReason,
                         TokenUsage)
 from app.validator import ValidationKind, ValidationResult
@@ -56,18 +56,22 @@ class FakeAgents:
         self.too_large_when_multi = too_large_when_multi
         self.last_effort = "medium"
 
-    async def write(self, item, inputs):
+    async def write(self, item, inputs, on_request=None):
         if self.too_large_when_multi and len(item.functions) > 1:
             raise ContextTooLarge("too big")  # the real Agents.write raises it from render_context
         self.write_items.append(item)
+        if on_request is not None:
+            await on_request("medium")
         r = self.writes.pop(0)
         if isinstance(r, Exception):
             raise r
         return r, TokenUsage(prompt_tokens=self.usage, completion_tokens=5)
 
-    async def fix(self, item, inputs, snip, result, history=()):
+    async def fix(self, item, inputs, snip, result, history=(), on_request=None):
         self.fix_kinds.append(result.kind)
         self.histories.append(list(history))
+        if on_request is not None:
+            await on_request("high")
         r = self.fixes.pop(0)
         if isinstance(r, Exception):
             raise r
@@ -115,7 +119,7 @@ async def test_reaches_target_and_records_everything(ws):
     assert summary.suspected_bugs[0].function == "A"
     assert summary.iterations[0].accepted == 1
     types = [t for t, _ in events]
-    assert types[:3] == ["iteration_started", "plan_created", "llm_call"]
+    assert types[:4] == ["iteration_started", "plan_created", "llm_request", "llm_call"]
     assert "candidate_accepted" in types and "iteration_completed" in types
     assert ws.read("a_test.go") is not None
 
@@ -431,3 +435,52 @@ async def test_llm_call_event_carries_the_reasoning_effort(ws):
     await orch.run(report(set()))
     [call] = [d for t, d in events if t == "llm_call"]
     assert call["reasoning_effort"] == "medium" and call["role"] == "writer"
+
+
+# job 86b6d88b558c: `testing\` in the Writer's imports was rejected by the guard and sent to the Fixer
+async def test_stray_characters_in_imports_are_cleaned_before_the_first_check(ws):
+    stray = snippet("func TestA(t *testing.T) {}", imports=("testing\\",))
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"})])
+    agents = FakeAgents([stray])
+    orch, events = run(ws, v, agents, target=50, max_fix_attempts=1)
+    summary = await orch.run(report(set()))
+    assert agents.fix_kinds == [] and summary.tests_added == ["TestA"]
+    assert [s.imports for s in v.snips] == [["testing"]]
+    assert ("mechanical_repair", {"index": 1, "file": "a.go", "repair": 0,
+                                  "description": "cleaned import path 'testing\\' → 'testing'"}) in events
+    types = [t for t, _ in events]
+    i = types.index("mechanical_repair")
+    assert types[i - 1:i + 3] == ["candidate_generated", "mechanical_repair", "candidate_generated", "validation_result"]
+    assert sum(1 for t in types if t == "llm_call") == 1
+
+
+async def test_fixer_answer_is_cleaned_too_and_cleanups_are_not_numbered_repairs(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
+    stray = snippet("func TestA(t *testing.T) {}", imports=('"testing"',))
+    v = FakeValidator(ws, [bad, accepted({"A:1", "A:2"})])
+    agents = FakeAgents([stray], fixes=[stray])
+    orch, events = run(ws, v, agents, target=50, max_fix_attempts=1)
+    await orch.run(report(set()))
+    assert [s.imports for s in v.snips] == [["testing"], ["testing"]]
+    assert [d["repair"] for t, d in events if t == "mechanical_repair"] == [0, 0]
+
+
+async def test_llm_request_is_emitted_before_each_call(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
+    v = FakeValidator(ws, [bad, accepted({"A:1", "A:2"})])
+    orch, events = run(ws, v, FakeAgents([GOOD], fixes=[GOOD]), target=50, max_fix_attempts=1)
+    await orch.run(report(set()))
+    calls = [(t, d) for t, d in events if t in ("llm_request", "llm_call")]
+    assert [t for t, _ in calls] == ["llm_request", "llm_call", "llm_request", "llm_call"]
+    assert calls[0][1] == {"index": 1, "file": "a.go", "role": "writer", "reasoning_effort": "medium"}
+    assert calls[2][1] == {"index": 1, "file": "a.go", "role": "fixer", "reasoning_effort": "high", "attempt": 1}
+
+
+async def test_a_groq_timeout_is_recorded_as_llm_timeout(ws):
+    msg = "Groq did not answer within 240 s"
+    orch, events = run(ws, FakeValidator(ws, []), FakeAgents([LLMTimeout(msg)]), targets_per_iteration=1,
+                       max_iterations=1)
+    await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert ("validation_result", {"index": 1, "file": "a.go", "kind": "llm_timeout", "output": msg,
+                                  "failed_tests": []}) in events
+    assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "llm_timeout"}) in events

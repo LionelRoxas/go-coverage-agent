@@ -9,7 +9,7 @@ from typing import Sequence
 
 from app.agents.context import ContextInputs, ContextTooLarge, render_context
 from app.agents.history import AttemptRecord, render_history
-from app.llm.client import LLMClient, estimate_tokens
+from app.llm.client import LLMClient, OnRequest, estimate_tokens
 from app.models import PlanItem, TestSnippet, TokenUsage
 from app.validator import ValidationKind, ValidationResult
 
@@ -90,12 +90,13 @@ class Agents:
         budget = self.max_prompt_tokens - estimate_tokens(system) - estimate_tokens(task) - 20
         return f"{render_context(inputs, budget)}\n\n{task}"
 
-    async def write(self, item: PlanItem, inputs: ContextInputs) -> tuple[TestSnippet, TokenUsage]:
+    async def write(self, item: PlanItem, inputs: ContextInputs,
+                    on_request: OnRequest | None = None) -> tuple[TestSnippet, TokenUsage]:
         system = load_prompt("writer")
         task = (f"## Task\nWrite new tests for {_labels(item)} that will be appended to `{inputs.test_file}`. "
                 "Focus on executing the lines marked `// UNCOVERED`.")
         return await self.llm.complete(role="writer", system=system, user=self._user(system, inputs, task),
-                                       schema=TestSnippet)
+                                       schema=TestSnippet, on_request=on_request)
 
     def _fix_tasks(self, item: PlanItem, snippet: TestSnippet, result: ValidationResult,
                    history: Sequence[AttemptRecord] = ()) -> list[str]:
@@ -133,7 +134,8 @@ class Agents:
         ]
 
     async def fix(self, item: PlanItem, inputs: ContextInputs, snippet: TestSnippet, result: ValidationResult,
-                  history: Sequence[AttemptRecord] = ()) -> tuple[TestSnippet, TokenUsage]:
+                  history: Sequence[AttemptRecord] = (),
+                  on_request: OnRequest | None = None) -> tuple[TestSnippet, TokenUsage]:
         """`history`: this item's checks so far, oldest first, ending with the one that produced `result`."""
         system = load_prompt("fixer")
         error: ContextTooLarge | None = None
@@ -143,7 +145,8 @@ class Agents:
             except ContextTooLarge as e:  # degrade instead of failing; only the targets plus the minimal task are fatal
                 error = e
                 continue
-            return await self.llm.complete(role="fixer", system=system, user=user, schema=TestSnippet)
+            return await self.llm.complete(role="fixer", system=system, user=user, schema=TestSnippet,
+                                           on_request=on_request)
         assert error is not None
         raise ContextTooLarge(f"{error}; the targets plus the Fixer's minimal task (first error lines, no code) "
                               "do not fit") from error

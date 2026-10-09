@@ -26,6 +26,7 @@ class ValidationKind(StrEnum):
     NO_GAIN = "no_gain"
     GUARD_REJECTED = "guard_rejected"
     LLM_ERROR = "llm_error"
+    LLM_TIMEOUT = "llm_timeout"  # Groq did not answer within GROQ_TIMEOUT_S
     PROMPT_TOO_LARGE = "prompt_too_large"  # the prompt could not fit MAX_PROMPT_TOKENS; no model call was made
 
 

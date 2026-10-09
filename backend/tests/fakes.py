@@ -13,9 +13,11 @@ class FakeLLM:
         self.calls: list[dict] = []
         self.last_effort: str | None = None
 
-    async def complete(self, *, role, system, user, schema):
+    async def complete(self, *, role, system, user, schema, on_request=None):
+        if on_request is not None:
+            await on_request({"writer": "medium", "fixer": "medium"}.get(role))
         self.calls.append({"role": role, "system": system, "user": user, "schema": schema})
-        self.last_effort = {"writer": "medium", "fixer": "high"}.get(role)
+        self.last_effort = {"writer": "medium", "fixer": "medium"}.get(role)
         item = self.responses.pop(0)
         if isinstance(item, Exception):
             raise item
