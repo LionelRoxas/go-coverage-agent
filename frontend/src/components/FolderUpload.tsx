@@ -12,18 +12,24 @@ export type UploadFn = (files: PickedFile[], name: string | undefined, onProgres
 
 type State =
   | { kind: "idle" }
+  | { kind: "picking" }
   | { kind: "reading" }
   | { kind: "uploading"; count: number; bytes: number; progress: number | null }
   | { kind: "done"; text: string }
   | { kind: "error"; text: string; retry?: Prepared };
 
 const NAME_CODES = new Set(["name_taken", "invalid_name"]);
+const PICKING = "Waiting for your browser to read the folder. A large folder (with .git or node_modules) can take a minute; " +
+  "if the browser asks whether to upload the files, choose Upload.";
+const NO_FILES = "No files came through from that folder. If it is empty, pick the folder that contains go.mod; " +
+  "otherwise try dragging the folder onto this box instead.";
 const MAX_NAME = 64; // the backend cuts names to this length
 const toName = (s: string) => s.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "");
 /** A free-looking name: the suffix must survive the backend's 64-character cut, or the retry hits the same name. */
 const suggestName = (s: string) => `${toName(s).slice(0, MAX_NAME - 2).replace(/[-.]+$/, "") || "project"}-2`;
 
 function statusText(state: State): string {
+  if (state.kind === "picking") return PICKING;
   if (state.kind === "reading") return "Reading the folder…";
   if (state.kind === "uploading") {
     if (state.progress != null && state.progress >= 1) return "Saving on the server…";
@@ -95,11 +101,18 @@ export function FolderUpload({ onUpload, limits = DEFAULT_UPLOAD_LIMITS }: { onU
           busy ? "pointer-events-none opacity-50" : "hover:opacity-90"}`}>
           Choose a folder…
           <input type="file" multiple disabled={busy} className="sr-only" data-testid="folder-input"
-                 ref={(el) => { if (el) el.webkitdirectory = true; }}
+                 ref={(el) => {
+                   if (!el) return;
+                   el.webkitdirectory = true;
+                   // Closing the picker without choosing fires "cancel" (no change event); go back to idle.
+                   el.oncancel = () => setState((s) => (s.kind === "picking" ? { kind: "idle" } : s));
+                 }}
+                 onClick={() => setState({ kind: "picking" })}
                  onChange={(e) => {
                    const list = Array.from(e.target.files ?? []);
                    e.target.value = "";
                    if (list.length) void start(() => foundFromInput(list));
+                   else setState({ kind: "error", text: NO_FILES });
                  }} />
         </label>
         <span className="text-sm text-muted">or drag the project folder here</span>
@@ -111,7 +124,7 @@ export function FolderUpload({ onUpload, limits = DEFAULT_UPLOAD_LIMITS }: { onU
       {/* One live region that stays mounted, so screen readers announce each change of its text. */}
       <div role="status" className="contents">
         {statusText(state) && <p className="text-sm">{statusText(state)}</p>}
-        {state.kind === "uploading" && (
+        {(state.kind === "uploading" || state.kind === "picking" || state.kind === "reading") && (
           <div role="progressbar" aria-label="Upload progress" aria-valuemin={0} aria-valuemax={100}
                aria-valuenow={progress == null ? undefined : Math.round(progress * 100)}
                className="h-1 overflow-hidden rounded-full bg-border">
