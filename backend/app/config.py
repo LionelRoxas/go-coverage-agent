@@ -41,7 +41,6 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     host_repos_dir_display: str | None = None  # display only (HOST_REPOS_DIR_DISPLAY); never used as a path
 
-
     @property
     def llm_configured(self) -> bool:
         return bool(self.groq_api_key.strip())

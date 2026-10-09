@@ -27,10 +27,10 @@ NO_GAIN = ValidationResult(ValidationKind.NO_GAIN, "the new tests executed no pr
 
 
 def test_failure_lines_keep_each_assertion_once_with_its_subtest():
-    assert failure_lines(EVIDENCE) == [
+    assert failure_lines(EVIDENCE) == [  # round-robin: every failing test's first assertion comes first
         "TestParseConstraint_UncoveredBranches/!=_1.x: constraints_test.go:721: minorDirty = true, want false",
-        "TestParseConstraint_UncoveredBranches/!=_1.2.x: constraints_test.go:721: minorDirty = false, want true",
         "TestConstraintNotEqual_UncoveredBranches: constraints_test.go:772: expected error for minor dirty equality, got nil",
+        "TestParseConstraint_UncoveredBranches/!=_1.2.x: constraints_test.go:721: minorDirty = false, want true",
     ]
 
 
@@ -82,3 +82,34 @@ def test_history_renders_oldest_first_and_drops_middle_records_over_the_cap():
 
 def test_empty_history_renders_nothing():
     assert render_history([], max_tokens=1500) == ""
+
+
+# output/7ef641efb870/events.jsonl seq 152, verbatim (writer, iteration 7, constraints.go)
+SEQ_152 = '--- FAIL: TestParseConstraint_UncoveredBranches (0.00s)\n    --- FAIL: TestParseConstraint_UncoveredBranches/!=_1.x (0.00s)\n        constraints_test.go:721: minorDirty = true, want false\n    --- FAIL: TestParseConstraint_UncoveredBranches/!=_1.2.x (0.00s)\n        constraints_test.go:721: minorDirty = false, want true\n    --- FAIL: TestParseConstraint_UncoveredBranches/!=_1.2.3.x (0.00s)\n        constraints_test.go:715: parseConstraint returned error: improper constraint: "!= 1.2.3.x"\n--- FAIL: TestConstraintNotEqual_UncoveredBranches (0.00s)\n    constraints_test.go:772: expected error for minor dirty equality, got nil\n--- FAIL: TestParseConstraint_UncoveredBranches (0.00s)\n    --- FAIL: TestParseConstraint_UncoveredBranches/!=_1.x (0.00s)\n        constraints_test.go:721: minorDirty = true, want false\n    --- FAIL: TestParseConstraint_UncoveredBranches/!=_1.2.x (0.00s)\n        constraints_test.go:721: minorDirty = false, want true\n    --- FAIL: TestParseConstraint_UncoveredBranches/!=_1.2.3.x (0.00s)\n        constraints_test.go:715: parseConstraint returned error: improper constraint: "!= 1.2.3.x"\n--- FAIL: TestConstraintNotEqual_UncoveredBranches (0.00s)\n    constraints_test.go:772: expected error for minor dirty equality, got nil\nFAIL\ncoverage: 92.8% of statements\nFAIL\tgithub.com/Masterminds/semver/v3\t0.015s\nFAIL'
+
+
+def test_real_seq_152_record_keeps_every_failing_tests_observed_value():
+    rec = attempt_record("writer", ValidationResult(ValidationKind.TEST_FAILURE, SEQ_152, failed_tests=[
+        "TestParseConstraint_UncoveredBranches", "TestConstraintNotEqual_UncoveredBranches"]))
+    text = rec.render(1)
+    assert len(text) <= RECORD_CHARS
+    assert "minorDirty = true, want false" in text and "got nil" in text
+    assert text.splitlines()[0] == "1. writer -> test_failure", "the lines already name the failing tests"
+
+
+def test_multi_line_failure_messages_keep_their_continuation_lines():
+    out = ("--- FAIL: TestX (0.00s)\n    x_test.go:5: Parse(\"a\") mismatch\n        got:  1\n        want: 2\n"
+           "        extra: 3\n--- FAIL: TestY (0.00s)\n    y_test.go:9: bad\nFAIL\n")
+    assert failure_lines(out) == ["TestX: x_test.go:5: Parse(\"a\") mismatch | got:  1 | want: 2", "TestY: y_test.go:9: bad"]
+
+
+def test_a_failure_without_assertions_is_not_observed():
+    rec = attempt_record("writer", ValidationResult(ValidationKind.TEST_FAILURE, "panic: test timed out after 60s\n"))
+    assert rec.lines == ("panic: test timed out after 60s",) and not rec.observed
+
+
+def test_minimal_history_without_observed_failures_renders_nothing():
+    records = [attempt_record("writer", ValidationResult(ValidationKind.COMPILE_ERROR, "./a_test.go:3:2: undefined: x")),
+               attempt_record("llm_fix 1", NO_GAIN)]
+    assert render_history(records, minimal=True) == ""
+    assert "1. writer -> compile_error" in render_history(records)

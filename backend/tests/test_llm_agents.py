@@ -143,7 +143,7 @@ async def test_fix_renders_earlier_attempts_before_the_rejected_snippet():
     user = llm.calls[0]["user"]
     assert "## Earlier attempts for these functions" in user
     assert user.index("## Earlier attempts") < user.index("## Rejected snippet")
-    assert "1. writer -> test_failure (TestFail)" in user
+    assert "1. writer -> test_failure\n" in user  # each assertion line names its test
     assert user.count("TestFail/x: mean_test.go:3: minorDirty = true, want false") == 1
     assert "2. prune" not in user, "the latest check is the validator output, not an earlier attempt"
 

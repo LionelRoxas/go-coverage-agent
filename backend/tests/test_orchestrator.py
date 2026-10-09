@@ -404,7 +404,8 @@ async def test_fixer_sees_the_assertion_failures_that_pruning_hid(ws):
     fixes = [c["user"] for c in llm.calls if c["role"] == "fixer"]
     assert len(fixes) == 2
     assert "TestParse/!=_1.x: constraints_test.go:721: minorDirty = true, want false" in fixes[0]
-    assert "1. writer -> test_failure (TestParse, TestNotEqual)" in fixes[0] and PRUNED_NO_GAIN in fixes[0]
+    assert "TestNotEqual: constraints_test.go:772: expected error for minor dirty equality, got nil" in fixes[0]
+    assert "1. writer -> test_failure\n" in fixes[0] and PRUNED_NO_GAIN in fixes[0]
     assert "minorDirty = true, want false" in fixes[1] and "unexpected dirty flags: dirty=true minorDirty=true" in fixes[1]
     assert "2. prune of [TestParse, TestNotEqual] -> no_gain" in fixes[1] and "3. llm_fix 1 -> test_failure" in fixes[1]
 

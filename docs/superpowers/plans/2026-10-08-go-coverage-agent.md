@@ -4002,7 +4002,7 @@ docker run --rm --env-file .env -v "$PWD/repos:/repos" -v "$PWD/output:/output" 
 
 Expected: a baseline of `0.0%`, one plan item, a usage line, Go code, and a validation result. Write the prompt/completion tokens and seconds into spec §6.7 under a new line "Measured on <date>: …".
 - If `completion_tokens` is above ~2,500, set `GROQ_REASONING_EFFORT=low` (already the default) and lower `targets_per_iteration`.
-  > Note (Task 32): `GROQ_REASONING_EFFORT` was replaced by the per-role settings `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `high`); see the spec §5.1.
+  > Note (Task 32): `GROQ_REASONING_EFFORT` was replaced by the per-role settings `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `high`); see the spec §5.1. This low-effort advice no longer applies; the defaults are Writer `medium`, Fixer `high`.
 - If validation is `compile_error` on idiom issues, tighten `writer.md` and re-run. Each run costs ~5K tokens.
 
 - [ ] **Step 8: Commit**

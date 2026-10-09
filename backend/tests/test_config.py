@@ -48,7 +48,6 @@ def test_role_effort_env_vars(monkeypatch):
     assert (s.groq_writer_reasoning_effort, s.groq_fixer_reasoning_effort) == ("low", "medium")
 
 
-
 def test_old_single_effort_variable_is_ignored(monkeypatch):
     _clear_effort(monkeypatch)
     monkeypatch.setenv("GROQ_REASONING_EFFORT", "low")
