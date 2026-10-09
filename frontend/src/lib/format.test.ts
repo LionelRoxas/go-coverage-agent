@@ -31,7 +31,8 @@ describe("format", () => {
     expect(checkLabel("compile_error", 0)).toBe("Didn't compile");
     expect(checkLabel("vet_error", 0)).toBe("go vet failed");
     expect(checkLabel("no_gain", 0)).toBe("No new coverage");
-    expect(checkLabel("guard_rejected", 0)).toBe("Rejected by the import guard");
+    expect(checkLabel("guard_rejected", 0)).toBe("Rejected by the safety guard");
+    expect(checkLabel("test_failure", 0, 8)).toBe("Tests failed");
     expect(checkLabel("test_failure", 3, 8)).toBe("3 of 8 tests failed");
     expect(checkLabel("test_failure", 2)).toBe("2 tests failed");
     expect(checkLabel("test_failure", 1)).toBe("1 test failed");

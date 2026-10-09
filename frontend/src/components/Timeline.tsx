@@ -10,6 +10,12 @@ const SHOWN_FUNCTIONS = 3;
 // Older logs recorded a fixer prompt that did not fit as llm_error with this message.
 const TOO_LARGE_OUTPUT = /^targets need ~?\d+ tokens; budget is \d+/;
 
+// A fix request that never produced code because its prompt did not fit the budget.
+function fixTooLarge(step: Step): boolean {
+  return step.source.type === "llm_fix" && step.code == null && step.check != null &&
+    (step.check.kind === "prompt_too_large" || TOO_LARGE_OUTPUT.test(step.check.output));
+}
+
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const finished = (item: ItemView) => item.status === "accepted" || item.status === "rejected";
 
@@ -54,7 +60,7 @@ function sourceLine(step: Step): string {
   switch (s.type) {
     case "writer":
       return step.code == null && step.check ? "Writer request returned no code" : `Written by the LLM${tokens}`;
-    case "auto_fix":
+    case "auto_fix": // StepView shows the same text with the prefix in the accent colour
       return s.description ? `Auto-fixed, no LLM call: ${s.description}` : "Auto-fixed, no LLM call";
     case "prune": {
       const removed = s.tests.length === 1 ? "Removed the failing test" : `Removed the ${s.tests.length} failing tests`;
@@ -63,8 +69,7 @@ function sourceLine(step: Step): string {
     case "llm_fix": {
       const which = `fix ${s.attempt}${s.max != null ? ` of ${s.max}` : ""}`;
       if (step.code == null && step.check) {
-        const tooLarge = step.check.kind === "prompt_too_large" || TOO_LARGE_OUTPUT.test(step.check.output);
-        return tooLarge ? `Fix request too large — no model call (${which})` : `Fix request failed (${which})`;
+        return fixTooLarge(step) ? `Fix request too large — no model call (${which})` : `Fix request failed (${which})`;
       }
       const given = FIX_GIVEN[s.given] ?? `the ${String(s.given).replaceAll("_", " ")} result`;
       const from = s.givenStep != null ? ` from ${circled(s.givenStep)}` : "";
@@ -103,7 +108,7 @@ function CheckView({ step, final }: { step: Step; final: boolean }) {
     // the request never produced code, so nothing was compiled or run
     return (
       <div className="text-xs text-muted">
-        <p><span aria-hidden="true">✗ </span>{ATTEMPT_LABEL[check.kind] ?? check.kind}: nothing to check</p>
+        <p><span aria-hidden="true">✗ </span>{fixTooLarge(step) ? ATTEMPT_LABEL.prompt_too_large : ATTEMPT_LABEL[check.kind] ?? check.kind}: nothing to check</p>
         {check.output && <pre className={OUTPUT_PRE}>{check.output}</pre>}
       </div>
     );
@@ -133,7 +138,11 @@ function StepView({ step, n, item, isLast }: { step: Step; n: number; item: Item
         {circled(n)}
       </span>
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <p className={`min-w-0 break-words text-sm ${step.source.type === "auto_fix" ? "text-accent" : ""}`}>{sourceLine(step)}</p>
+        <p className="min-w-0 break-words text-sm">
+          {step.source.type === "auto_fix"
+            ? <><span className="text-accent">Auto-fixed, no LLM call</span>{step.source.description && `: ${step.source.description}`}</>
+            : sourceLine(step)}
+        </p>
         {step.code != null && (
           <button type="button" onClick={() => setShowCode((v) => !v)} aria-expanded={showCode} aria-controls={codeId}
                   className="shrink-0 rounded border border-border px-2 py-0.5 text-xs text-muted hover:border-accent hover:text-accent">
@@ -177,7 +186,10 @@ function ResultLine({ item }: { item: ItemView }) {
     const narrowed = item.functions.length > 1 ? ", even after narrowing it to fewer functions" : "";
     text = `skipped: too large for one request${narrowed}. These functions are not tried again; coverage unchanged.`;
   } else {
-    const reason = REJECTION_LABEL[item.rejectReason ?? ""] ?? item.rejectReason ?? "unknown reason";
+    const lastStep = item.steps[item.steps.length - 1];
+    const reason = lastStep && fixTooLarge(lastStep)
+      ? "Fix request too large for the prompt budget (no model call)"
+      : REJECTION_LABEL[item.rejectReason ?? ""] ?? item.rejectReason ?? "unknown reason";
     const after = item.steps.length ? ` after attempt ${item.steps.length}` : "";
     text = `rejected${after}: ${reason}. Changes rolled back, coverage unchanged.`;
   }

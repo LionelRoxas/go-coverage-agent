@@ -47,16 +47,16 @@ export const CHECK_LABEL: Record<string, string> = {
   compile_error: "Didn't compile",
   vet_error: "go vet failed",
   no_gain: "No new coverage",
-  guard_rejected: "Rejected by the import guard",
+  guard_rejected: "Rejected by the safety guard",
   llm_error: "Model error",
   prompt_too_large: "Prompt too large (no model call)",
 };
 
 export function checkLabel(kind: string, failed: number, total?: number): string {
   if (kind !== "test_failure") return CHECK_LABEL[kind] ?? kind;
-  const n = Math.max(failed, 1);
-  if (total != null && total >= n) return `${n} of ${total} tests failed`;
-  return n === 1 ? "1 test failed" : `${n} tests failed`;
+  if (failed <= 0) return "Tests failed"; // e.g. a panic or timeout: no per-test FAIL lines to count
+  if (total != null && total >= failed) return `${failed} of ${total} tests failed`;
+  return failed === 1 ? "1 test failed" : `${failed} tests failed`;
 }
 
 // What the LLM fixer was handed, by the kind of the check it is fixing.
@@ -65,7 +65,7 @@ export const FIX_GIVEN: Record<string, string> = {
   vet_error: "the go vet error",
   test_failure: "the failing tests",
   no_gain: "the no-new-coverage result",
-  guard_rejected: "the import guard's rejection",
+  guard_rejected: "the safety guard's rejection",
 };
 
 // ① … ⑳ for step numbers; plain digits after that.

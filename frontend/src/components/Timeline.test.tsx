@@ -24,7 +24,9 @@ describe("Timeline attempt trace", () => {
     expect(steps().map((li) => li.textContent?.slice(0, 1))).toEqual(["①", "②", "③"]);
 
     expect(screen.getByText("Written by the LLM · 2,556 output tokens")).toBeInTheDocument();
-    expect(screen.getByText("Auto-fixed, no LLM call: added import strconv")).toBeInTheDocument();
+    const autoFix = within(steps()[1]).getByText("Auto-fixed, no LLM call");
+    expect(autoFix).toHaveClass("text-accent"); // only the prefix: the check that follows may still fail
+    expect(autoFix.parentElement).toHaveTextContent(/^Auto-fixed, no LLM call: added import strconv$/);
     expect(screen.getByText("Removed the 3 failing tests, kept 5")).toBeInTheDocument();
     expect(screen.getByText("Same code minus the removed tests.")).toBeInTheDocument();
 
@@ -104,6 +106,10 @@ describe("Timeline attempt trace", () => {
     expect(screen.getByText("Fix request too large — no model call (fix 1 of 2)")).toBeInTheDocument();
     expect(screen.getByText("targets need ~3591 tokens; budget is 2191")).toBeInTheDocument();
     expect(within(steps()[1]).queryByRole("button")).not.toBeInTheDocument();
+    // the result agrees with the step: nothing was wrong with the model
+    expect(screen.getByText(/rejected after attempt 2: Fix request too large for the prompt budget \(no model call\)\. Changes rolled back/)).toBeInTheDocument();
+    expect(screen.queryByText(/Model error/)).not.toBeInTheDocument();
+    expect(within(steps()[1]).getByText(/Prompt too large \(no model call\): nothing to check/)).toBeInTheDocument();
   });
 
   it("explains a prompt_too_large fix request and a fix request with a model error", () => {
@@ -112,7 +118,27 @@ describe("Timeline attempt trace", () => {
     unmount();
     renderRun(fixResult({ output: "model timed out" }));
     expect(screen.getByText("Fix request failed (fix 1 of 2)")).toBeInTheDocument();
+    expect(screen.getByText(/rejected after attempt 2: Model error\./)).toBeInTheDocument();
     expect(screen.getByText(/Model error: nothing to check/)).toBeInTheDocument();
+  });
+
+  it("names the safety guard and what the fixer was given after it", () => {
+    let n = 0;
+    const e = (type: string, data: Record<string, unknown>): JobEvent => ({ seq: n++, ts: 1, type, data: { index: 1, file: "a.go", ...data } });
+    renderRun([
+      e("job_started", { repo_path: "r", target_coverage: 80, model: "m", options: { max_fix_attempts: 2 } }),
+      e("iteration_started", { percent: 0 }),
+      e("plan_created", { items: [{ file: "a.go", functions: ["A"], uncovered_statements: 1 }] }),
+      e("candidate_generated", { code: "func helper() {}\n" }),
+      e("validation_result", { kind: "guard_rejected", output: "no `func TestXxx(t *testing.T)` found", failed_tests: [] }),
+      e("fix_attempt", { attempt: 1, kind: "guard_rejected" }),
+      e("candidate_generated", { code: "func TestA(t *testing.T) {}\n" }),
+      e("validation_result", { kind: "test_failure", output: "panic: boom\nFAIL", failed_tests: [] }),
+    ]);
+    expect(screen.getByText("Rejected by the safety guard")).toBeInTheDocument();
+    expect(screen.getByText("no `func TestXxx(t *testing.T)` found")).toBeInTheDocument();
+    expect(screen.getByText("Rewritten by the LLM fixer (fix 1 of 2), given the safety guard's rejection from ①")).toBeInTheDocument();
+    expect(screen.getByText("Tests failed")).toBeInTheDocument(); // a panic has no per-test FAIL lines to count
   });
 
   it("shows two duplicate-name auto-fixes", () => {
