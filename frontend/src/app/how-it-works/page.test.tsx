@@ -1,31 +1,63 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import HowItWorksPage from "./page";
 
+const STEP_TITLES = [
+  "Make a safe copy and measure",
+  "Pick what to work on (no AI)",
+  "Write the checks (AI)",
+  "Try them out",
+  "Keep, repair or undo",
+];
+
 describe("HowItWorksPage", () => {
-  it("lists the five steps in order", () => {
+  it("explains the tool and coverage in plain words", () => {
     render(<HowItWorksPage />);
-    const items = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    expect(items).toEqual(["Copy & measure", "Plan (no AI)", "Write (Groq)", "Validate (5 gates)", "Keep or roll back"]);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/writes those checks for a Go project by itself/);
+    expect(screen.getByRole("heading", { name: "What “coverage” means" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "8 of 10 lines run by a test: 80% coverage" })).toBeInTheDocument();
+  });
+
+  it("lists the five plain steps in order, each with a collapsed Technical detail", () => {
+    render(<HowItWorksPage />);
+    const steps = screen.getAllByRole("listitem").filter((li) => li.hasAttribute("data-step"));
+    expect(steps.map((li) => within(li).getByRole("heading", { level: 3 }).textContent)).toEqual(STEP_TITLES);
+    for (const li of steps) {
+      const details = li.querySelector("details");
+      expect(details).not.toBeNull();
+      expect(details).not.toHaveAttribute("open");
+      expect(within(li).getByText("Technical detail")).toBeInTheDocument();
+    }
+    // the precise version still names the real values
+    expect(within(steps[1]).getByText(/up to 3 items per round/)).toBeInTheDocument();
+    expect(within(steps[2]).getByText(/openai\/gpt-oss-120b/)).toBeInTheDocument();
+    expect(within(steps[3]).getByText(/-count=2/)).toBeInTheDocument();
+    expect(within(steps[4]).getByText(/full attempt history/)).toBeInTheDocument();
   });
 
   it("shows the repeat connector from step 5 back to step 2", () => {
     render(<HowItWorksPage />);
-    expect(screen.getByTestId("repeat-connector")).toHaveTextContent("repeat until the target or a stop rule");
-    expect(screen.getByTestId("repeat-connector-narrow")).toHaveTextContent("Back to Plan (step 2)");
-    expect(screen.getByText(/repeats from step 2/)).toBeInTheDocument();
+    expect(screen.getByTestId("repeat-connector")).toHaveTextContent("Back to step 2: repeat until the goal or a stop rule");
+    expect(screen.getByText(/starts again from step 2/)).toBeInTheDocument();
   });
 
-  it("shows stop conditions, the measured result and the links", () => {
+  it("shows the stop rules, the trust notes, the measured results and the links", () => {
     render(<HowItWorksPage />);
-    for (const t of ["Target reached", "Gains become marginal", "Iteration limit (20 by default)", "Token budget used", "No remaining targets"]) {
+    for (const t of ["It reached the goal", "The last rounds added very little", "It ran out of rounds (20 by default)",
+                     "It used up its AI budget", "Nothing is left that it can work on"]) {
       expect(screen.getByText(t)).toBeInTheDocument();
     }
-    expect(screen.getByText("0% → 80.75%")).toBeInTheDocument();
-    expect(screen.getByText("12")).toBeInTheDocument();
-    expect(screen.getByText("about 4 min")).toBeInTheDocument();
+    expect(screen.getByText(/re-run in a fresh copy of the project/)).toBeInTheDocument();
+    const stats = screen.getByTestId("result-stats");
+    expect(stats).toHaveTextContent("0% → 80.75%");
+    expect(stats).toHaveTextContent("12 rounds");
+    expect(stats).toHaveTextContent("about 4 minutes");
+    const semver = screen.getByTestId("result-semver");
+    expect(semver).toHaveTextContent("1.4% → 84.6%");
+    expect(semver).toHaveTextContent("4 rounds");
+    expect(semver).toHaveTextContent("about 2 minutes");
     expect(screen.getByRole("link", { name: /Start a run/ })).toHaveAttribute("href", "/");
     const w = screen.getByRole("link", { name: "Full walkthrough" });
     expect(w).toHaveAttribute("href", "https://claude.ai/artifact/RxXGC2s7651iEFZDF3kYQ8");
