@@ -130,6 +130,22 @@ Developer-plan key, 2026-10-09, target 80%, defaults. Writer at `medium` reasoni
 
 Each of the last two runs needed only one LLM fix, and both fixes were accepted (12.8 s at `medium`, 9.6 s at `low`), so the two runs are too close to rank the Fixer's effort. A Fixer call at `high` was still waiting after about 114 s, which is why both roles default to `medium`.
 
+### Cap of 5 functions per target (2026-10-09)
+
+The same settings (Writer and Fixer at `medium`, target 80%), changing only the planner's cap from 8 to 5 functions per target:
+
+| | semver, cap 8 | semver, cap 5 | stats, cap 8 | stats, cap 5 |
+|---|---|---|---|---|
+| Run | `736baa413b5d` | `7a8c53c08bce` | `459dfe48a57f` | `e2de1ca387cb` |
+| Coverage | 1.4% → 84.6% | 1.4% → 83.5% | 0% → 80.3% | 0% → 81.1% |
+| Rounds / time | 4 / 114 s | 3 / 83 s | 10 / 276 s | 11 / 310 s |
+| Targets accepted / rejected | 8 / 0 | 7 / 0 | 28 / 0 | 31 / 0 |
+| Passed on the first check | 2 of 8 (25%) | 4 of 7 (57%) | 23 of 28 (82%) | 27 of 31 (87%) |
+| LLM fixes | 1 | 0 | 3 | 1 |
+| Tokens | 82.6K | 54.5K | 172K | 175K |
+
+With the cap of 5, more targets passed on the first check and fewer LLM fixes were needed. semver used 34% fewer tokens; stats used about the same and took one extra round. These are single runs, so differences of a few seconds or a percentage point are within normal variation.
+
 ## Issues I found in testing and fixed
 
 I ran the system end to end, spotted these problems, and decided the fixes. Claude Code implemented them under review.
@@ -326,7 +342,7 @@ I used Claude Code as a pair programmer and implementation team. I set the direc
 - **Uncapped model output.** When Groq returned malformed JSON, I identified the output cap as the likely cause and had it removed.
 - **The right API key.** I found that my first key was a free trial (8K tokens/min, 200K tokens/day), checked Groq's documentation, and switched to a Developer-plan key. That took the full run from a 28-minute partial result (69%) to 80.5% in under five minutes.
 - **Token efficiency.** I chose to cut tokens per iteration, rather than adding a "continue a previous run" feature or relying on higher rate limits, so the tool stays usable on rate-limited keys. The data-driven changes that followed (a no-LLM repair step, larger targets per call) cut tokens per covered point by about 13%.
-- **Cutting plan item size.** I saw `norm.go` stuck at 32.7% with model errors, traced it to plan items asking for answers too large to finish, and decided to cap items at 8 functions / 100 statements and split over-size answers. Later data from 366 targets (19 runs) showed that targets of 1 to 3 functions passed the first check 65% of the time, 4 to 5 functions 41%, and 6 to 8 functions 25%, so the cap is now 5 functions.
+- **Cutting plan item size.** I saw `norm.go` stuck at 32.7% with model errors, traced it to plan items asking for answers too large to finish, and decided to cap items at 8 functions / 100 statements and split over-size answers. Later data from 366 targets (19 runs) showed that targets of 1 to 3 functions passed the first check 65% of the time, 4 to 5 functions 41%, and 6 to 8 functions 25%, so I lowered the cap to 5 functions; the before/after runs are in [Cap of 5 functions per target](#cap-of-5-functions-per-target-2026-10-09).
 - **Proof that failing tests are not counted.** I asked for evidence, not an assurance. The final tests were re-run in a fresh clone and passed with 80.1%.
 - **Fixing `make` for PowerShell.** `make test` failed on my machine, so I had the Makefile made shell-independent.
 - **The UI gaps.** I found no theme switch, no way back to the start page, a one-line running banner, an unfinished navbar and no in-app explanation, and decided on the toggle, Run history panel, "← All runs", navbar and How it works page.
