@@ -1,5 +1,7 @@
 # go-coverage-agent
 
+[![ci](https://github.com/LionelRoxas/go-coverage-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/LionelRoxas/go-coverage-agent/actions/workflows/ci.yml)
+
 An autonomous agent that raises unit-test coverage for Go repositories. Give it a local Go module and a target
 percentage. It measures coverage, plans what to test, asks an LLM to write idiomatic Go tests, compiles and runs
 them, keeps only the tests that pass and add coverage, and repeats until it hits the target or gains flatten out.
