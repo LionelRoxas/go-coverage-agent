@@ -1,0 +1,74 @@
+/* AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas. */
+@import "tailwindcss";
+
+/* Visual direction: calm, precise developer tool. Cool slate neutrals, one green for
+   progress/accept, one red for reject. IBM Plex Sans for prose, IBM Plex Mono for code,
+   paths and numbers. */
+:root {
+  --bg: #f5f6f7;
+  --surface: #ffffff;
+  --border: #d6dbe0;
+  --text: #13181d;
+  --muted: #566170;
+  --accent: #0b7a5c;
+  --on-accent: #ffffff;
+  --danger: #b3261e;
+  --warn: #9a5b00;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1116;
+    --surface: #141a21;
+    --border: #28323c;
+    --text: #e5e9ed;
+    --muted: #8b97a5;
+    --accent: #3fcf9f;
+    --on-accent: #06251c;
+    --danger: #f2766c;
+    --warn: #e3ab3b;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Shiki dual theme: follow the OS colour scheme like the rest of the UI. */
+@media (prefers-color-scheme: dark) {
+  .shiki,
+  .shiki span {
+    color: var(--shiki-dark) !important;
+    background-color: var(--shiki-dark-bg) !important;
+  }
+}

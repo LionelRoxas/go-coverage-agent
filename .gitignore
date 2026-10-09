@@ -1,0 +1,11 @@
+__pycache__/
+.venv/
+.pytest_cache/
+node_modules/
+.next/
+.env
+repos/*
+!repos/.gitkeep
+output/*
+!output/.gitkeep
+compose.local*.yml

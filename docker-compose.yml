@@ -1,0 +1,38 @@
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        GO_IMAGE: golang:1.27-bookworm   # keep in sync with .go-version
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}", "http://127.0.0.1:${FRONTEND_PORT:-3000}"]'
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ${HOST_REPOS_DIR:-./repos}:/repos
+      - ./output:/output
+      - gocache:/home/app/.cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: "http://localhost:${BACKEND_PORT:-8000}"
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  gocache: {}
