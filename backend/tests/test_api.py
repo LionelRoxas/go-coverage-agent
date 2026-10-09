@@ -60,6 +60,7 @@ async def test_health(env):
     assert body["llm_configured"] is True and body["model"] == "openai/gpt-oss-120b"
     assert "tokens_left_today" in body
     assert body["min_daily_tokens_to_start"] == 20_000
+    assert body["upload_limits"] == {"max_files": 3000, "max_bytes": 25 * 1024 * 1024, "max_file_bytes": 1024 * 1024}
 
 
 async def test_repos_listing(env):

@@ -1,11 +1,21 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+import asyncio
+import errno
+import os
+import time
+
 import httpx
 import pytest
 
+from app import uploads as uploads_mod
 from app.config import Settings
+from app.engine import setup as engine_setup
 from app.jobs import JobManager
 from app.main import create_app
+from app.models import JobRequest
+from app import repos as repos_mod
 from app.uploads import UploadError, sanitize_name, split_upload_path
+from app.workspace import WorkspaceError
 from app.workspace import resolve_repo
 
 GOMOD = b"module example.com/myproj\n\ngo 1.22\n"
@@ -35,7 +45,14 @@ async def post(app, files: dict[str, bytes], name: str | None = None, headers: d
 
 def leftovers(repos):
     uploads = repos / "uploads"
-    return sorted(p.name for p in uploads.iterdir()) if uploads.exists() else []
+    return sorted(p.name for p in uploads.iterdir() if p.name != ".gca-uploads") if uploads.exists() else []
+
+
+def own_uploads_dir(repos):
+    """repos/uploads as an earlier upload left it: created by the app, with its marker."""
+    (repos / "uploads").mkdir()
+    (repos / "uploads" / ".gca-uploads").write_text("")
+    return repos / "uploads"
 
 
 async def test_upload_saves_project_lists_it_and_resolves(tmp_path):
@@ -76,8 +93,8 @@ async def test_reupload_replaces_a_marked_directory(tmp_path):
 
 async def test_existing_unmarked_directory_is_never_replaced(tmp_path):
     app, repos = make_app(tmp_path)
-    mine = repos / "uploads" / "myproj"
-    mine.mkdir(parents=True)
+    mine = own_uploads_dir(repos) / "myproj"
+    mine.mkdir()
     (mine / "precious.go").write_text("package mine\n")
     r = await post(app, PROJECT)
     assert r.status_code == 409
@@ -89,6 +106,8 @@ async def test_existing_unmarked_directory_is_never_replaced(tmp_path):
 @pytest.mark.parametrize("bad", [
     "../x/go.mod", "/etc/x", "C:/x/go.mod", "myproj/../../b", "myproj\\..\\..\\b",
     "C:\\x\\go.mod", "\\\\srv\\share\\go.mod", "myproj//b.go", "myproj/./b.go", "myproj/", "go.mod",
+    "myproj/sub/Z:evil.go", "myproj/a.go:x", "myproj/a?.go", "myproj/" + "d/" * 70 + "deep.go",
+    "myproj/" + "/".join(c * 250 for c in "xyzwv") + ".go",  # 1,267 bytes: over the 1,024-byte path cap
 ])
 async def test_unsafe_paths_are_rejected_and_nothing_is_written(tmp_path, bad):
     app, repos = make_app(tmp_path)
@@ -100,7 +119,9 @@ async def test_unsafe_paths_are_rejected_and_nothing_is_written(tmp_path, bad):
     assert leftovers(repos) == []
 
 
-@pytest.mark.parametrize("bad", ["my\x00proj/go.mod", "/abs/x", "\\abs\\x", "D:rel/x", "a/../b", "a/b/..", "a\\.\\b", "a"])
+@pytest.mark.parametrize("bad", ["my\x00proj/go.mod", "/abs/x", "\\abs\\x", "D:rel/x", "a/../b", "a/b/..", "a\\.\\b", "a",
+                                 "a/Z:x", "a/b.go:stream", 'a/b"c', "a/b|c", "a/b\tc", "a/" + "b/" * 63 + "c",
+                                 "a/" + "é" * 600])
 def test_split_upload_path_rejects(bad):
     with pytest.raises(UploadError) as e:
         split_upload_path(bad)
@@ -109,6 +130,10 @@ def test_split_upload_path_rejects(bad):
 
 def test_split_upload_path_normalizes_backslashes():
     assert split_upload_path("myproj\\pkg\\a.go") == ("myproj", "pkg", "a.go")
+
+
+def test_split_upload_path_accepts_the_depth_limit():
+    assert len(split_upload_path("a/" + "b/" * 62 + "c")) == 64
 
 
 @pytest.mark.parametrize("raw,want", [("MyProj", "myproj"), ("my proj", "my-proj"), (".hidden", "hidden"),
@@ -247,3 +272,131 @@ async def test_streamed_body_without_length_is_cut_off_at_the_limit(tmp_path):
     assert r.status_code == 413 and r.json()["error"]["code"] == "upload_too_large"
     assert "content-length" not in r.request.headers
     assert leftovers(repos) == []
+
+
+async def test_uploaded_marker_file_is_skipped_and_the_app_writes_its_own(tmp_path):
+    app, repos = make_app(tmp_path)
+    r = await post(app, {**PROJECT, "myproj/.gca-upload": b"forged"})
+    assert r.status_code == 200, r.text
+    assert r.json()["skipped"]["hidden"] == 1
+    assert (repos / "uploads" / "myproj" / ".gca-upload").read_text().startswith("Created by a Go Coverage Agent upload")
+
+
+async def test_case_only_duplicates_are_kept_or_refused_cleanly(tmp_path):
+    app, repos = make_app(tmp_path)
+    r = await post(app, {**PROJECT, "myproj/A.go": b"package a\n", "myproj/a2.go": b"package a\n",
+                         "myproj/pkg/B.go": b"package pkg\n"})
+    if r.status_code == 200:  # case-sensitive filesystem (Linux): both names kept
+        assert (repos / "uploads" / "myproj" / "pkg" / "B.go").is_file()
+    else:  # case-insensitive (Windows, macOS): the second create clashes and nothing is kept
+        assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_path"
+        assert leftovers(repos) == []
+
+
+async def test_top_folder_of_dots_is_an_invalid_name(tmp_path):
+    app, repos = make_app(tmp_path)
+    r = await post(app, {"...": b"", **{p.replace("myproj", "...", 1): b for p, b in PROJECT.items()}})
+    assert r.status_code == 400 and r.json()["error"]["code"] in ("invalid_name", "invalid_path")
+    r = await post(app, {p.replace("myproj", "...", 1): b for p, b in PROJECT.items()})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_name"
+    assert leftovers(repos) == []
+
+
+async def test_unwritable_name_is_400_without_host_paths(tmp_path, monkeypatch):
+    app, repos = make_app(tmp_path)
+    real_open = open
+
+    def fake_open(path, mode="r", *a, **k):
+        if str(path).endswith("a.go") and "x" in mode:
+            raise OSError(errno.ENAMETOOLONG, "File name too long", str(path))
+        return real_open(path, mode, *a, **k)
+
+    monkeypatch.setattr(uploads_mod, "open", fake_open, raising=False)
+    r = await post(app, PROJECT)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_path"
+    assert "can't be saved on this system" in r.json()["error"]["message"]
+    assert str(tmp_path) not in r.text and "tmp-" not in r.text
+    assert leftovers(repos) == []
+
+
+async def test_unreadable_go_mod_message_has_no_paths(tmp_path):
+    app, repos = make_app(tmp_path)
+    r = await post(app, {**PROJECT, "myproj/go.mod": b"\xff\xfe module x\n"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "not_a_go_module"
+    assert str(tmp_path) not in r.text and "tmp-" not in r.text
+    assert leftovers(repos) == []
+
+
+async def test_stale_temp_folders_are_removed_and_fresh_ones_kept(tmp_path):
+    app, repos = make_app(tmp_path)
+    uploads = own_uploads_dir(repos)
+    old, fresh = uploads / ".tmp-deadbeef", uploads / ".tmp-old-cafe"
+    for d in (old, fresh):
+        (d / "pkg").mkdir(parents=True)
+        (d / "pkg" / "x.go").write_text("package pkg\n")
+    hour_ago = time.time() - 2 * 3600
+    os.utime(old, (hour_ago, hour_ago))
+    assert (await post(app, PROJECT)).status_code == 200
+    assert not old.exists() and fresh.exists()
+
+
+async def test_foreign_uploads_folder_is_never_written_into(tmp_path):
+    app, repos = make_app(tmp_path)
+    theirs = repos / "uploads"
+    theirs.mkdir()
+    (theirs / "go.mod").write_text("module example.com/uploads\n")
+    r = await post(app, PROJECT)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "uploads_dir_taken"
+    assert sorted(p.name for p in theirs.iterdir()) == ["go.mod"]
+
+
+def _symlink_or_skip(link, target):
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available on this host")
+
+
+async def test_symlinked_uploads_folder_is_refused(tmp_path):
+    app, repos = make_app(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / ".gca-uploads").write_text("")
+    _symlink_or_skip(repos / "uploads", elsewhere)
+    r = await post(app, PROJECT)
+    assert r.status_code == 500 and r.json()["error"]["code"] == "upload_failed"
+    assert sorted(p.name for p in elsewhere.iterdir()) == [".gca-uploads"]
+
+
+async def test_symlinked_destination_is_name_taken(tmp_path):
+    app, repos = make_app(tmp_path)
+    uploads = own_uploads_dir(repos)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / ".gca-upload").write_text("")
+    _symlink_or_skip(uploads / "myproj", elsewhere)
+    r = await post(app, PROJECT)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "name_taken"
+    assert sorted(p.name for p in elsewhere.iterdir()) == [".gca-upload"]
+
+
+async def test_job_copies_the_repo_only_while_holding_the_repo_lock(tmp_path, monkeypatch):
+    repos = tmp_path / "repos"
+    (repos / "m").mkdir(parents=True)
+    (repos / "m" / "go.mod").write_text("module m\n")
+    settings = Settings(groq_api_key="k", repos_dir=repos, work_dir=tmp_path / "w", output_dir=tmp_path / "o")
+    held = []
+
+    def fake_create(*a, **k):
+        held.append(repos_mod.repo_lock.locked())
+        raise WorkspaceError("stop here")
+
+    monkeypatch.setattr(engine_setup.Workspace, "create", fake_create)
+    async with repos_mod.repo_lock:
+        task = asyncio.create_task(engine_setup.prepare("j", JobRequest(repo_path="m", target_coverage=80), settings,
+                                                        None, None, asyncio.Event()))
+        await asyncio.sleep(0.05)
+        assert held == []  # waits while an upload swap (or clone) holds the lock
+    with pytest.raises(engine_setup.JobFailed):
+        await task
+    assert held == [True]

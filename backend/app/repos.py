@@ -13,7 +13,8 @@ from pydantic import BaseModel
 from app.config import Settings
 from app.gotools import read_module_info, run
 
-_clone_lock = asyncio.Lock()
+# Held while a folder under repos_dir is created or replaced (sample clone, upload swap) and while a job copies one.
+repo_lock = asyncio.Lock()
 _SKIP = {"vendor", "node_modules", "testdata"}
 _REQUIRE = re.compile(r"^\s*require\b", re.MULTILINE)
 
@@ -49,7 +50,7 @@ class RepoInfo(BaseModel):
     test_files: int
 
 
-def _count(root: Path) -> tuple[int, int]:
+def count_go_files(root: Path) -> tuple[int, int]:
     go = tests = 0
     for p in root.rglob("*.go"):
         if any(part.startswith(".") or part in _SKIP for part in p.relative_to(root).parts[:-1]):
@@ -78,7 +79,7 @@ def list_repos(repos_dir: Path) -> list[RepoInfo]:
             if not (d / "go.mod").is_file():
                 continue
             module, _ = read_module_info(d)
-            go, tests = _count(d)
+            go, tests = count_go_files(d)
         except (ValueError, OSError):
             continue
         found.append(RepoInfo(path=d.relative_to(repos_dir).as_posix(), module=module, go_files=go, test_files=tests))
@@ -87,7 +88,7 @@ def list_repos(repos_dir: Path) -> list[RepoInfo]:
 
 async def clone_sample(settings: Settings, sample_id: str = "stats") -> RepoInfo:
     sample = SAMPLES[sample_id]
-    async with _clone_lock:
+    async with repo_lock:
         return await _clone_sample_locked(settings, sample)
 
 

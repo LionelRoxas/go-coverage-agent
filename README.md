@@ -62,6 +62,7 @@ Step 1 of the setup page, **Choose a repository**, has two tabs.
 - `.git`, `vendor`, `node_modules` and hidden files or folders are skipped, as are files over 1 MB and binary files.
 - At most 3,000 files and 25 MB in total after skipping (`UPLOAD_MAX_FILES`, `UPLOAD_MAX_BYTES`); a larger folder is stopped before anything is sent.
 - An upload only ever replaces a folder that an earlier upload created; any other folder with the same name is left untouched and you are asked for a different name.
+- If the mounted folder already has an `uploads` folder of its own, the app leaves it alone and refuses to upload until it is renamed.
 
 The tab also lists every other Go module (a folder with a `go.mod`, up to two levels deep) in the mounted folder, apart from the samples. For large projects, or to keep a folder in sync while you edit it, mount it instead:
 

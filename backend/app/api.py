@@ -41,7 +41,9 @@ async def health(request: Request) -> dict:
             "llm_configured": s.llm_configured, "tokens_left_today": m.ledger.remaining(),
             "min_daily_tokens_to_start": s.min_daily_tokens_to_start,
             "storage_writable": os.access(s.output_dir, os.W_OK) and os.access(s.repos_dir, os.W_OK),
-            "host_repos_dir": s.host_repos_dir_display or None}
+            "host_repos_dir": s.host_repos_dir_display or None,
+            "upload_limits": {"max_files": s.upload_max_files, "max_bytes": s.upload_max_bytes,
+                              "max_file_bytes": s.upload_max_file_bytes}}
 
 
 @router.get("/repos")

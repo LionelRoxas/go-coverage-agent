@@ -4,15 +4,18 @@
 Every part's filename is the file's path relative to the parent of the chosen folder ("myproj/pkg/a.go").
 Paths are validated before anything is written; files are written into a hidden temp directory that
 replaces the destination in one rename, and only a destination that an earlier upload created
-(it holds MARKER) is ever replaced.
+(it holds MARKER) is ever replaced. The uploads folder itself is used only if this app created it
+(it holds UPLOADS_MARKER).
 """
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import secrets
 import shutil
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,15 +27,24 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 
 from app.config import Settings
 from app.gotools import read_module_info
-from app.repos import RepoInfo, _clone_lock, _count
+from app import repos
+from app.repos import RepoInfo, count_go_files
+
+log = logging.getLogger(__name__)
 
 MARKER = ".gca-upload"
 UPLOADS = "uploads"
+UPLOADS_MARKER = ".gca-uploads"
 SKIP_REASONS = ("git", "vendor", "node_modules", "hidden", "too_large", "binary")
 _SKIP_DIRS = {".git": "git", "vendor": "vendor", "node_modules": "node_modules"}
 _SNIFF = 8192
 _NAME_BAD = re.compile(r"[^a-z0-9._-]+")
-_DRIVE = re.compile(r"^[A-Za-z]:")
+# ':' would let a segment carry a drive ("Z:x") or an NTFS stream ("a.go:x") on a Windows host; the rest are
+# characters Windows can't store. Rejected everywhere so the rules don't depend on the host.
+_BAD_CHARS = frozenset(':<>"|?*')
+_MAX_DEPTH = 64
+_MAX_PATH_BYTES = 1024
+_STALE_TMP_S = 3600  # temp folders left by a crash or kill are removed after an hour
 _PART_OVERHEAD = 1024  # multipart headers per file part, for the raw body limit
 NO_GO_MOD = "No go.mod at the top of the folder you chose. Pick the folder that contains go.mod."
 
@@ -64,9 +76,10 @@ def split_upload_path(raw: str) -> tuple[str, ...]:
     """'top/sub/file' -> ('top', 'sub', 'file'), or UploadError for anything that could escape the folder."""
     path = raw.replace("\\", "/")
     parts = tuple(path.split("/"))
-    unsafe = ("\x00" in path or path.startswith("/") or _DRIVE.match(path) is not None or len(parts) < 2
-              or any(p in ("", ".", "..") or len(p.encode("utf-8", "surrogatepass")) > 255 for p in parts)
-              or any(ord(c) < 32 for c in path))
+    unsafe = (path.startswith("/") or not 2 <= len(parts) <= _MAX_DEPTH
+              or len(path.encode("utf-8", "surrogatepass")) > _MAX_PATH_BYTES
+              or any(ord(c) < 32 or c in _BAD_CHARS for c in path)
+              or any(p in ("", ".", "..") or len(p.encode("utf-8", "surrogatepass")) > 255 for p in parts))
     if unsafe:
         raise UploadError(400, "invalid_path", f"Unsafe or invalid file path {raw!r}; nothing was saved.")
     return parts
@@ -107,6 +120,19 @@ def _plan(paths_and_files: list[tuple[str, BinaryIO]], name: str | None) -> _Pla
     return _Plan(sanitize_name(name if name and name.strip() else tops.pop()), rels)
 
 
+def _create(target: Path, rel: tuple[str, ...]):
+    """Opens a new regular file at target, creating its folders; never opens an existing entry."""
+    shown = "/".join(rel)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return open(target, "xb")
+    except (FileExistsError, NotADirectoryError, IsADirectoryError) as e:
+        raise UploadError(400, "invalid_path", f"{shown!r} clashes with another uploaded path; nothing was saved.") from e
+    except (OSError, RecursionError) as e:
+        log.warning("upload: cannot create %s: %s", shown, e)
+        raise UploadError(400, "invalid_path", f"{shown!r} can't be saved on this system; nothing was saved.") from e
+
+
 def _write(plan: _Plan, tmp: Path, settings: Settings) -> None:
     """Writes the kept files into tmp (which must not exist yet) and counts the skipped ones."""
     tmp.mkdir()
@@ -132,20 +158,17 @@ def _write(plan: _Plan, tmp: Path, settings: Settings) -> None:
         target = tmp.joinpath(*rel)
         if not target.resolve().is_relative_to(root):
             raise UploadError(400, "invalid_path", f"Unsafe file path {'/'.join(rel)!r}; nothing was saved.")
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with open(target, "xb") as out:  # regular files only, never through an existing entry
-                out.write(head)
-                shutil.copyfileobj(fh, out)
-        except (FileExistsError, NotADirectoryError) as e:
-            raise UploadError(400, "invalid_path",
-                              f"{'/'.join(rel)!r} clashes with another uploaded path; nothing was saved.") from e
+        with _create(target, rel) as out:
+            out.write(head)
+            shutil.copyfileobj(fh, out)
     if not (tmp / "go.mod").is_file():  # go.mod itself was skipped (binary or too large)
         raise UploadError(400, "not_a_go_module", NO_GO_MOD)
     try:
         read_module_info(tmp)
-    except (ValueError, OSError, UnicodeDecodeError) as e:
-        raise UploadError(400, "not_a_go_module", f"The go.mod at the top of the folder can't be read: {e}") from e
+    except (ValueError, OSError) as e:  # UnicodeDecodeError is a ValueError
+        log.info("upload: unreadable go.mod: %s", e)
+        raise UploadError(400, "not_a_go_module",
+                          "The go.mod at the top of the folder can't be read or has no module line.") from e
     (tmp / MARKER).write_text("Created by a Go Coverage Agent upload; uploading the folder again replaces it.\n")
 
 
@@ -177,15 +200,48 @@ def _swap(tmp: Path, dest: Path) -> None:
 
 
 def _uploads_dir(settings: Settings) -> Path:
+    """repos/uploads, created with UPLOADS_MARKER on first use; a folder of that name the app didn't create is refused."""
     root = settings.repos_dir.resolve()
     uploads = root / UPLOADS
     try:
-        uploads.mkdir(exist_ok=True)
+        uploads.mkdir()
+        (uploads / UPLOADS_MARKER).write_text("Folder uploads from the Go Coverage Agent UI live here.\n")
+    except FileExistsError:
+        pass
     except OSError as e:
-        raise UploadError(500, "upload_failed", f"Could not create repos/{UPLOADS}: {e}") from e
-    if uploads.is_symlink() or not uploads.resolve().is_relative_to(root):
+        log.error("upload: cannot create %s: %s", uploads, e)
+        raise UploadError(500, "upload_failed", f"Could not create repos/{UPLOADS}; check that the repos folder is writable.") from e
+    if uploads.is_symlink() or not uploads.is_dir() or not uploads.resolve().is_relative_to(root):
         raise UploadError(500, "upload_failed", f"repos/{UPLOADS} must be a plain folder inside the repos folder.")
+    if not (uploads / UPLOADS_MARKER).is_file():
+        raise UploadError(409, "uploads_dir_taken",
+                          f"repos/{UPLOADS} already exists and was not created by this app, so nothing was written to "
+                          "it. Rename that folder to use uploads.")
     return uploads
+
+
+def _remove_stale(uploads: Path) -> None:
+    """Removes .tmp-* folders that a crashed or killed upload left behind."""
+    cutoff = time.time() - _STALE_TMP_S
+    for p in uploads.glob(".tmp-*"):
+        try:
+            if not p.is_symlink() and p.is_dir() and p.stat().st_mtime < cutoff:
+                shutil.rmtree(p, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _prepare_uploads(settings: Settings) -> Path:
+    uploads = _uploads_dir(settings)
+    _remove_stale(uploads)
+    return uploads
+
+
+def _swap_and_describe(tmp: Path, dest: Path, name: str) -> RepoInfo:
+    _swap(tmp, dest)
+    module, _ = read_module_info(dest)
+    go, tests = count_go_files(dest)
+    return RepoInfo(path=f"{UPLOADS}/{name}", module=module, go_files=go, test_files=tests)
 
 
 async def _parse(request: Request, settings: Settings):
@@ -223,21 +279,19 @@ async def receive_upload(request: Request, settings: Settings) -> dict:
             raise UploadError(400, "invalid_upload", "Every 'files' part must be a file.")
         name = form.get("name")
         plan = _plan([(f.filename or "", f.file) for f in files], name if isinstance(name, str) else None)
-        uploads = _uploads_dir(settings)
+        async with repos.repo_lock:
+            uploads = await asyncio.to_thread(_prepare_uploads, settings)
         dest = uploads / plan.name
         if not _replaceable(dest):  # fail before writing; checked again under the lock
             raise _name_taken(plan.name)
         tmp = uploads / f".tmp-{secrets.token_hex(8)}"
         try:
             await asyncio.to_thread(_write, plan, tmp, settings)
-            async with _clone_lock:
-                await asyncio.to_thread(_swap, tmp, dest)
+            async with repos.repo_lock:  # jobs copy repos under the same lock, so they never see a half-swapped folder
+                info = await asyncio.to_thread(_swap_and_describe, tmp, dest, plan.name)
         finally:
             if tmp.exists():
                 await asyncio.to_thread(shutil.rmtree, tmp, ignore_errors=True)
     finally:
         await form.close()
-    module, _ = read_module_info(dest)
-    go, tests = _count(dest)
-    info = RepoInfo(path=f"{UPLOADS}/{plan.name}", module=module, go_files=go, test_files=tests)
     return {**info.model_dump(), "skipped": plan.skipped}
