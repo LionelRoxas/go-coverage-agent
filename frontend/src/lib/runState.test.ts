@@ -303,3 +303,37 @@ describe("waiting on Groq (llm_request)", () => {
     expect(run(normPruned).iterations.flatMap((it) => it.items).every((i) => i.pending === undefined)).toBe(true);
   });
 });
+
+describe("items the run never finished", () => {
+  const planned = () => [
+    ev("job_started", { repo_path: "stats", model: "m", target_coverage: 80, options: {} }),
+    ev("iteration_started", { index: 11, percent: 79.9 }),
+    ev("plan_created", { index: 11, items: [
+      { file: "ttest.go", functions: ["TTest"], uncovered_statements: 9 },
+      { file: "clip.go", functions: ["Clip"], uncovered_statements: 3 },
+      { file: "geometric_distribution.go", functions: ["ProbGeom"], uncovered_statements: 5 },
+    ] }),
+    ev("candidate_generated", { index: 11, file: "ttest.go", test_file: "ttest_test.go", test_plan: [], code: "func TestT" }),
+    ev("candidate_accepted", { index: 11, file: "ttest.go", test_file: "ttest_test.go", tests: ["TestT"], percent: 81.07, gain: 1.2 }),
+  ];
+  const items = (s: ReturnType<typeof run>) => s.iterations[0].items;
+
+  it("marks unstarted items as not needed when the goal was reached (run e2de1ca387cb)", () => {
+    const s = run([...planned(), ev("job_completed", { stop_reason: "target_reached", final_percent: 81.07, message: "Reached" })]);
+    expect(items(s).map((i) => [i.file, i.status, i.notRunReason])).toEqual([
+      ["ttest.go", "accepted", undefined],
+      ["clip.go", "not_run", "goal"],
+      ["geometric_distribution.go", "not_run", "goal"],
+    ]);
+  });
+
+  it("marks unfinished items as stopped when the run is cancelled", () => {
+    const s = run([...planned(), ev("job_cancelled", { stop_reason: "cancelled", final_percent: 81.07, message: "Cancelled" })]);
+    expect(items(s).filter((i) => i.status === "not_run").map((i) => i.notRunReason)).toEqual(["stopped", "stopped"]);
+  });
+
+  it("marks unfinished items as stopped when the job fails", () => {
+    const s = run([...planned(), ev("job_failed", { reason: "llm_fatal", message: "boom" })]);
+    expect(items(s).filter((i) => i.status === "not_run")).toHaveLength(2);
+  });
+});

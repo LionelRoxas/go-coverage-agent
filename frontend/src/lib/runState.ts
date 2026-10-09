@@ -2,7 +2,8 @@
 // Pure reducer: the same code handles live events and replay after a refresh or reconnect.
 import type { CoverageReport, JobEvent, Scenario, Summary } from "./types";
 
-export type ItemStatus = "writing" | "validating" | "fixing" | "accepted" | "rejected";
+// "not_run": the run ended (goal reached, stopped or cancelled) before this planned item finished.
+export type ItemStatus = "writing" | "validating" | "fixing" | "accepted" | "rejected" | "not_run";
 
 // What checking one version of the test code found (validation_result).
 export type Check = { kind: string; output: string; failedTests: string[] };
@@ -31,6 +32,7 @@ export type ItemView = {
   percentBefore?: number;
   percentAfter?: number;
   rejectReason?: string;
+  notRunReason?: "goal" | "stopped";
   writerTokens?: number; // the writer's llm_call arrives just before its candidate_generated
   pending?: PendingRequest;
 };
@@ -75,6 +77,14 @@ function withItem(s: RunState, index: number, file: string, fn: (item: ItemView)
 }
 
 // No request is waiting any more: a rate-limit pause (its own activity line) or the end of the job.
+// Items still writing/validating/fixing when the job ends never finish; mark them so the page stops showing "Writing…".
+function settleUnfinished(s: RunState, reason: "goal" | "stopped"): RunState {
+  const open = (i: ItemView) => i.status !== "accepted" && i.status !== "rejected" && i.status !== "not_run";
+  if (!s.iterations.some((it) => it.items.some(open))) return s;
+  return { ...s, iterations: s.iterations.map((it) => ({
+    ...it, items: it.items.map((i) => (open(i) ? { ...i, status: "not_run" as const, notRunReason: reason, pending: undefined } : i)) })) };
+}
+
 function clearPending(s: RunState): RunState {
   if (!s.iterations.some((it) => it.items.some((i) => i.pending))) return s;
   return { ...s, iterations: s.iterations.map((it) => ({
@@ -200,12 +210,13 @@ export function reduce(state: RunState, ev: RunAction): RunState {
                history: [...s.history, { label: `Iter ${d.index}`, percent: d.end_percent }] };
     case "job_completed":
     case "job_cancelled":
-      return { ...clearPending(s), status: ev.type === "job_completed" ? "completed" : "cancelled", summary: d as Summary,
+      return { ...settleUnfinished(clearPending(s), ev.type === "job_completed" && d.stop_reason === "target_reached" ? "goal" : "stopped"),
+               status: ev.type === "job_completed" ? "completed" : "cancelled", summary: d as Summary,
                percent: d.final_percent, activity: d.message };
     case "job_failed":
       // cancelled before the baseline finished: there is no Summary, so the backend reports it as a failure reason
-      if (d.reason === "cancelled") return { ...clearPending(s), status: "cancelled", activity: "Cancelled." };
-      return { ...clearPending(s), status: "failed", failure: { reason: d.reason, message: d.message, output: d.output },
+      if (d.reason === "cancelled") return { ...settleUnfinished(clearPending(s), "stopped"), status: "cancelled", activity: "Cancelled." };
+      return { ...settleUnfinished(clearPending(s), "stopped"), status: "failed", failure: { reason: d.reason, message: d.message, output: d.output },
                activity: d.message };
     default:
       return s;

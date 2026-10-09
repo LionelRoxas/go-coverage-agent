@@ -18,7 +18,7 @@ function fixTooLarge(step: Step): boolean {
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const finished = (item: ItemView) => item.status === "accepted" || item.status === "rejected";
+const finished = (item: ItemView) => item.status === "accepted" || item.status === "rejected" || item.status === "not_run";
 
 // The step whose check accepted the candidate (1-based).
 function acceptedAt(item: ItemView): number {
@@ -35,6 +35,9 @@ function statusLabel(item: ItemView): string {
     case "rejected":
       return item.steps.length ? `Rejected after attempt ${item.steps.length}`
                                : REJECTION_LABEL[item.rejectReason ?? ""] ?? "Rejected";
+    case "not_run":
+      if (item.steps.length) return "Stopped before it finished";
+      return item.notRunReason === "goal" ? "Not needed: goal reached" : "Not started: the run stopped";
     default:
       return item.steps.length ? "Running…" : "Writing…";
   }
