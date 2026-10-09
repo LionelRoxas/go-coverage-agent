@@ -7,6 +7,7 @@ import {
   DEFAULT_UPLOAD_LIMITS, describeSkips, formatMB, foundFromDrop, foundFromInput, prepare,
   type Found, type PickedFile, type Prepared,
 } from "@/lib/upload";
+import { Button, buttonClass, cx, inputClass } from "./ui";
 
 export type UploadFn = (files: PickedFile[], name: string | undefined, onProgress: (fraction: number) => void) => Promise<UploadResult>;
 
@@ -94,11 +95,12 @@ export function FolderUpload({ onUpload, limits = DEFAULT_UPLOAD_LIMITS }: { onU
   return (
     <div onDragOver={(e) => { e.preventDefault(); if (!busy) setOver(true); }} onDragLeave={onDragLeave} onDrop={onDrop}
          data-testid="folder-drop" data-over={over || undefined}
-         className={`space-y-3 rounded-sm border-2 px-4 py-4 transition-colors ${
+         className={`space-y-3 rounded-md border-2 px-4 py-4 transition-colors ${
            over ? "border-solid border-accent bg-surface" : "border-dashed border-border"}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <label className={`inline-flex cursor-pointer items-center rounded-sm bg-accent px-3 py-1.5 text-sm font-medium text-bg focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent ${
-          busy ? "pointer-events-none opacity-50" : "hover:opacity-90"}`}>
+        {/* The label is the visible button; the file input inside it takes the focus, so the ring follows focus-within. */}
+        <label className={cx(buttonClass({ variant: "primary", unavailable: busy }),
+                             "cursor-pointer focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent")}>
           Choose a folder…
           <input type="file" multiple disabled={busy} className="sr-only" data-testid="folder-input"
                  ref={(el) => {
@@ -141,11 +143,8 @@ export function FolderUpload({ onUpload, limits = DEFAULT_UPLOAD_LIMITS }: { onU
                   onSubmit={(e) => { e.preventDefault(); if (rename.trim()) void send(state.retry!, rename.trim()); }}>
               <label htmlFor="upload-name" className="text-xs text-muted">Upload as</label>
               <input id="upload-name" autoFocus value={rename} onChange={(e) => setRename(e.target.value)} maxLength={MAX_NAME}
-                     className="min-w-0 flex-1 rounded-sm border border-border bg-bg px-2 py-1 font-mono text-sm" />
-              <button type="submit" disabled={!rename.trim()}
-                      className="rounded-sm border border-accent px-2.5 py-1 text-xs text-accent hover:bg-surface disabled:opacity-50">
-                Rename and upload
-              </button>
+                     className={`min-w-0 flex-1 ${inputClass}`} />
+              <Button type="submit" disabled={!rename.trim()}>Rename and upload</Button>
             </form>
           )}
         </div>

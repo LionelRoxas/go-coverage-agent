@@ -1,9 +1,13 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import type { Metadata } from "next";
 import Link from "next/link";
+import { actionLinkClass, buttonClass, cardClass, pageTitleClass, readingHeadingClass } from "@/components/ui";
 import { type SectionId, walkthroughHref } from "../walkthrough/sections";
 
-export const metadata: Metadata = { title: "How it works" };
+export const metadata: Metadata = {
+  title: "How it works",
+  description: "What the Go Coverage Agent does in a run, in plain words, and how far it got on real projects.",
+};
 
 type Step = { title: string; plain: string; more: SectionId };
 
@@ -54,23 +58,23 @@ const RESULTS = [
 const LINES = [72, 54, 88, 40, 64, 80, 30, 58, 76, 46];
 const UNCOVERED = new Set([3, 7]);
 
-const h2 = "text-xl font-semibold tracking-tight";
+const h2 = readingHeadingClass;
 
 function CoverageLines() {
   return (
-    <figure className="rounded-md border border-border bg-surface p-4 sm:p-5">
+    <figure className={cardClass()}>
       <div role="img" aria-label="8 of 10 lines run by a test: 80% coverage" className="space-y-1.5">
         {LINES.map((w, i) => (
           <div key={i} className="flex items-center gap-3">
             <span aria-hidden className="w-4 text-right font-mono text-[11px] tabular-nums text-muted">{i + 1}</span>
             <span aria-hidden style={{ width: `${w}%` }}
-                  className={UNCOVERED.has(i) ? "h-2.5 rounded-sm border border-dashed border-muted/70" : "h-2.5 rounded-sm bg-accent"} />
+                  className={UNCOVERED.has(i) ? "h-2.5 rounded-sm border border-dashed border-border-strong" : "h-2.5 rounded-sm bg-accent"} />
           </div>
         ))}
       </div>
       <figcaption className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
         <span className="flex items-center gap-1.5"><span aria-hidden className="h-2.5 w-4 rounded-sm bg-accent" />run by a test</span>
-        <span className="flex items-center gap-1.5"><span aria-hidden className="h-2.5 w-4 rounded-sm border border-dashed border-muted/70" />not run by any test</span>
+        <span className="flex items-center gap-1.5"><span aria-hidden className="h-2.5 w-4 rounded-sm border border-dashed border-border-strong" />not run by any test</span>
         <span className="font-medium text-text">8 of 10 = 80%</span>
       </figcaption>
     </figure>
@@ -82,7 +86,7 @@ function RepeatBracket({ index }: { index: number }) {
   const shape = index === 1 ? "top-3 bottom-0 rounded-tr-md border-t-2"
     : index === STEPS.length - 1 ? "inset-y-0 rounded-br-md border-b-2" : "inset-y-0";
   return (
-    <span aria-hidden className={`absolute right-0 w-4 border-r-2 border-accent/60 lg:hidden ${shape}`}>
+    <span aria-hidden className={`absolute right-0 w-4 border-r-2 border-accent/60 xl:hidden ${shape}`}>
       {index === 1 && (
         <svg viewBox="0 0 8 12" className="absolute -left-1.5 -top-[7px] h-3 w-2 text-accent" fill="currentColor"><path d="M0 6 8 0v12z" /></svg>
       )}
@@ -97,7 +101,7 @@ export default function HowItWorksPage() {
         <p className="text-base leading-relaxed text-muted sm:text-lg">
           Software teams write small automatic checks, called tests, that prove their code works.
         </p>
-        <h1 className="text-2xl font-semibold leading-snug tracking-tight sm:text-[2rem] sm:leading-tight">
+        <h1 className={pageTitleClass}>
           This tool writes those checks for a project written in Go (a programming language) by itself, keeps only the ones that actually work, and stops when enough of the code is checked.
         </h1>
       </section>
@@ -118,8 +122,8 @@ export default function HowItWorksPage() {
           <h2 id="loop-heading" className={h2}>What happens in a run</h2>
           <p className="leading-relaxed text-muted">Five steps. Steps 2 to 5 form one round, and rounds repeat until it can stop.</p>
         </div>
-        <div className="mx-auto max-w-3xl lg:max-w-none">
-          <div aria-hidden data-testid="loop-phases" className="mb-1 hidden grid-cols-5 items-end gap-3 text-xs lg:grid">
+        <div className="mx-auto max-w-3xl xl:max-w-none">
+          <div aria-hidden data-testid="loop-phases" className="mb-1 hidden grid-cols-5 items-end gap-3 text-xs xl:grid">
             <div className="space-y-1.5 text-muted">
               <p className="text-center">Once at the start</p>
               <div className="mx-4 h-2 rounded-t-sm border-x-2 border-t-2 border-border" />
@@ -135,25 +139,25 @@ export default function HowItWorksPage() {
               </div>
             </div>
           </div>
-          <ol className="lg:grid lg:grid-cols-5 lg:gap-x-3">
+          <ol className="xl:grid xl:grid-cols-5 xl:gap-x-3">
             {STEPS.map((s, i) => {
-              const card = i === 0 ? "lg:border-dashed lg:border-border" : "lg:border-border lg:bg-surface";
+              const card = i === 0 ? "xl:border-dashed xl:border-border" : "xl:border-border xl:bg-surface";
               return (
                 <li key={s.title} data-step={i + 1}
-                    className="relative grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-4 pr-8 lg:row-span-2 lg:grid-cols-1 lg:grid-rows-subgrid lg:pr-0">
-                  <div aria-hidden className="relative row-span-2 flex flex-col items-center lg:hidden">
+                    className="relative grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-4 pr-8 xl:row-span-2 xl:grid-cols-1 xl:grid-rows-subgrid xl:pr-0">
+                  <div aria-hidden className="relative row-span-2 flex flex-col items-center xl:hidden">
                     <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-accent text-sm font-semibold tabular-nums text-accent">{i + 1}</span>
                     {i < STEPS.length - 1 && <span className="w-px flex-1 bg-border" />}
                   </div>
-                  <div className={`min-w-0 space-y-1.5 pt-0.5 lg:rounded-t-md lg:border lg:border-b-0 lg:px-4 lg:pt-4 ${card}`}>
-                    <span aria-hidden className="mb-3 hidden h-7 w-7 items-center justify-center rounded-full border-2 border-accent text-sm font-semibold tabular-nums text-accent lg:flex">{i + 1}</span>
-                    <h3 className="font-semibold lg:text-[0.9375rem] lg:leading-snug">{s.title}</h3>
-                    <p className="leading-relaxed text-muted lg:text-sm">{s.plain}</p>
+                  <div className={`min-w-0 space-y-1.5 pt-0.5 xl:rounded-t-md xl:border xl:border-b-0 xl:px-4 xl:pt-4 ${card}`}>
+                    <span aria-hidden className="mb-3 hidden h-7 w-7 items-center justify-center rounded-full border-2 border-accent text-sm font-semibold tabular-nums text-accent xl:flex">{i + 1}</span>
+                    <h3 className="font-semibold xl:text-[0.9375rem] xl:leading-snug">{s.title}</h3>
+                    <p className="leading-relaxed text-muted xl:text-sm">{s.plain}</p>
                   </div>
                   {/* Row 2 of the card's subgrid, so every Read more link sits at the same height. */}
-                  <div className={`min-w-0 pb-8 pt-2 lg:rounded-b-md lg:border lg:border-t-0 lg:px-4 lg:pb-4 lg:pt-3 ${card}`}>
+                  <div className={`min-w-0 pb-8 pt-2 xl:rounded-b-md xl:border xl:border-t-0 xl:px-4 xl:pb-4 xl:pt-3 ${card}`}>
                     <Link href={walkthroughHref(s.more)}
-                          className="rounded-sm text-sm font-medium text-accent underline-offset-4 hover:underline">
+                          className={`rounded-sm text-sm ${actionLinkClass}`}>
                       Read more<span className="sr-only">: {s.title}</span> <span aria-hidden>→</span>
                     </Link>
                   </div>
@@ -163,7 +167,7 @@ export default function HowItWorksPage() {
             })}
           </ol>
           <p className="sr-only">Step 1 happens once, at the start. After step 5 it starts again from step 2 with the new coverage, until it reaches the goal or a stop rule.</p>
-          <p aria-hidden data-testid="repeat-connector-narrow" className="mt-2 flex items-center justify-end gap-2 text-right text-sm text-muted lg:hidden">
+          <p aria-hidden data-testid="repeat-connector-narrow" className="mt-2 flex items-center justify-end gap-2 text-right text-sm text-muted xl:hidden">
             <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-accent" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 21v-5h5" />
             </svg>
@@ -204,7 +208,7 @@ export default function HowItWorksPage() {
           <h2 id="result-heading" className={h2}>Measured results</h2>
           <p className="leading-relaxed text-muted">Real open-source Go projects with their own tests removed first, so each starts at 0%.</p>
         </div>
-        <ul className="divide-y divide-border rounded-md border border-border bg-surface">
+        <ul className={`divide-y divide-border ${cardClass({ padded: false })}`}>
           {RESULTS.map((r) => (
             <li key={r.id} data-testid={`result-${r.id}`} className="grid gap-x-6 gap-y-2 p-4 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center">
               <div className="min-w-0">
@@ -224,8 +228,8 @@ export default function HowItWorksPage() {
       </section>
 
       <footer className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-border pt-6">
-        <Link href="/" className="inline-block rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent">Start a run →</Link>
-        <Link href="/walkthrough" className="text-sm font-medium text-accent underline-offset-4 hover:underline">Read the full walkthrough →</Link>
+        <Link href="/" className={buttonClass({ variant: "primary" })}>Start a run</Link>
+        <Link href="/walkthrough" className={`text-sm ${actionLinkClass}`}>Read the full walkthrough</Link>
       </footer>
     </div>
   );

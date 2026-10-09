@@ -10,13 +10,16 @@ import { GroqWait } from "@/components/GroqWait";
 import { SummaryCard } from "@/components/SummaryCard";
 import { TestFiles } from "@/components/TestFiles";
 import { Timeline } from "@/components/Timeline";
+import {
+  backLinkClass, Button, buttonClass, Card, codeBlockClass, LoadingStatus, pageTitleClass, SectionHeading, Skeleton, StatusChip, StatusPanel,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { duration, tokens } from "@/lib/format";
 import { waitingOn } from "@/lib/runState";
 import { useJobEvents } from "@/lib/useJobEvents";
 
 function AllRuns() {
-  return <Link href="/" className="inline-block text-sm text-muted hover:text-accent">← All runs</Link>;
+  return <Link href="/" className={backLinkClass}>← All runs</Link>;
 }
 
 function useElapsed(startedAt?: number, running?: boolean) {
@@ -51,94 +54,122 @@ export default function JobPage() {
 
   if (notFound) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-8">
         <AllRuns />
-        <p className="text-sm">
-          This run no longer exists (the backend was restarted). <Link className="text-accent underline-offset-4 hover:underline" href="/">Start a new one</Link>.
-        </p>
+        <StatusPanel title="This run no longer exists"
+                     actions={<Link href="/" className={buttonClass({ variant: "primary" })}>Start a new one</Link>}>
+          <p>The backend was restarted, and runs are kept only while it is running. Its files are still in ./output.</p>
+        </StatusPanel>
       </div>
     );
   }
 
   if (error && state.status === "connecting") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-8">
         <AllRuns />
-        <section role="alert" className="space-y-2 rounded-md border border-danger p-4">
-          <h1 className="font-semibold">Couldn&apos;t load this run</h1>
-          <p className="text-sm">{error}</p>
-          <Link className="text-sm text-accent underline-offset-4 hover:underline" href="/">Back to setup</Link>
-        </section>
+        <StatusPanel tone="danger" role="alert" title={"Couldn’t load this run"}
+                     actions={<Link href="/" className={buttonClass()}>Back to setup</Link>}>
+          <p>{error}</p>
+        </StatusPanel>
       </div>
     );
   }
 
+  // Until the first event arrives nothing about the run is known: placeholders instead of "…" and a 0% meter.
+  if (state.status === "connecting") {
+    return (
+      <div className="space-y-10">
+        <AllRuns />
+        <div data-testid="job-loading" className="space-y-8">
+          <LoadingStatus>Loading this run…</LoadingStatus>
+          <div aria-hidden className="space-y-3">
+            <Skeleton className="h-9 w-48" />
+            <Skeleton className="h-4 w-72 max-w-full" />
+          </div>
+          <div aria-hidden className="space-y-3">
+            <div className="flex items-end justify-between gap-4"><Skeleton className="h-10 w-32" /><Skeleton className="h-4 w-40" /></div>
+            <Skeleton className="h-2 w-full rounded-full" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const job = state.status as "running" | "completed" | "failed" | "cancelled";
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       <AllRuns />
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="break-all font-mono text-lg font-semibold">{state.repoPath ?? "…"}</h1>
-          <p className="text-xs text-muted">
-            {state.model} · {state.status}{running && ` · ${duration(state.summary?.duration_s ?? elapsed)}`} · {tokens(state.tokens)} tokens
-            {connection === "reconnecting" && running && " · reconnecting…"}
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 space-y-2">
+          <h1 className={`break-all font-mono ${pageTitleClass}`}>{state.repoPath}</h1>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+            <StatusChip status={job} />
+            <span>
+              {state.model}{running && ` · ${duration(state.summary?.duration_s ?? elapsed)}`} · {tokens(state.tokens)} tokens
+              {connection === "reconnecting" && running && " · reconnecting…"}
+            </span>
           </p>
         </div>
         {running && (
-          <button type="button" onClick={cancel} disabled={cancelling}
-                  className="rounded-md border border-border px-3 py-1.5 text-sm hover:border-danger hover:text-danger disabled:opacity-60">
+          <Button variant="danger" onClick={cancel} disabled={cancelling}>
             {cancelling ? "Cancelling…" : "Cancel"}
-          </button>
+          </Button>
         )}
       </header>
 
       {cancelError && <p role="alert" className="text-sm text-danger">Couldn&apos;t cancel: {cancelError}</p>}
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
 
-      <CoverageMeter percent={state.percent} target={state.target} baseline={state.baseline?.percent} />
-      <p className="text-sm text-muted" aria-live="polite">
-        {waiting ? <><GroqWait pending={waiting} detailed /> ({waiting.file})</> : state.activity}
-      </p>
-      {state.removedTests.length > 0 && (
-        <p className="text-xs text-muted">Removed {state.removedTests.length} existing test files from the working copy before starting.</p>
-      )}
+      <div className="space-y-3">
+        <CoverageMeter percent={state.percent} target={state.target} baseline={state.baseline?.percent} />
+        {/* While running this says what is happening now; afterwards the summary or failure below says it. */}
+        {running && (
+          <p className="text-sm text-muted" aria-live="polite">
+            {waiting ? <><GroqWait pending={waiting} detailed /> ({waiting.file})</> : state.activity}
+          </p>
+        )}
+        {state.removedTests.length > 0 && (
+          <p className="text-xs text-muted">Removed {state.removedTests.length} existing test files from the working copy before starting.</p>
+        )}
+      </div>
 
       {state.failure && (
-        <section role="alert" className="space-y-2 rounded-md border border-danger p-4">
-          <h2 className="font-semibold">Run failed: {state.failure.message}</h2>
+        <Card as="section" tone="danger" role="alert" className="space-y-2">
+          <SectionHeading>Run failed: {state.failure.message}</SectionHeading>
           <p className="text-sm text-muted">Any accepted tests were saved to ./output/{id}/tests.</p>
-          {state.failure.output && <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-surface p-2 font-mono text-xs">{state.failure.output}</pre>}
-        </section>
+          {state.failure.output && <pre className={`max-h-64 whitespace-pre-wrap break-words ${codeBlockClass()}`}>{state.failure.output}</pre>}
+        </Card>
       )}
 
       {state.summary && (
         <>
           <SummaryCard summary={state.summary} jobId={id} />
           <section className="space-y-3">
-            <h2 className="text-sm font-medium">Coverage by iteration</h2>
+            <SectionHeading>Coverage by iteration</SectionHeading>
             <CoverageChart history={state.history} target={state.target} />
           </section>
           {state.summary.suspected_bugs.length > 0 && (
             <section className="space-y-2">
-              <h2 className="text-sm font-medium">Possible bugs found</h2>
+              <SectionHeading>Possible bugs found</SectionHeading>
               <ul className="list-disc pl-5 text-sm">
                 {state.summary.suspected_bugs.map((b, i) => <li key={i}><span className="font-mono">{b.function}</span>: {b.description}</li>)}
               </ul>
             </section>
           )}
           <section className="space-y-3">
-            <h2 className="text-sm font-medium">Generated tests</h2>
+            <SectionHeading>Generated tests</SectionHeading>
             <TestFiles jobId={id} files={state.summary.test_files} />
           </section>
           <section className="space-y-3">
-            <h2 className="text-sm font-medium">Coverage by file</h2>
+            <SectionHeading>Coverage by file</SectionHeading>
             <FileTable rows={state.summary.per_file} />
           </section>
         </>
       )}
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium">Activity</h2>
+        <SectionHeading>Activity</SectionHeading>
         <Timeline iterations={state.iterations} />
       </section>
     </div>

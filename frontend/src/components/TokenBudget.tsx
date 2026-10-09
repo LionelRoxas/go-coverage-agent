@@ -32,7 +32,7 @@ export function TokenBudget({ left, min = MIN_TOKENS_TO_START, id }: { left: num
         </span>
         <button type="button" aria-label="About the token budget" aria-expanded={open} aria-controls={detailsId}
                 onClick={() => setOpen((o) => !o)}
-                className="-my-0.5 shrink-0 rounded-full p-0.5 text-muted hover:text-text aria-expanded:text-text">
+                className="-my-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted hover:text-text aria-expanded:text-text">
           <svg aria-hidden viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
             <circle cx="8" cy="8" r="6.3" />
             <path d="M8 7.2v4" />

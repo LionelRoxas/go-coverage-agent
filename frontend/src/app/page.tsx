@@ -7,6 +7,7 @@ import { RepoPicker, type PickerTab } from "@/components/RepoPicker";
 import { RunsPanel } from "@/components/RunsPanel";
 import { Step } from "@/components/Step";
 import { MIN_TOKENS_TO_START, TokenBudget, budgetBlocked } from "@/components/TokenBudget";
+import { Button, cardClass, inlineLinkClass, inputClass, ledeClass, pageTitleClass } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import type { Health, JobOptions, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
 import type { PickedFile } from "@/lib/upload";
@@ -38,12 +39,12 @@ const MEASURED = [17.2, 33.9, 44.6, 51.6, 58.9, 64.7, 69.8, 72.0, 76.2, 80.0, 83
 /** One column per round: the filled part is the share of code tested, the dashed part the gap still left. */
 function MeasuredRun() {
   return (
-    <figure className="min-w-0 space-y-3">
+    <figure className="min-w-0 max-w-md space-y-3 lg:max-w-none">
       <div role="img" aria-label={`Coverage after each of ${MEASURED.length} rounds, rising from 17.2% to 100%`}
            className="flex h-12 items-end gap-[3px] sm:h-16 border-b border-border pb-px">
         {MEASURED.map((p, i) => (
           <span key={i} aria-hidden className="flex h-full flex-1 flex-col">
-            <span style={{ height: `${100 - p}%` }} className={p < 100 ? "rounded-t-[2px] border border-b-0 border-dashed border-muted/60" : ""} />
+            <span style={{ height: `${100 - p}%` }} className={p < 100 ? "rounded-t-[2px] border border-b-0 border-dashed border-border-strong" : ""} />
             <span style={{ height: `${p}%` }} className="rounded-t-[2px] bg-accent" />
           </span>
         ))}
@@ -54,8 +55,6 @@ function MeasuredRun() {
     </figure>
   );
 }
-
-const inputCls ="rounded-sm border border-border bg-surface px-2 py-1.5 font-mono text-sm";
 
 export default function SetupPage() {
   const router = useRouter();
@@ -70,6 +69,7 @@ export default function SetupPage() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [tab, setTab] = useState<PickerTab>("samples");
   const [samplesFailed, setSamplesFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   const sampleIds = new Set(samples.map((s) => s.id));
   const folders = repos.filter((r) => !sampleIds.has(r.path));
@@ -85,6 +85,7 @@ export default function SetupPage() {
       setRepos(list);
       setSamples(sampleList);
       setSamplesFailed(s.status === "rejected");
+      setLoaded(true);
       setTab(pickTab(own));
       setRepo((cur) => cur || own[0]?.path || list[0]?.path || "");
       const failed = [h, r].find((x) => x.status === "rejected");
@@ -152,12 +153,12 @@ export default function SetupPage() {
     <div className="space-y-10">
       <header className={`${COLUMNS} items-end border-b border-border pb-8 sm:pb-10`}>
         <div className="min-w-0 max-w-2xl space-y-4">
-          <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight sm:text-[2.25rem]">Fill the gaps in a Go project’s tests</h1>
-          <p className="max-w-[38rem] text-lg leading-relaxed text-muted">
+          <h1 className={pageTitleClass}>Fill the gaps in a Go project’s tests</h1>
+          <p className={`${ledeClass} max-w-[38rem]`}>
             Point it at a Go project and it writes unit tests with AI, keeping only the ones that pass and test code no other test reaches.
           </p>
           <p className="text-sm text-muted">
-            New to this? <Link href="/how-it-works" className="text-accent underline underline-offset-4">How it works</Link> explains each step in plain words.
+            New to this? <Link href="/how-it-works" className={inlineLinkClass}>How it works</Link> explains each step in plain words.
           </p>
         </div>
         <MeasuredRun />
@@ -166,7 +167,7 @@ export default function SetupPage() {
       <div className={COLUMNS}>
         <form onSubmit={start} className="min-w-0 max-w-2xl space-y-8">
           {health && !health.llm_configured && (
-            <div role="alert" className="rounded-sm border border-warn border-l-4 px-4 py-3 text-sm">
+            <div role="alert" className={`${cardClass({ tone: "warn" })} border-l-4 text-sm`}>
               No Groq API key configured. Add <code className="font-mono">GROQ_API_KEY</code> to <code className="font-mono">.env</code> and restart <code className="font-mono">docker compose</code>.
             </div>
           )}
@@ -174,7 +175,7 @@ export default function SetupPage() {
             <Step n={1} title="Choose a repository" done={!!selected}
                   hint="Pick a sample (it downloads the first time), or upload a Go project folder of your own.">
               <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
-                          onDownload={download} onRefresh={reload} onUpload={upload} uploadLimits={health?.upload_limits} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} />
+                          onDownload={download} onRefresh={reload} onUpload={upload} uploadLimits={health?.upload_limits} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} loading={!loaded} />
               <div className="space-y-1.5">
                 <p className="text-sm text-muted">
                   {selected ? (
@@ -194,7 +195,7 @@ export default function SetupPage() {
                   <div className="flex items-center gap-2">
                     <input type="number" min={1} max={100} value={Number.isNaN(target) ? "" : target} aria-label="Target coverage percent"
                            onChange={(e) => setTarget(e.target.value === "" ? NaN : Number(e.target.value))}
-                           className={`w-20 ${inputCls}`} />
+                           className={`w-20 ${inputClass}`} />
                     <span className="text-sm text-muted">%</span>
                   </div>
                 </div>
@@ -209,7 +210,7 @@ export default function SetupPage() {
                   <svg aria-hidden viewBox="0 0 12 12" className="h-3 w-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2l4 4-4 4" /></svg>
                   Show the four limits
                 </summary>
-                <div className="mt-3 grid gap-x-6 gap-y-4 rounded-sm border border-border bg-surface/60 p-4 sm:grid-cols-2">
+                <div className={`mt-3 grid gap-x-6 gap-y-4 sm:grid-cols-2 ${cardClass()}`}>
                   {([
                     ["max_iterations", "Max iterations", 1, 30, 1],
                     ["min_gain", "Stop when an iteration gains less than (pp)", 0, 10, 0.5],
@@ -220,7 +221,7 @@ export default function SetupPage() {
                       <span className="block text-xs leading-snug text-muted">{label}</span>
                       <input type="number" min={min} max={max} step={step} value={opts[key]}
                              onChange={(e) => setOpts({ ...opts, [key]: Number(e.target.value) })}
-                             className={`w-24 ${inputCls}`} />
+                             className={`w-24 ${inputClass}`} />
                     </label>
                   ))}
                 </div>
@@ -233,11 +234,11 @@ export default function SetupPage() {
 
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <button type="submit" disabled={busy || !repo || !targetValid || !health?.llm_configured || running || noBudget}
-                          aria-describedby={noBudget ? "budget-reason" : undefined}
-                          className="shrink-0 rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent disabled:cursor-not-allowed disabled:opacity-40">
+                  <Button type="submit" variant="primary"
+                          disabled={busy || !repo || !targetValid || !health?.llm_configured || running || noBudget}
+                          aria-describedby={noBudget ? "budget-reason" : undefined}>
                     {busy ? "Starting…" : "Start"}
-                  </button>
+                  </Button>
                   {tokensLeft != null && <TokenBudget left={tokensLeft} min={minTokens} id="budget-reason" />}
                 </div>
                 {running && <p className="text-xs text-muted">A run is in progress. Follow it in Run history.</p>}
@@ -248,7 +249,7 @@ export default function SetupPage() {
                 <ul className="space-y-1">
                   <li>You land on the run page, which shows coverage and each step as it happens.</li>
                   <li>When it finishes, the new tests are saved in <code className="font-mono text-text">./output/&lt;run id&gt;/tests</code>.</li>
-                  <li>For a plain explanation of what it does, read <Link href="/how-it-works" className="text-accent underline underline-offset-2">How it works</Link>.</li>
+                  <li>For a plain explanation of what it does, read <Link href="/how-it-works" className={inlineLinkClass}>How it works</Link>.</li>
                 </ul>
               </section>
             </Step>

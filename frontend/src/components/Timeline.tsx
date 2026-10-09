@@ -6,6 +6,7 @@ import {
   ATTEMPT_LABEL, checkLabel, circled, count, delta, FIX_GIVEN, parseTestFailures, pct, REJECTION_LABEL,
 } from "@/lib/format";
 import type { Check, ItemView, IterationView, Step } from "@/lib/runState";
+import { Button, cardClass, codeBlockClass, EmptyState } from "./ui";
 
 const SHOWN_FUNCTIONS = 3;
 // Older logs recorded a fixer prompt that did not fit as llm_error with this message.
@@ -82,7 +83,7 @@ function sourceLine(step: Step): string {
   }
 }
 
-const OUTPUT_PRE = "mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-surface p-2 font-mono text-xs";
+const OUTPUT_PRE = `mt-1 max-h-48 whitespace-pre-wrap break-words ${codeBlockClass()}`;
 
 function TestFailures({ output }: { output: string }) {
   const failures = parseTestFailures(output);
@@ -149,15 +150,14 @@ function StepView({ step, n, item, next }: { step: Step; n: number; item: ItemVi
             : sourceLine(step)}
         </p>
         {step.code != null && (
-          <button type="button" onClick={() => setShowCode((v) => !v)} aria-expanded={showCode} aria-controls={codeId}
-                  className="shrink-0 rounded border border-border px-2 py-0.5 text-xs text-muted hover:border-accent hover:text-accent">
+          <Button size="sm" onClick={() => setShowCode((v) => !v)} aria-expanded={showCode} aria-controls={codeId}>
             {showCode ? "Hide code" : "View code"}
-          </button>
+          </Button>
         )}
       </div>
       {step.source.type === "prune" && <p className="text-xs text-muted">Same code minus the removed tests.</p>}
       {showCode && step.code != null && (
-        <pre id={codeId} className="mt-1 max-h-80 overflow-auto rounded bg-surface p-2 font-mono text-xs">{step.code}</pre>
+        <pre id={codeId} className={`mt-1 max-h-80 ${codeBlockClass()}`}>{step.code}</pre>
       )}
       <div className="mt-1">
         {step.check ? <CheckView step={step} final={item.status === "rejected" && isLast} />
@@ -213,7 +213,7 @@ function Item({ item }: { item: ItemView }) {
   const statusColor = item.status === "accepted" ? "text-accent" : item.status === "rejected" ? "text-danger" : "text-muted";
   const empty = item.testPlan.length === 0 && item.steps.length === 0 && !finished(item);
   return (
-    <details className="rounded-md border border-border px-3 py-2">
+    <details className={`${cardClass({ padded: false })} px-3 py-2`}>
       <summary className="cursor-pointer text-sm">
         <span className="inline-flex w-[calc(100%-1.25rem)] flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 align-top">
           <span className="min-w-0 break-all font-mono">
@@ -247,12 +247,12 @@ function Item({ item }: { item: ItemView }) {
 }
 
 export function Timeline({ iterations }: { iterations: IterationView[] }) {
-  if (iterations.length === 0) return <p className="text-sm text-muted">Nothing yet.</p>;
+  if (iterations.length === 0) return <EmptyState>Nothing yet.</EmptyState>;
   return (
     <ol className="space-y-6">
       {iterations.map((it) => (
         <li key={it.index}>
-          <h3 className="mb-2 text-sm font-medium">
+          <h3 className="mb-2 text-sm font-semibold">
             Iteration {it.index}{" "}
             <span className="font-mono text-muted">{pct(it.startPercent)}{it.endPercent != null && ` → ${pct(it.endPercent)}`}</span>
           </h3>

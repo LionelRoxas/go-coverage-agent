@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SpectroCloudLogo } from "@/components/SpectroCloudLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { Badge, containerClass } from "@/components/ui";
 import { api } from "@/lib/api";
 
 const LINKS = [
@@ -25,7 +26,7 @@ export function NavBar() {
 
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-bg/85 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4 sm:gap-4">
+      <div className={`${containerClass} flex h-14 items-center gap-2 sm:gap-4`}>
         <SpectroCloudLogo className="h-[22px] w-auto shrink-0 sm:h-[26px]" />
         <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
         <Link href="/" aria-label="Go Coverage Agent" className="whitespace-nowrap text-sm font-semibold tracking-tight">
@@ -45,7 +46,8 @@ export function NavBar() {
           })}
         </nav>
         <div className="ml-auto flex items-center gap-3">
-          {model && <span title="Model" className="hidden rounded-sm border border-border bg-surface px-2 py-0.5 font-mono text-xs text-muted sm:inline">{model}</span>}
+          {/* From 1024 px only: at tablet width it would wrap. */}
+          {model && <span title="Model" className="hidden lg:inline-flex"><Badge className="whitespace-nowrap bg-surface font-mono font-normal">{model}</Badge></span>}
           <ThemeToggle />
         </div>
       </div>

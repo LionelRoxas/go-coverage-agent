@@ -1,5 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import type { ReactNode } from "react";
+import { sectionHeadingClass } from "@/components/ui";
 
 type Props = {
   n: number;
@@ -29,7 +30,7 @@ export function Step({ n, title, hint, done = false, optional = false, last = fa
       </div>
       <div className={`min-w-0 flex-1 space-y-3 ${last ? "" : "pb-8"}`}>
         <div className="space-y-1">
-          <h2 className="text-base font-semibold leading-6">{title}</h2>
+          <h2 className={sectionHeadingClass}>{title}</h2>
           <p className="max-w-prose text-sm leading-relaxed text-muted">{hint}</p>
         </div>
         {children}

@@ -36,6 +36,24 @@ describe("RunsPanel", () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it("shows placeholder rows with a status message until the first answer, then the list", async () => {
+    let answer!: (j: JobSnapshot[]) => void;
+    vi.mocked(api.jobs).mockReturnValue(new Promise((r) => { answer = r; }));
+    render(<RunsPanel />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading runs…");
+    expect(screen.getByTestId("runs-loading").querySelectorAll("[data-skeleton]").length).toBeGreaterThan(0);
+    await act(async () => answer([job({ id: "a", summary })]));
+    expect(screen.queryByTestId("runs-loading")).not.toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+  });
+
+  it("drops the placeholders when the list can't be loaded", async () => {
+    vi.mocked(api.jobs).mockRejectedValue(new Error("down"));
+    render(<RunsPanel />);
+    expect(await screen.findByText("Couldn't load runs: down")).toBeInTheDocument();
+    expect(screen.queryByTestId("runs-loading")).not.toBeInTheDocument();
+  });
+
   it("shows the empty state and the retention note", async () => {
     vi.mocked(api.jobs).mockResolvedValue([]);
     render(<RunsPanel />);

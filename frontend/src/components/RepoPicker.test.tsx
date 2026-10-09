@@ -65,6 +65,17 @@ describe("RepoPicker", () => {
     expect(screen.getByRole("button", { name: /o\/semver/ })).toBeDisabled();
   });
 
+  it("shows placeholder sample cards with a status message while loading", () => {
+    render(<Harness loading samples={[]} />);
+    expect(screen.getByText("Loading sample repositories…")).toHaveAttribute("role", "status");
+    expect(screen.getByTestId("samples-loading").querySelectorAll("[data-skeleton]").length).toBeGreaterThan(0);
+  });
+
+  it("has no placeholders once loaded", () => {
+    render(<Harness />);
+    expect(screen.queryByTestId("samples-loading")).not.toBeInTheDocument();
+  });
+
   it("only the active tab references a panel", () => {
     render(<Harness />);
     expect(screen.getByRole("tab", { name: "Sample repos" })).toHaveAttribute("aria-controls", "panel-samples");

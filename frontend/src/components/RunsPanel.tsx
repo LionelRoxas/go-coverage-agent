@@ -2,6 +2,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, buttonClass, cardClass, EmptyState, LoadingStatus, sectionHeadingClass, Skeleton, StatusChip, tileClass } from "@/components/ui";
 import { api } from "@/lib/api";
 import { duration, pct } from "@/lib/format";
 import type { JobSnapshot } from "@/lib/types";
@@ -15,18 +16,6 @@ function ago(seconds: number) {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h} h ago`;
   return `${Math.floor(h / 24)} d ago`;
-}
-
-const CHIP: Record<JobSnapshot["status"], { label: string; cls: string }> = {
-  running: { label: "Running", cls: "border-accent bg-accent text-on-accent" },
-  completed: { label: "Completed", cls: "border-accent text-accent" },
-  cancelled: { label: "Cancelled", cls: "border-border text-muted" },
-  failed: { label: "Failed", cls: "border-danger text-danger" },
-};
-
-function Chip({ status }: { status: JobSnapshot["status"] }) {
-  const c = CHIP[status];
-  return <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium ${c.cls}`}>{c.label}</span>;
 }
 
 function RunningCard({ job, now, onChanged }: { job: JobSnapshot; now: number; onChanged: () => void }) {
@@ -48,10 +37,10 @@ function RunningCard({ job, now, onChanged }: { job: JobSnapshot; now: number; o
   }
 
   return (
-    <li className="space-y-3 rounded-sm border border-border border-l-4 border-l-accent bg-bg p-3">
+    <li className="space-y-3 rounded-md border border-border border-l-4 border-l-accent bg-bg p-3">
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 break-all font-mono text-sm font-medium">{job.request.repo_path}</span>
-        <Chip status="running" />
+        <StatusChip status="running" />
       </div>
       <div className="space-y-1.5">
         <div className="flex items-baseline justify-between gap-2 text-xs text-muted">
@@ -70,11 +59,10 @@ function RunningCard({ job, now, onChanged }: { job: JobSnapshot; now: number; o
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-xs tabular-nums text-muted">{duration(Math.max(0, now - job.created_at))}</span>
         <div className="flex items-center gap-2">
-          <Link href={`/jobs/${job.id}`} className="rounded-sm bg-accent px-3 py-1 text-xs font-medium text-on-accent">Open</Link>
-          <button type="button" onClick={cancel} disabled={cancelling}
-                  className="rounded-sm border border-border px-3 py-1 text-xs hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-60">
+          <Link href={`/jobs/${job.id}`} className={buttonClass({ variant: "primary", size: "sm" })}>Open</Link>
+          <Button variant="danger" size="sm" onClick={cancel} disabled={cancelling}>
             {cancelling ? "Cancelling…" : "Cancel"}
-          </button>
+          </Button>
         </div>
       </div>
       {error && <p role="alert" className="text-xs text-danger">Couldn&apos;t cancel: {error}</p>}
@@ -87,10 +75,10 @@ function PastRow({ job, now }: { job: JobSnapshot; now: number }) {
   const result = s ? `${pct(s.baseline_percent)} → ${pct(s.final_percent)}` : "—";
   return (
     <li>
-      <Link href={`/jobs/${job.id}`} className="block space-y-1 rounded-sm border border-border bg-bg px-3 py-2 hover:border-accent">
+      <Link href={`/jobs/${job.id}`} className={`${tileClass()} block space-y-1`}>
         <span className="flex items-start justify-between gap-2">
           <span className="min-w-0 break-all font-mono text-sm">{job.request.repo_path}</span>
-          <Chip status={job.status} />
+          <StatusChip status={job.status} />
         </span>
         <span className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted">
           <span><span className="font-mono tabular-nums text-text">{result}</span> · target {pct(job.request.target_coverage)}</span>
@@ -158,16 +146,25 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
 
   return (
     <aside aria-labelledby="runs-heading"
-           className="space-y-3 self-start rounded-md border border-border bg-surface p-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6.5rem)] lg:overflow-y-auto">
-      <h2 id="runs-heading" className="flex items-baseline justify-between gap-2 border-b border-border pb-3 text-sm font-semibold">
+           className={`${cardClass()} space-y-3 self-start lg:sticky lg:top-20 lg:max-h-[calc(100vh-6.5rem)] lg:overflow-y-auto`}>
+      <h2 id="runs-heading" className={`flex items-baseline justify-between gap-2 border-b border-border pb-3 ${sectionHeadingClass}`}>
         Run history
         {jobs && <span aria-label={`${jobs.length} runs`} className="font-mono text-xs font-normal tabular-nums text-muted">{jobs.length}</span>}
       </h2>
       {error && <p role="alert" className="text-xs text-danger">Couldn&apos;t load runs: {error}</p>}
+      {jobs === null && !error && (
+        <div data-testid="runs-loading" className="space-y-2">
+          <LoadingStatus>Loading runs…</LoadingStatus>
+          {[0, 1, 2].map((i) => (
+            <div key={i} aria-hidden className="space-y-2 rounded-md border border-border bg-bg px-3 py-2.5">
+              <span className="flex justify-between gap-4"><Skeleton className="h-4 w-28" /><Skeleton className="h-4 w-16 rounded-full" /></span>
+              <span className="flex justify-between gap-4"><Skeleton className="h-3 w-40" /><Skeleton className="h-3 w-12" /></span>
+            </div>
+          ))}
+        </div>
+      )}
       {jobs && jobs.length === 0 && !error && (
-        <p className="rounded-sm border border-dashed border-border px-3 py-4 text-sm text-muted">
-          Pick a repository and press Start — your runs appear here.
-        </p>
+        <EmptyState>Pick a repository and press Start — your runs appear here.</EmptyState>
       )}
       {running.length > 0 && (
         <ul className="space-y-2" aria-label="Running">

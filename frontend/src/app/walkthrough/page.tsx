@@ -2,9 +2,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { actionLinkClass, buttonClass, cardClass, codeBlockClass, inlineLinkClass, ledeClass, pageTitleClass, readingHeadingClass } from "@/components/ui";
 import { type SectionId, SECTIONS } from "./sections";
 
-export const metadata: Metadata = { title: "Walkthrough" };
+export const metadata: Metadata = {
+  title: "Walkthrough",
+  description: "Every step of one Go Coverage Agent run, in the order the code runs it, with the files and events behind it.",
+};
 
 // Every fact on this page was checked against backend/app, tools/gohelper and the measured runs in ./output.
 
@@ -15,7 +19,7 @@ function C({ children }: { children: ReactNode }) {
 function Pre({ children, caption }: { children: string; caption?: string }) {
   return (
     <figure className="min-w-0 space-y-1.5">
-      <pre className="overflow-x-auto rounded-md border border-border bg-surface px-4 py-3 font-mono text-[0.78rem] leading-relaxed">{children}</pre>
+      <pre className={codeBlockClass("md")}>{children}</pre>
       {caption && <figcaption className="text-xs text-muted">{caption}</figcaption>}
     </figure>
   );
@@ -50,7 +54,7 @@ function Section({ id, children }: { id: SectionId; children: ReactNode }) {
     <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-20 space-y-4 border-t border-border pt-10">
       <div className="space-y-1">
         {step >= 0 && <p className="text-sm font-medium text-accent">Each round, part {step + 1} of {ROUND.length}</p>}
-        <h2 id={`${id}-heading`} className="text-2xl font-semibold tracking-tight">{s.title}</h2>
+        <h2 id={`${id}-heading`} className={readingHeadingClass}>{s.title}</h2>
       </div>
       {children}
     </section>
@@ -81,7 +85,7 @@ function Toc() {
   const before = SECTIONS.filter((s) => s.part === "run" && s.id !== "stop");
   const stop = SECTIONS.find((s) => s.id === "stop")!;
   return (
-    <nav aria-label="On this page" className="rounded-md border border-border bg-surface p-4 sm:grid sm:grid-cols-2 sm:gap-6 lg:block lg:border-0 lg:bg-transparent lg:p-0">
+    <nav aria-label="On this page" className={`${cardClass()} sm:grid sm:grid-cols-2 sm:gap-6 lg:block lg:border-0 lg:bg-transparent lg:p-0`}>
       <div className="space-y-2">
         <p className="text-sm font-semibold">The run, in order</p>
         <ol className="ml-1 border-l-2 border-border">
@@ -214,10 +218,10 @@ export default function WalkthroughPage() {
   return (
     <div className="lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-x-14">
       <header className="space-y-4 lg:col-start-2">
-        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight sm:text-[2.25rem]">What happens when you press Start</h1>
-        <p className="max-w-[42rem] text-lg leading-relaxed text-muted">
+        <h1 className={pageTitleClass}>What happens when you press Start</h1>
+        <p className={ledeClass}>
           Every step of one run, in the order the code runs it: what it does, the file that does it, and the events the browser sees.
-          For the two-minute version, see <Link href="/how-it-works" className="text-accent underline underline-offset-4">How it works</Link>.
+          For the two-minute version, see <Link href="/how-it-works" className={inlineLinkClass}>How it works</Link>.
         </p>
       </header>
 
@@ -276,7 +280,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
             <li><strong className="font-semibold">Measure.</strong> <C>go test -count=2 -covermode=set -coverprofile=cover.out -timeout=60s &lt;packages&gt;</C>. If tests were kept and fail, the job stops with <C>existing_tests_fail</C>; a timeout gives <C>baseline_timeout</C>.</li>
             <li><strong className="font-semibold">Vet.</strong> <C>go vet</C> must already pass on the untouched copy. Otherwise every candidate would be rejected for a problem it did not cause, so the job stops with <C>repo_vet_fails</C> before spending any tokens.</li>
           </ol>
-          <p><C>baseline_measured</C> carries the report: total and covered statements, the percentage, and per-file and per-function coverage with the uncovered line ranges. How the profile becomes a percentage is in <a href="#coverage" className="text-accent underline underline-offset-4">How the number is computed</a>.</p>
+          <p><C>baseline_measured</C> carries the report: total and covered statements, the percentage, and per-file and per-function coverage with the uncovered line ranges. How the profile becomes a percentage is in <a href="#coverage" className={inlineLinkClass}>How the number is computed</a>.</p>
           <p>Every command runs with a fixed argument list (no shell), a scrubbed environment and a 120 s timeout; on a timeout or Cancel its whole process group is killed.</p>
           <Where code={["backend/app/engine/setup.py", "backend/app/validator.py", "backend/app/gotools.py", "backend/app/coverage.py"]} events={["baseline_measured", "job_failed"]} />
         </Section>
@@ -466,8 +470,8 @@ go vet . && go test -count=1 -coverprofile=c.out . && go tool cover -func=c.out 
         </Section>
 
         <footer className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-border pt-6">
-          <Link href="/" className="inline-block rounded-sm bg-accent px-5 py-2 text-sm font-medium text-on-accent">Start a run →</Link>
-          <Link href="/how-it-works" className="text-sm font-medium text-accent underline-offset-4 hover:underline">Back to How it works</Link>
+          <Link href="/" className={buttonClass({ variant: "primary" })}>Start a run</Link>
+          <Link href="/how-it-works" className={`text-sm ${actionLinkClass}`}>Back to How it works</Link>
         </footer>
       </div>
     </div>

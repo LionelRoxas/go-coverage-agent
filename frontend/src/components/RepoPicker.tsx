@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { RepoInfo, Sample, UploadLimits } from "@/lib/types";
 import { FolderUpload, type UploadFn } from "./FolderUpload";
+import { Badge, Button, EmptyState, LoadingStatus, Skeleton, tileClass } from "./ui";
 
 export type PickerTab = "samples" | "folders";
 const TABS: { id: PickerTab; label: string }[] = [
@@ -28,12 +29,11 @@ type Props = {
   uploadLimits?: UploadLimits;
   hostDir: string | null;
   samplesFailed?: boolean;
+  /** True until the first samples request settles: the samples tab shows placeholders. */
+  loading?: boolean;
 };
 
-const cardCls = (selected: boolean) =>
-  `relative flex w-full flex-col gap-1.5 rounded-sm border px-3 py-2.5 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-    selected ? "border-accent bg-surface shadow-[inset_3px_0_0_var(--accent)]" : "border-border hover:border-accent hover:bg-surface"
-  }`;
+const cardCls = (selected: boolean) => `${tileClass(selected)} flex flex-col gap-1.5`;
 
 function Spinner() {
   return <span aria-hidden className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-border border-t-accent" />;
@@ -50,9 +50,7 @@ function SampleCard({ sample, selected, busy, anyBusy, error, onPick }: {
           {busy ? (
             <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted"><Spinner />Downloading…</span>
           ) : (
-            <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${sample.downloaded ? "border-accent text-accent" : "border-border text-muted"}`}>
-              {sample.downloaded ? "Ready" : "Download"}
-            </span>
+            <Badge tone={sample.downloaded ? "accent" : "neutral"}>{sample.downloaded ? "Ready" : "Download"}</Badge>
           )}
         </span>
         <span className="text-xs leading-snug text-muted">{sample.description}</span>
@@ -75,16 +73,14 @@ function CopyLine({ text }: { text: string }) {
     }
   }
   return (
-    <div className="flex items-center gap-2 rounded-sm border border-border bg-bg px-2 py-1.5">
+    <div className="flex items-center gap-2 rounded-md border border-border bg-bg py-1 pl-2.5 pr-1">
       <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs">{text}</code>
-      <button type="button" onClick={copy} className="shrink-0 rounded-sm border border-border px-2 py-0.5 text-xs hover:border-accent hover:text-accent">
-        {copied ? "Copied" : "Copy"}
-      </button>
+      <Button size="sm" onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
     </div>
   );
 }
 
-export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange, onDownload, onRefresh, onUpload, uploadLimits, hostDir, samplesFailed }: Props) {
+export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange, onDownload, onRefresh, onUpload, uploadLimits, hostDir, samplesFailed, loading = false }: Props) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
@@ -149,9 +145,19 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
       {tab === "samples" && (
         <div role="tabpanel" id="panel-samples" aria-labelledby="tab-samples" className="space-y-3">
           {samplesFailed && (
-            <p role="status" className="rounded-sm border border-dashed border-border px-3 py-3 text-sm text-muted">
-              Sample list unavailable (rebuild the backend?). Your folders still work.
-            </p>
+            <EmptyState role="status">Sample list unavailable (rebuild the backend?). Your folders still work.</EmptyState>
+          )}
+          {loading && (
+            <div data-testid="samples-loading" className="grid gap-2 sm:grid-cols-2">
+              <LoadingStatus>Loading sample repositories…</LoadingStatus>
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} aria-hidden className="space-y-2 rounded-md border border-border px-3 py-2.5">
+                  <span className="flex justify-between gap-4"><Skeleton className="h-4 w-36" /><Skeleton className="h-4 w-12 rounded-full" /></span>
+                  <Skeleton className="h-3 w-44" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              ))}
+            </div>
           )}
           <ul className="grid gap-2 sm:grid-cols-2">
             {samples.map((s) => (
@@ -169,15 +175,12 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
             <p className="text-xs text-muted">
               {hostDir ? <>Go modules in <code className="break-all font-mono text-text">{hostDir}</code></> : <>Go modules in <code className="font-mono text-text">./repos</code></>}
             </p>
-            <button type="button" onClick={() => void refresh()} disabled={refreshing}
-                    className="shrink-0 rounded-sm border border-border px-2.5 py-1 text-xs hover:border-accent hover:text-accent disabled:opacity-50">
+            <Button size="sm" onClick={() => void refresh()} disabled={refreshing}>
               {refreshing ? "Refreshing…" : "Refresh"}
-            </button>
+            </Button>
           </div>
           {folders.length === 0 ? (
-            <p className="rounded-sm border border-dashed border-border px-3 py-4 text-sm text-muted">
-              No Go modules of your own yet. Upload a project folder above.
-            </p>
+            <EmptyState>No Go modules of your own yet. Upload a project folder above.</EmptyState>
           ) : (
             <ul className="grid gap-2 sm:grid-cols-2">
               {folders.map((r) => (
