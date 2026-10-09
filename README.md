@@ -64,7 +64,7 @@ works on a copy, and the generated tests are written to `./output/<job-id>/tests
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-The loop is plain, testable Python. The LLM only writes and fixes tests.
+The loop is plain, testable Python. The LLM only writes and fixes tests. The same explanation is in the app at `/how-it-works`, and the full walkthrough is linked from there.
 
 1. **Measure.** Copy the repo, delete existing `_test.go` files (default), and measure baseline coverage per package with `go test -coverprofile`.
 2. **Plan.** A deterministic planner ranks files by uncovered statements and picks up to 3 targets per iteration (no planning tokens).
@@ -73,6 +73,8 @@ The loop is plain, testable Python. The LLM only writes and fixes tests.
 5. **Repair.** Failing assertions are pruned test by test; forgotten imports and unqualified identifiers are fixed mechanically; anything else goes to the Fixer LLM (up to 2 attempts). Rejected candidates are rolled back.
 6. **Stop** on target reached, marginal gains (less than `min_gain` points for `patience` iterations), max iterations, no remaining targets, token budget, or cancel. Artifacts are always written.
 
+**The UI.** The setup page has a **Runs** panel: a live card for a running job (with Cancel) and past runs with before to after coverage. The job page has an "← All runs" link. The header has a System / Light / Dark toggle (remembered per browser) and a **How it works** page. The Spectro Cloud logo in the navbar is there because this is a take-home for Spectro Cloud; it is not a Spectro Cloud product.
+
 ## Results on montanaflynn/stats
 
 Developer-plan key, 2026-10-08, defaults (20 iterations max, 3 targets per iteration), target 80%.
@@ -80,23 +82,65 @@ Developer-plan key, 2026-10-08, defaults (20 iterations max, 3 targets per itera
 | Target | Final coverage | Tests added | Duration | Tokens | Stop reason |
 |---|---|---|---|---|---|
 | 80% | 0.0% → 80.51% (1247 statements) | 34 test files; 41 candidates accepted, 4 rejected | 287 s (15 iterations) | 184,926 | `target_reached` |
+| 80% (newest run, after the fixes below) | 0.0% → 80.75% | 30 test files; 34 candidates accepted, 1 rejected | 248 s (12 iterations) | 182,494 | `target_reached` |
 
-45 LLM calls (41 writer, 4 fixer), 7 mechanical repairs, 0 rate-limit waits.
+The 80.51% run (`89eb53b5907e`): 45 LLM calls (41 writer, 4 fixer), 7 mechanical repairs, 0 rate-limit waits.
+
+The newest run (`26598ee5c57b`): 42 LLM calls (35 writer, 7 fixer), 5 mechanical repairs, 0 model errors, 0 rate-limit waits.
 
 Independent check: the generated tests were copied into a fresh clone with all `_test.go` removed; `go vet` was clean, `go test` passed, and
-coverage was **80.5%**.
+coverage was **80.5%**. The same check on run `ca1beb9a1fdb` (80.11%) also passed, with 80.1%.
 
 An earlier run on a free-trial key (8K tokens/min, 200K/day) reached 69.0% in about 28 minutes before hitting the then-default 10-iteration cap,
 mostly waiting on rate limits.
+
+## Issues I found in testing and fixed
+
+I ran the system end to end, spotted these problems, and decided the fixes. Claude Code implemented them under review.
+
+| Symptom | Root cause | Fix | Evidence |
+|---|---|---|---|
+| Malformed-JSON errors from Groq (400 `json_validate_failed`) | The output cap (7K minus the prompt) left too little room after hidden reasoning tokens | Removed the artificial cap; `max_completion_tokens` is the model maximum (65536), clamped to the key's per-minute token limit, with one retry on a size rejection | No JSON errors in later runs (see the next rows) |
+| A run took about 28 minutes and stopped at 69% | The key was a free-trial key (8K tokens/min, 200K tokens/day), so the agent was pacing to the limits | Switched to a Developer-plan key; documented free-tier settings (`DAILY_TOKEN_BUDGET=190000`) in `.env.example` | Run `a46c5a902f70`: 1678 s, 68.97%, 46 rate-limit events. Run `89eb53b5907e`: 287 s, 80.51% |
+| "max completion tokens" / JSON errors, and `norm.go` stuck at 32.7% | Plan items with 12 to 37 functions asked the model for answers too large to finish | The planner caps a plan item at 8 functions / 100 statements; an over-size answer splits the item in half and retries | Run `ca1beb9a1fdb` to `26598ee5c57b`: 4 model errors to 0, `norm.go` 32.74% to 90.27%, 80.75% overall |
+| I worried that failing tests were counted toward coverage | Not a bug. A candidate is accepted only if `go test -count=2` passes and coverage is a strict superset; rejected candidates are rolled back | Verified, no change | Final tests of run `ca1beb9a1fdb` re-run in a fresh clone: all pass, 80.1% |
+| `make test` failed in PowerShell | The Makefile used `cat` and `VAR=x cmd`, which `cmd.exe` lacks | Shell-independent Makefile (`$(file <.go-version)`, exported `MSYS_NO_PATHCONV`) with a fallback for macOS make 3.81 | `make test` passes in PowerShell, Git Bash and CI |
+| No way to switch light/dark, no way back to the start page, the running job was only a one-line banner, the navbar looked unfinished, and the app did not explain the loop | UI gaps | System / Light / Dark toggle in the header (remembered per browser), "← All runs" on the job page, a Runs panel on the setup page (live running card with Cancel, past runs with before to after coverage), a redesigned navbar and a How it works page | Screenshots below |
 
 ## Screenshots
 
 <table>
 <tr>
 <td valign="top">
-<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup form with stats selected, 80 percent target and notices"></a>
-<br><b>Setup page</b><br>The repository (<code>stats</code>) is selected, the target is 80%, and the notices state that existing tests are removed from a working copy, source is sent to Groq, and how many tokens remain today.
+<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with the new navbar, theme toggle and Runs panel"></a>
+<br><b>Setup page and Runs panel</b><br>The redesigned navbar (Spectro Cloud logo, Runs, How it works, model name, System/Light/Dark toggle), the stats repository selected at an 80% target, and the Runs panel listing a completed run, 0.0% to 80.8%.
 </td>
+<td valign="top">
+<a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="Setup page and Runs panel in the dark theme"></a>
+<br><b>Dark theme</b><br>The same page with the toggle set to Dark.
+</td>
+</tr>
+<tr>
+<td valign="top">
+<a href="docs/screenshots/gallery-job-nav.png"><img src="docs/screenshots/gallery-job-nav.png" width="100%" alt="Job page top with the All runs link"></a>
+<br><b>Job page</b><br>The "← All runs" link above the run header, the 80.8% coverage meter with the 80% target marker, and the Target reached card.
+</td>
+<td valign="top">
+<a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="Setup page on a phone-width screen"></a>
+<br><b>Setup page on mobile</b><br>The setup page and navbar at phone width.
+</td>
+</tr>
+<tr>
+<td valign="top">
+<a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page with the five-step loop"></a>
+<br><b>How it works page</b><br>The five-step loop, how the percentage is calculated, when a run stops, and the measured result for the newest run (0% to 80.75%, 12 iterations, 0 model errors).
+</td>
+<td valign="top">
+<a href="docs/screenshots/gallery-howitworks-mobile.png"><img src="docs/screenshots/gallery-howitworks-mobile.png" width="100%" alt="How it works page on a phone-width screen"></a>
+<br><b>How it works on mobile</b><br>The same page at phone width, with the steps stacked.
+</td>
+</tr>
+<tr>
 <td valign="top">
 <a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Header, coverage meter and summary card for the 80.5 percent run"></a>
 <br><b>Run summary</b><br>Header, coverage meter with the 80% target marker, and the summary card: stop reason, coverage 0.0% to 80.5%, 135 tests added in 34 test files, 4m 47s, 184.9k tokens.
@@ -133,6 +177,8 @@ mostly waiting on rate limits.
 </td>
 </tr>
 </table>
+
+The summary, chart, timeline and cancelled-run shots were taken before the navbar redesign.
 
 Full-page captures: [setup (light)](docs/screenshots/setup-light.png), [setup (dark)](docs/screenshots/setup-dark.png), [setup (mobile)](docs/screenshots/setup-mobile.png), [results (light)](docs/screenshots/results-light.png), [results (dark)](docs/screenshots/results-dark.png), [results (mobile)](docs/screenshots/results-mobile.png), [live run](docs/screenshots/live-run.png).
 
@@ -224,6 +270,10 @@ I used Claude Code as a pair programmer and implementation team. I set the direc
 - **Uncapped model output.** When Groq returned malformed JSON, I identified the output cap as the likely cause and had it removed.
 - **The right API key.** I found that my first key was a free trial (8K tokens/min, 200K tokens/day), checked Groq's documentation, and switched to a Developer-plan key. That took the full run from a 28-minute partial result (69%) to 80.5% in under five minutes.
 - **Token efficiency.** I chose to cut tokens per iteration, rather than adding a "continue a previous run" feature or relying on higher rate limits, so the tool stays usable on rate-limited keys. The data-driven changes that followed (a no-LLM repair step, larger targets per call) cut tokens per covered point by about 13%.
+- **Cutting plan item size.** I saw `norm.go` stuck at 32.7% with model errors, traced it to plan items asking for answers too large to finish, and decided to cap items at 8 functions / 100 statements and split over-size answers.
+- **Proof that failing tests are not counted.** I asked for evidence, not an assurance. The final tests were re-run in a fresh clone and passed with 80.1%.
+- **Fixing `make` for PowerShell.** `make test` failed on my machine, so I had the Makefile made shell-independent.
+- **The UI gaps.** I found no theme switch, no way back to the start page, a one-line running banner, an unfinished navbar and no in-app explanation, and decided on the toggle, Runs panel, "← All runs", navbar and How it works page.
 - **Publishing and disclosure.** The wording of the per-file disclosure line and the pull-request workflow.
 
 ### What Claude did
