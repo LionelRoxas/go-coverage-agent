@@ -53,3 +53,19 @@ def test_default_cap_packs_up_to_100_statements():
     r = report(fc("a.go", "A1", 60), fc("a.go", "A2", 30), fc("a.go", "A3", 20))
     item = plan(r, {}, set())[0]
     assert [k.name for k in item.functions] == ["A1", "A2"] and item.uncovered_statements == 90
+
+
+def test_item_never_exceeds_max_functions_and_rest_is_planned_later():
+    fns = [fc("data.go", f"F{i:02d}", 1) for i in range(36)]
+    r = report(*fns)
+    items = plan(r, {}, set())
+    assert len(items) == 1 and len(items[0].functions) == 8
+    assert [k.name for k in items[0].functions] == [f"F{i:02d}" for i in range(8)]  # deterministic order
+    done = set(items[0].functions)
+    later = plan(r, {}, done)
+    assert len(later[0].functions) == 8 and not done & set(later[0].functions)
+
+
+def test_max_functions_is_configurable():
+    r = report(*[fc("a.go", f"F{i}", 1) for i in range(5)])
+    assert len(plan(r, {}, set(), max_functions=2)[0].functions) == 2

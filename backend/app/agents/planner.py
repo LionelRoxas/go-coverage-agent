@@ -8,8 +8,8 @@ from app.models import CoverageReport, FuncKey, PlanItem
 
 
 def plan(report: CoverageReport, failed: Mapping[FuncKey, int], skipped: set[FuncKey], *,
-         max_items: int = 3, max_statements: int = 100, max_failures: int = 2) -> list[PlanItem]:
-    """Pack each file's biggest uncovered functions up to `max_statements`, then take the `max_items` fullest files.
+         max_items: int = 3, max_statements: int = 100, max_functions: int = 8, max_failures: int = 2) -> list[PlanItem]:
+    """Pack each file's biggest uncovered functions up to `max_statements` and `max_functions`, then take the `max_items` fullest files.
 
     Ranking files by what one prompt can cover (not by their single biggest function) spends the fixed
     per-call tokens where they buy the most statements (measured in run 1: ~1.9K tokens per percentage
@@ -23,8 +23,9 @@ def plan(report: CoverageReport, failed: Mapping[FuncKey, int], skipped: set[Fun
         item = items.get(fc.key.file)
         if item is None:
             item = items[fc.key.file] = PlanItem(file=fc.key.file, functions=[], uncovered_statements=0)
-        if item.functions and item.uncovered_statements + fc.uncovered > max_statements:
-            continue
+        if item.functions and (len(item.functions) >= max_functions
+                               or item.uncovered_statements + fc.uncovered > max_statements):
+            continue  # one prompt must stay small enough for the model to answer in full
         item.functions.append(fc.key)
         item.uncovered_statements += fc.uncovered
     ranked = sorted(items.values(), key=lambda i: (-i.uncovered_statements, i.file))

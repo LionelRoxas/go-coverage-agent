@@ -36,7 +36,7 @@ If `.env` is missing or has no key, the stack still starts and the UI shows a "N
 
 - On a Groq **Developer plan** (observed limit: 250K tokens/min) a run on `stats` to 80% took about **5 minutes**
   (287 s, 184,926 tokens) with no rate-limit waits.
-- On a **free-trial key** (8K tokens/min, 200K tokens/day), set `DAILY_TOKEN_BUDGET=190000` in `.env`. Expect long waits
+- On a **free-trial key** (8K tokens/min, 200K tokens/day), set `DAILY_TOKEN_BUDGET=190000` in `.env`. The client reads the key's tokens-per-minute limit from Groq's response headers and automatically lowers `max_completion_tokens` to fit (a rejected request is retried once with the clamped value); Developer keys keep 65536. To force a smaller value, set `GROQ_MAX_COMPLETION_TOKENS` (e.g. `4000`). Expect long waits
   (the UI shows "waiting for rate limit"; that's normal) and possibly stopping short of 80%. An earlier run on such a key reached
   69.0% in about 28 minutes, mostly waiting on rate limits, before the then-default 10-iteration cap. Plan on one full run per key per day.
 - Accepted tests are always saved, even if a run stops early.
@@ -159,7 +159,7 @@ Environment variables (`.env`, see `.env.example`):
 | `GROQ_API_KEY` | (empty) | Required to start a job |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | Fallback: `openai/gpt-oss-20b` |
 | `GROQ_REASONING_EFFORT` | `low` | `low`, `medium` or `high` |
-| `GROQ_MAX_COMPLETION_TOKENS` | unset | Optional cap on output tokens (unset = model maximum) |
+| `GROQ_MAX_COMPLETION_TOKENS` | `65536` | Output-token limit sent with every call; 65536 is the model maximum (empty omits it, and Groq then applies a smaller default) |
 | `CALL_TOKEN_RESERVATION` | 8000 | Tokens reserved per call for rate pacing; lower means more calls/min |
 | `DAILY_TOKEN_BUDGET` | 2,000,000 | Set `190000` on free-trial keys |
 | `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only); rebuild after changing |

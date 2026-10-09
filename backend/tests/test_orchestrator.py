@@ -5,7 +5,7 @@ import pytest
 
 from app.agents.context import ContextTooLarge
 from app.engine.orchestrator import Orchestrator, RunDeps
-from app.llm.client import LLMBudgetExhausted, LLMError, LLMFatal
+from app.llm.client import LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge
 from app.models import (CoverageReport, FileCoverage, FuncCoverage, FuncKey, JobOptions, JobRequest, StopReason,
                         TokenUsage)
 from app.validator import ValidationKind, ValidationResult
@@ -276,3 +276,30 @@ async def test_mechanical_repair_cap_then_fixer(ws):
     summary = await orch.run(report(set()))
     assert sum(1 for t, _ in events if t == "mechanical_repair") == MAX_MECHANICAL_REPAIRS
     assert agents.fix_kinds == [ValidationKind.COMPILE_ERROR] and summary.tests_added == ["TestA"]
+
+
+async def test_output_too_large_retries_with_first_half(ws):
+    funcs = tuple(("a.go", n) for n in ("A", "A2", "A3", "A4"))
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=funcs)])
+    agents = FakeAgents([LLMOutputTooLarge("truncated"), GOOD])
+    orch, _ = run(ws, v, agents, target=25, targets_per_iteration=1, max_iterations=1)
+    await orch.run(report(set(), funcs=funcs))
+    assert [len(i.functions) for i in agents.write_items] == [4, 2]
+    assert [k.name for k in agents.write_items[1].functions] == ["A", "A2"]
+
+
+async def test_output_too_large_on_single_function_is_skipped_too_large(ws):
+    agents = FakeAgents([LLMOutputTooLarge("truncated")])
+    orch, events = run(ws, FakeValidator(ws, []), agents, targets_per_iteration=1, max_iterations=1)
+    await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "too_large"}) in events
+    assert FuncKey(file="a.go", name="A") in orch.skipped
+
+
+async def test_fixer_output_too_large_stays_llm_error(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
+    agents = FakeAgents([GOOD], fixes=[LLMOutputTooLarge("truncated")])
+    orch, events = run(ws, FakeValidator(ws, [bad]), agents, max_fix_attempts=1, targets_per_iteration=1,
+                       max_iterations=1)
+    await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "llm_error"}) in events

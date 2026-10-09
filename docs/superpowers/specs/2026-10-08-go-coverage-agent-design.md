@@ -148,7 +148,7 @@ Each unit has one purpose and a narrow interface, and it can be tested on its ow
 Pydantic `BaseSettings` from env:
 
 - `GROQ_API_KEY` (required to start jobs), `GROQ_MODEL`, `GROQ_REASONING_EFFORT` (default `low`)
-- `GROQ_MAX_COMPLETION_TOKENS` (default unset: no output cap is sent, so the model maximum applies), `CALL_TOKEN_RESERVATION` (default 8,000: tokens reserved per call for daily-ledger checks and TPM pacing, never sent to Groq), `DAILY_TOKEN_BUDGET` (default 2,000,000 for a paid plan; free-tier keys should set `DAILY_TOKEN_BUDGET=190000`)
+- `GROQ_MAX_COMPLETION_TOKENS` (default 65536, sent as `max_completion_tokens`; set it empty to send no cap), `CALL_TOKEN_RESERVATION` (default 8,000: tokens reserved per call for daily-ledger checks and TPM pacing, never sent to Groq), `DAILY_TOKEN_BUDGET` (default 2,000,000 for a paid plan; free-tier keys should set `DAILY_TOKEN_BUDGET=190000`)
 - `REPOS_DIR=/repos`, `OUTPUT_DIR=/output`, `WORK_DIR=/work`
 - loop defaults (§7.4), command timeouts, `CORS_ORIGINS=["http://localhost:3000"]` (JSON list; set by docker-compose from `FRONTEND_PORT`, and the compose value overrides `.env`)
 
@@ -214,7 +214,7 @@ Formatting needs no separate step: `gohelper merge` writes `go/format` output, a
 
 ### 5.7 `llm`: Groq client wrapper
 
-- `complete(role, system, user, schema) -> (parsed, Usage)` with `response_format = json_schema, strict: true`, `reasoning_effort` from config, and no `max_completion_tokens` by default (it is sent only when `GROQ_MAX_COMPLETION_TOKENS` is set, so hidden reasoning tokens cannot truncate the answer). The prompt estimate is chars/3.5, conservative. If the prompt alone exceeds ~4,500 tokens, the context builder must have trimmed it already (§6.1); the client asserts this.
+- `complete(role, system, user, schema) -> (parsed, Usage)` with `response_format = json_schema, strict: true`, `reasoning_effort` from config, and an explicit `max_completion_tokens` (`GROQ_MAX_COMPLETION_TOKENS`, default 65536, the model maximum; omitting the field does not mean unlimited, because Groq then applies a smaller undocumented default that truncated long answers). A truncated answer (after the one lower-effort retry) or a persistent `json_validate_failed` raises `LLMOutputTooLarge`, which the orchestrator handles by retrying with the first half of the item's functions (§6.7). The prompt estimate is chars/3.5, conservative. If the prompt alone exceeds ~4,500 tokens, the context builder must have trimmed it already (§6.1); the client asserts this. The completion allowance is fitted to the key's tokens-per-minute limit (`x-ratelimit-limit-tokens`): `min(configured, limit - prompt - 256)`, floor 1024, and a request-size rejection (413 / "Request too large") is retried once with the clamped value before failing with guidance to lower `GROQ_MAX_COMPLETION_TOKENS`.
 - **Schema normalizer** `to_strict_schema(model) -> dict`: converts Pydantic JSON Schema to Groq strict rules. All properties go into `required`, `additionalProperties: false` on every object, Optional → `["T","null"]`, and unsupported keywords (`default`, `title`, `maxItems`, `minLength`) are stripped. Limits are enforced **after** parsing. It's unit tested.
 - **Failure handling:**
   - `finish_reason == "length"` (truncated, often from reasoning tokens) → if the effort was above `low`, retry once at `low`. Otherwise fail the item, since an identical retry would just re-spend the tokens.
@@ -256,7 +256,7 @@ For one target file, it builds a prompt context in priority order. Items are tri
 The planner is a pure function, no LLM. This is a deliberate trade-off to save the scarce token budget (§6.7). Every turn it does the following:
 
 1. It ranks functions by uncovered statements, descending, skipping keys in `failed_targets` (two failed attempts) or `skipped_too_large`.
-2. It groups the top functions by **source file**, so one Writer call covers one source file. It packs functions from that file up to a statement cap (default 100 uncovered statements per call; first function always included).
+2. It groups the top functions by **source file**, so one Writer call covers one source file. It packs functions from that file up to a statement cap (default 100 uncovered statements per call; first function always included) and a function cap (default 8 functions per call), so a file of many tiny functions cannot become one oversized request; the rest are planned in later iterations.
 3. It ranks the files by packed total and returns the top `targets_per_iteration` (default 3) `PlanItem{file, functions: [FuncKey], uncovered_statements}`.
 
 "What to test" judgment (edge cases, error paths, scenarios) comes from the Writer's `test_plan` field. The UI shows it as the agent's plan for each target. The interface (`Planner` protocol) allows an LLM planner to be added later without touching the loop.
@@ -307,7 +307,8 @@ Each has its own context and contract, so prompts stay small, failures are attri
 
 **Documented limits for `gpt-oss-120b`** (Groq rate-limits page, verified 2026-10-08): **8K tokens/min, 200K tokens/day, 30 requests/min, 1K requests/day.** Free-tier numbers weren't published separately. The account's limits page is authoritative.
 
-- **Per call:** no output cap by default (configurable via `GROQ_MAX_COMPLETION_TOKENS`); the prompt stays ≤4.5K. An 8K reservation (`CALL_TOKEN_RESERVATION`) is used for TPM pacing and the daily-ledger check. Defaults assume a paid plan: 1M tokens per job and 2M per day; free-tier keys should set `DAILY_TOKEN_BUDGET=190000` (the README repeats this). `reasoning_effort=low` by default. On the free tier the effective cadence is about 1 call per minute.
+- **Oversized answers:** if the Writer's answer is truncated or Groq cannot finish the JSON (`LLMOutputTooLarge`), the orchestrator retries with the first half of the item's functions, and a single function that still fails is skipped as `too_large`.
+- **Per call:** output capped at `GROQ_MAX_COMPLETION_TOKENS` (default 65,536); the prompt stays ≤4.5K. An 8K reservation (`CALL_TOKEN_RESERVATION`) is used for TPM pacing and the daily-ledger check. Defaults assume a paid plan: 1M tokens per job and 2M per day; free-tier keys should set `DAILY_TOKEN_BUDGET=190000` (the README repeats this). `reasoning_effort=low` by default. On the free tier the effective cadence is about 1 call per minute.
 - **For `stats`** (about 60 small source files, no tests after deletion): 80% probably needs 20–35 Writer calls plus fixes. That's roughly 30–45 minutes and 120–190K tokens, close to the daily cap. Most `stats` functions are short, so per-call tokens will likely be lower than the cap. **Day 1 of the plan measures real per-call usage and updates these numbers.**
 - **Built-in mitigations:**
   - Compact context.

@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from app.config import Settings
-from app.llm.client import GroqLLM, LLMBudgetExhausted, LLMError, LLMFatal
+from app.llm.client import GroqLLM, LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge
 from app.llm.limits import RateLimiter, UsageLedger
 
 
@@ -80,7 +80,7 @@ async def test_success_parses_and_counts_usage(tmp_path):
     kw = fake.calls[0]
     assert kw["response_format"]["json_schema"]["strict"] is True
     assert kw["reasoning_effort"] == "low"
-    assert "max_completion_tokens" not in kw
+    assert kw["max_completion_tokens"] == 65536
     assert llm.ledger.used_today() == 150
 
 
@@ -114,9 +114,24 @@ async def test_long_429_means_daily_cap(tmp_path):
 
 async def test_truncation_at_low_effort_fails_without_retry(tmp_path):
     llm, fake, _ = make(tmp_path, [Raw(Completion("{", "length"))])
-    with pytest.raises(LLMError, match="truncated"):
+    with pytest.raises(LLMOutputTooLarge, match="truncated"):
         await call(llm)
     assert len(fake.calls) == 1
+
+
+async def test_unset_completion_cap_is_omitted(tmp_path):
+    llm, fake, _ = make(tmp_path, [Raw(Completion('{"answer": "hi"}', "stop"))],
+                        settings=Settings(groq_api_key="k", groq_max_completion_tokens=None))
+    await call(llm)
+    assert "max_completion_tokens" not in fake.calls[0]
+
+
+async def test_second_truncation_after_effort_retry_is_output_too_large(tmp_path):
+    fake = FakeGroq([Raw(Completion("{", "length")), Raw(Completion("{", "length"))])
+    llm = GroqLLM(Settings(groq_api_key="k", groq_reasoning_effort="medium"),
+                  UsageLedger(tmp_path / "u.json", 190_000), RateLimiter(), client=fake, sleep=_no_sleep)
+    with pytest.raises(LLMOutputTooLarge):
+        await call(llm)
 
 
 async def test_schema_mismatch_is_llm_error(tmp_path):
@@ -228,7 +243,7 @@ async def test_json_validate_failed_is_retried_once(tmp_path):
 
 async def test_second_json_validate_failed_raises(tmp_path):
     llm, fake, _ = make(tmp_path, [_json_failed(), _json_failed()])
-    with pytest.raises(LLMError, match="400"):
+    with pytest.raises(LLMOutputTooLarge, match="400"):
         await call(llm)
     assert len(fake.calls) == 2
 
@@ -238,3 +253,69 @@ async def test_other_400_fails_immediately(tmp_path):
     with pytest.raises(LLMError, match="400"):
         await call(llm)
     assert len(fake.calls) == 1
+
+
+def _prompt_tokens():
+    from app.llm.client import estimate_tokens
+    return estimate_tokens("sys") + estimate_tokens("usr")
+
+
+async def test_cap_is_clamped_to_known_tpm_limit(tmp_path):
+    hdr = {"x-ratelimit-limit-tokens": "8000", "x-ratelimit-remaining-tokens": "8000"}
+    ok = '{"answer": "hi"}'
+    llm, fake, _ = make(tmp_path, [Raw(Completion(ok, "stop"), hdr), Raw(Completion(ok, "stop"), hdr)])
+    await call(llm)
+    assert fake.calls[0]["max_completion_tokens"] == 65536  # limit not known yet
+    await call(llm)
+    assert fake.calls[1]["max_completion_tokens"] == max(1024, 8000 - _prompt_tokens() - 256)
+    assert fake.calls[1]["max_completion_tokens"] < 65536
+
+
+async def test_cap_keeps_maximum_on_large_tpm_limit(tmp_path):
+    hdr = {"x-ratelimit-limit-tokens": "250000", "x-ratelimit-remaining-tokens": "250000"}
+    ok = '{"answer": "hi"}'
+    llm, fake, _ = make(tmp_path, [Raw(Completion(ok, "stop"), hdr), Raw(Completion(ok, "stop"), hdr)])
+    await call(llm)
+    await call(llm)
+    assert fake.calls[1]["max_completion_tokens"] == 65536
+
+
+async def test_cap_floor_is_1024_when_limit_is_tiny(tmp_path):
+    llm, fake, _ = make(tmp_path, [Raw(Completion('{"answer": "hi"}', "stop"))])
+    llm.limiter.update({"x-ratelimit-limit-tokens": "500", "x-ratelimit-remaining-tokens": "500"})
+    await call(llm)
+    assert fake.calls[0]["max_completion_tokens"] == 1024
+
+
+def _too_large(status=413, headers=None):
+    return http_error(groq.APIStatusError, status, headers if headers is not None else {"x-ratelimit-limit-tokens": "8000"},
+                      message="Request too large for model on tokens per minute (TPM): Limit 8000, Requested 70000")
+
+
+async def test_413_retries_once_with_clamped_cap(tmp_path):
+    llm, fake, _ = make(tmp_path, [_too_large(), Raw(Completion('{"answer": "ok"}', "stop"))])
+    out, _ = await call(llm)
+    assert out.answer == "ok" and len(fake.calls) == 2
+    assert fake.calls[0]["max_completion_tokens"] == 65536
+    assert fake.calls[1]["max_completion_tokens"] == max(1024, 8000 - _prompt_tokens() - 256)
+
+
+async def test_413_clamps_from_message_when_header_missing(tmp_path):
+    llm, fake, _ = make(tmp_path, [_too_large(headers={}), Raw(Completion('{"answer": "ok"}', "stop"))])
+    await call(llm)
+    assert fake.calls[1]["max_completion_tokens"] == max(1024, 8000 - _prompt_tokens() - 256)
+
+
+async def test_second_413_gives_guidance_and_does_not_loop(tmp_path):
+    llm, fake, _ = make(tmp_path, [_too_large(), _too_large()])
+    with pytest.raises(LLMError, match="GROQ_MAX_COMPLETION_TOKENS lower"):
+        await call(llm)
+    assert len(fake.calls) == 2
+
+
+async def test_unrelated_429_is_still_a_rate_limit_wait(tmp_path):
+    err = http_error(groq.RateLimitError, 429, {"retry-after": "5"},
+                     message="Rate limit reached: Limit 8000, Used 7900, Requested 500")
+    llm, fake, slept = make(tmp_path, [err, Raw(Completion('{"answer": "ok"}', "stop"))])
+    await call(llm)
+    assert slept == [5.0] and fake.calls[0]["max_completion_tokens"] == fake.calls[1]["max_completion_tokens"]

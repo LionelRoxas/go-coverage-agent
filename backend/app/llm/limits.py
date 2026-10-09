@@ -22,8 +22,15 @@ class RateLimiter:
         self._clock = clock
         self._remaining: int | None = None
         self._reset_at = 0.0
+        self.limit_tokens: int | None = None
 
     def update(self, headers: Mapping[str, str]) -> None:
+        limit = headers.get("x-ratelimit-limit-tokens")
+        if limit is not None:
+            try:
+                self.limit_tokens = int(float(limit))
+            except ValueError:
+                pass
         remaining = headers.get("x-ratelimit-remaining-tokens")
         if remaining is None:
             return
