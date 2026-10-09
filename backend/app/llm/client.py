@@ -22,6 +22,10 @@ class LLMError(Exception):
     """The current item failed; the loop can continue."""
 
 
+class LLMOutputTooLarge(LLMError):
+    """The answer did not fit in the output limit (truncated, or Groq could not finish the JSON): ask for less."""
+
+
 class LLMBudgetExhausted(LLMError):
     """No more tokens available (job budget, daily ledger, or Groq daily cap). Stop gracefully."""
 
@@ -152,6 +156,8 @@ class GroqLLM:
                 if e.status_code == 400 and not json_retried and "json_validate_failed" in f"{e.body} {e.message}":
                     json_retried = True  # strict-mode flake: the model skipped required fields; sample once more
                     continue
+                if e.status_code == 400 and "json_validate_failed" in f"{e.body} {e.message}":
+                    raise LLMOutputTooLarge(f"Groq returned {e.status_code}: {e.message}") from e
                 raise LLMError(f"Groq returned {e.status_code}: {e.message}") from e
 
             self.limiter.update(raw.headers)
@@ -168,7 +174,7 @@ class GroqLLM:
             if choice.finish_reason == "length":
                 # Retrying only helps if we can lower the reasoning effort; otherwise it re-spends the same tokens.
                 if truncated or effort == "low":
-                    raise LLMError("the model's answer was truncated; skipping this target")
+                    raise LLMOutputTooLarge("the model's answer was truncated; skipping this target")
                 truncated, effort = True, "low"
                 continue
             try:

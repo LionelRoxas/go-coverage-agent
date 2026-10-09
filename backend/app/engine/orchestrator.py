@@ -13,7 +13,7 @@ from app.agents.context import ContextTooLarge
 from app.agents.planner import plan
 from app.agents.repair import mechanical_repair
 from app.engine.policy import StopPolicy, stop_message
-from app.llm.client import Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal
+from app.llm.client import Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal, LLMOutputTooLarge
 from app.models import (CoverageReport, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem, StopReason,
                         Summary, SuspectedBug, TestSnippet, TokenUsage)
 from app.validator import ValidationKind, ValidationResult
@@ -128,10 +128,11 @@ class Orchestrator:
         await self.emit("candidate_generated", {**base, "test_file": test_file, "code": snip.code,
                                                 "test_plan": [s.model_dump() for s in snip.test_plan]})
 
-    async def _too_large(self, item: PlanItem, base: dict[str, Any]) -> bool:
-        """Context too big: retry with a single function, or skip the item for good."""
+    async def _too_large(self, item: PlanItem, base: dict[str, Any], *, half: bool = False) -> bool:
+        """Request or answer too big: retry with fewer functions (one, or the first half), or skip the item for good."""
         if len(item.functions) > 1:
-            return await self._attempt(item.model_copy(update={"functions": item.functions[:1]}))
+            keep = (len(item.functions) + 1) // 2 if half else 1
+            return await self._attempt(item.model_copy(update={"functions": item.functions[:keep]}))
         self.skipped.update(item.functions)
         await self.emit("candidate_rejected", {**base, "reason": "too_large"})
         return False
@@ -148,12 +149,15 @@ class Orchestrator:
 
         snap = ws.snapshot([test_file, "go.mod", "go.sum"])
         snip: TestSnippet | None = None
+        half = False
         try:
             try:
                 # render_context (inside agents.write) is where ContextTooLarge is actually raised
                 snip = await self._call("writer", item, self.deps.agents.write(item, inputs))
             except ContextTooLarge:
                 too_large = True
+            except LLMOutputTooLarge:  # only the writer's answer is split; the fixer's falls through as LLM_ERROR
+                too_large, half = True, True
             else:
                 too_large = False
                 await self._generated(base, test_file, snip)
@@ -200,7 +204,7 @@ class Orchestrator:
             raise
         if too_large:
             ws.restore(snap)
-            return await self._too_large(item, base)
+            return await self._too_large(item, base, half=half)
 
         if result.accepted and result.report is not None:
             gain = round(result.report.percent - self.report.percent, 2)

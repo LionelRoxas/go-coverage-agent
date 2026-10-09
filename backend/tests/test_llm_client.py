@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from app.config import Settings
-from app.llm.client import GroqLLM, LLMBudgetExhausted, LLMError, LLMFatal
+from app.llm.client import GroqLLM, LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge
 from app.llm.limits import RateLimiter, UsageLedger
 
 
@@ -80,7 +80,7 @@ async def test_success_parses_and_counts_usage(tmp_path):
     kw = fake.calls[0]
     assert kw["response_format"]["json_schema"]["strict"] is True
     assert kw["reasoning_effort"] == "low"
-    assert "max_completion_tokens" not in kw
+    assert kw["max_completion_tokens"] == 65536
     assert llm.ledger.used_today() == 150
 
 
@@ -114,9 +114,24 @@ async def test_long_429_means_daily_cap(tmp_path):
 
 async def test_truncation_at_low_effort_fails_without_retry(tmp_path):
     llm, fake, _ = make(tmp_path, [Raw(Completion("{", "length"))])
-    with pytest.raises(LLMError, match="truncated"):
+    with pytest.raises(LLMOutputTooLarge, match="truncated"):
         await call(llm)
     assert len(fake.calls) == 1
+
+
+async def test_unset_completion_cap_is_omitted(tmp_path):
+    llm, fake, _ = make(tmp_path, [Raw(Completion('{"answer": "hi"}', "stop"))],
+                        settings=Settings(groq_api_key="k", groq_max_completion_tokens=None))
+    await call(llm)
+    assert "max_completion_tokens" not in fake.calls[0]
+
+
+async def test_second_truncation_after_effort_retry_is_output_too_large(tmp_path):
+    fake = FakeGroq([Raw(Completion("{", "length")), Raw(Completion("{", "length"))])
+    llm = GroqLLM(Settings(groq_api_key="k", groq_reasoning_effort="medium"),
+                  UsageLedger(tmp_path / "u.json", 190_000), RateLimiter(), client=fake, sleep=_no_sleep)
+    with pytest.raises(LLMOutputTooLarge):
+        await call(llm)
 
 
 async def test_schema_mismatch_is_llm_error(tmp_path):
@@ -228,7 +243,7 @@ async def test_json_validate_failed_is_retried_once(tmp_path):
 
 async def test_second_json_validate_failed_raises(tmp_path):
     llm, fake, _ = make(tmp_path, [_json_failed(), _json_failed()])
-    with pytest.raises(LLMError, match="400"):
+    with pytest.raises(LLMOutputTooLarge, match="400"):
         await call(llm)
     assert len(fake.calls) == 2
 
