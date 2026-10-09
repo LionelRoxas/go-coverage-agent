@@ -20,6 +20,23 @@ describe("HowItWorksPage", () => {
     expect(screen.getByRole("img", { name: "8 of 10 lines run by a test: 80% coverage" })).toBeInTheDocument();
   });
 
+  it("explains how the number is counted and what no new coverage means, each with a collapsed Technical detail", () => {
+    render(<HowItWorksPage />);
+    for (const [id, plain, tech] of [
+      ["how-counted", /pieces that ran divided by all the pieces/, /-covermode=set/],
+      ["no-new-coverage", /runs at least one piece of code that no earlier test ran/, /strict superset/],
+    ] as const) {
+      const block = screen.getByTestId(id);
+      expect(within(block).getByText(plain)).toBeInTheDocument();
+      const details = block.querySelector("details");
+      expect(details).not.toBeNull();
+      expect(details).not.toHaveAttribute("open");
+      expect(within(block).getByText(tech)).toBeInTheDocument();
+    }
+    expect(within(screen.getByTestId("how-counted")).getByRole("heading", { level: 3 })).toHaveTextContent("How the number is counted");
+    expect(within(screen.getByTestId("no-new-coverage")).getByRole("heading", { level: 3 })).toHaveTextContent("What “no new coverage” means");
+  });
+
   it("lists the five plain steps in order, each with a collapsed Technical detail", () => {
     render(<HowItWorksPage />);
     const steps = screen.getAllByRole("listitem").filter((li) => li.hasAttribute("data-step"));
@@ -33,6 +50,7 @@ describe("HowItWorksPage", () => {
     }
     // the precise version still names the real values
     expect(within(steps[1]).getByText(/up to 3 items per round/)).toBeInTheDocument();
+    expect(within(steps[1]).getByText(/at most 5 functions or 100 uncovered statements/)).toBeInTheDocument();
     expect(within(steps[2]).getByText(/openai\/gpt-oss-120b/)).toBeInTheDocument();
     expect(within(steps[3]).getByText(/-count=2/)).toBeInTheDocument();
     expect(within(steps[4]).getByText(/history of every earlier attempt/)).toBeInTheDocument();

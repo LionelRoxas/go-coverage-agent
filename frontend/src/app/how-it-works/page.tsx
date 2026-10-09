@@ -21,7 +21,7 @@ const STEPS: Step[] = [
   {
     title: "Pick what to work on (no AI)",
     plain: "It finds the parts of the code that no test reaches yet. It picks a few at a time, biggest gaps first. This step follows fixed rules, so it uses no AI.",
-    tech: <>A deterministic planner groups each file’s functions with uncovered statements, largest first, into one item of at most 8 functions or 100 uncovered statements (a larger single function goes alone), then takes up to 3 items per round. Functions that failed twice, or that are too large for one request, are skipped.</>,
+    tech: <>A deterministic planner groups each file’s functions with uncovered statements, largest first, into one item of at most 5 functions or 100 uncovered statements (a larger single function goes alone), then takes up to 3 items per round. Functions that failed twice, or that are too large for one request, are skipped.</>,
   },
   {
     title: "Write the checks (AI)",
@@ -62,6 +62,24 @@ const GLOSSARY = [
 // Ten "lines of code", eight of them run by a test. Widths vary so it reads as code, not a progress bar.
 const LINES = [72, 54, 88, 40, 64, 80, 30, 58, 76, 46];
 const UNCOVERED = new Set([3, 7]);
+
+type Explainer = { id: string; title: string; plain: string; tech: ReactNode };
+
+// Two short explanations under "What coverage means"; `tech` was checked against backend/app (gotools, validator, workspace).
+const COUNTING: Explainer[] = [
+  {
+    id: "how-counted",
+    title: "How the number is counted",
+    plain: "While the tests run, Go marks each small piece of the code as “ran” or “never ran”. The percentage is the pieces that ran divided by all the pieces. Code with no tests at all still counts in the total, so nothing is hidden.",
+    tech: <>The measurement is <code className={code}>go test -count=2 -covermode=set -coverprofile</code>. The profile lists blocks: file, line range, statement count, and whether the block ran (0 or 1). Coverage is covered statements divided by total statements. A seed test file in each package without tests makes untested packages count in the total.</>,
+  },
+  {
+    id: "no-new-coverage",
+    title: "What “no new coverage” means",
+    plain: "A new test only counts if it runs at least one piece of code that no earlier test ran. A test that only re-runs code already checked can be perfectly correct, but it adds nothing, so it isn’t kept. This also happens when the only tests that reached new code were the ones that failed.",
+    tech: <>The set of covered blocks before is compared with the set after. A candidate is accepted only if the after set is a strict superset of the before set. An identical set is rejected as no gain (“executed no previously uncovered statements”); a lost block is rejected as no gain (“made previously covered statements uncovered”).</>,
+  },
+];
 
 const h2 = "text-xl font-semibold tracking-tight";
 
@@ -128,6 +146,20 @@ export default function HowItWorksPage() {
           </p>
         </div>
         <CoverageLines />
+        <div className="grid gap-6 sm:col-span-2 sm:grid-cols-2">
+          {COUNTING.map((e) => (
+            <div key={e.id} data-testid={e.id} className="space-y-2">
+              <h3 className="font-semibold">{e.title}</h3>
+              <p className="leading-relaxed text-muted">{e.plain}</p>
+              <details className="group">
+                <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-sm font-medium text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+                  <span>Technical detail<span className="sr-only">: {e.title}</span></span><Chevron />
+                </summary>
+                <p className="mt-2 border-l-2 border-border pl-3 text-sm leading-relaxed text-muted">{e.tech}</p>
+              </details>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section id="loop" aria-labelledby="loop-heading" className="space-y-6">
