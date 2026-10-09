@@ -12,3 +12,8 @@ def test_llm_configured_reflects_key(monkeypatch):
     assert s.call_token_reservation == 8000
     assert s.groq_max_completion_tokens is None
     assert s.daily_token_budget == 2_000_000
+
+
+def test_empty_max_completion_tokens_means_unset(monkeypatch):
+    monkeypatch.setenv("GROQ_MAX_COMPLETION_TOKENS", "")
+    assert Settings().groq_max_completion_tokens is None

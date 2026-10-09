@@ -59,12 +59,12 @@ class FakeGroq:
 async def _no_sleep(seconds): return None
 
 
-def make(tmp_path, script, events=None):
+def make(tmp_path, script, events=None, settings=None):
     slept = []
     async def sleep(s): slept.append(s)
     async def emit(t, d): (events if events is not None else []).append((t, d))
     fake = FakeGroq(script)
-    llm = GroqLLM(Settings(groq_api_key="k"), UsageLedger(tmp_path / "u.json", 190_000), RateLimiter(),
+    llm = GroqLLM(settings or Settings(groq_api_key="k"), UsageLedger(tmp_path / "u.json", 190_000), RateLimiter(),
                   emit=emit, client=fake, sleep=sleep)
     return llm, fake, slept
 
@@ -85,8 +85,8 @@ async def test_success_parses_and_counts_usage(tmp_path):
 
 
 async def test_configured_completion_cap_is_sent_verbatim(tmp_path):
-    llm, fake, _ = make(tmp_path, [Raw(Completion('{"answer": "hi"}', "stop"))])
-    llm.s = Settings(groq_api_key="k", groq_max_completion_tokens=1234)
+    llm, fake, _ = make(tmp_path, [Raw(Completion('{"answer": "hi"}', "stop"))],
+                        settings=Settings(groq_api_key="k", groq_max_completion_tokens=1234))
     await call(llm)
     assert fake.calls[0]["max_completion_tokens"] == 1234
 
