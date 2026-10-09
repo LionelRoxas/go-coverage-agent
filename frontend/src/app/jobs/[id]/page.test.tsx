@@ -70,4 +70,26 @@ describe("JobPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("boom");
     expect(screen.getByRole("link", { name: "Back to setup" })).toBeInTheDocument();
   });
+
+  it("shows the Groq wait on the activity line until the answer arrives", async () => {
+    vi.mocked(api.job).mockResolvedValue({} as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const now = Date.now() / 1000;
+    const send = (seq: number, type: string, data: object, ts = now) =>
+      FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq, ts, type, data }) });
+    const at = { index: 1, file: "constraints.go" };
+    act(() => {
+      send(0, "job_started", { repo_path: "semver", target_coverage: 100, options: {}, model: "m" });
+      send(1, "iteration_started", { index: 1, percent: 0 });
+      send(2, "plan_created", { index: 1, items: [{ file: "constraints.go", functions: ["A"], uncovered_statements: 1 }] });
+      send(3, "llm_request", { ...at, role: "fixer", reasoning_effort: "medium", attempt: 1 }, now - 102);
+    });
+    const labels = await screen.findAllByText(/^Waiting for Groq · fixer · medium reasoning · 1m 4[2-4]s$/);
+    const activity = labels.map((l) => l.parentElement!).find((p) => p.getAttribute("aria-live") === "polite");
+    expect(activity).toHaveTextContent(/\(constraints\.go\)$/);
+    act(() => send(4, "llm_call", { ...at, role: "fixer", completion_tokens: 5, total_tokens: 9 }));
+    expect(screen.queryByText(/Waiting for Groq/)).not.toBeInTheDocument();
+    expect(screen.getByText("Writing tests for constraints.go…")).toBeInTheDocument();
+  });
 });

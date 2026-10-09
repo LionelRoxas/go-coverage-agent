@@ -25,6 +25,7 @@ export const ATTEMPT_LABEL: Record<string, string> = {
   no_gain: "No new coverage",
   guard_rejected: "Blocked by safety rules",
   llm_error: "Model error",
+  llm_timeout: "Groq timed out",
   prompt_too_large: "Prompt too large (no model call)",
   mechanical_repair: "Auto-fixed (no LLM call)",
 };
@@ -37,6 +38,7 @@ export const REJECTION_LABEL: Record<string, string> = {
   no_gain: "No new coverage",
   guard_rejected: "Blocked by safety rules",
   llm_error: "Model error",
+  llm_timeout: "Groq timed out",
   prompt_too_large: "Prompt too large (no model call)",
   too_large: "Too large for one request",
 };
@@ -49,6 +51,7 @@ export const CHECK_LABEL: Record<string, string> = {
   no_gain: "No new coverage",
   guard_rejected: "Rejected by the safety guard",
   llm_error: "Model error",
+  llm_timeout: "Groq timed out",
   prompt_too_large: "Prompt too large (no model call)",
 };
 

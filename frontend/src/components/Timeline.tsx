@@ -1,6 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
 import { useId, useState } from "react";
+import { GroqWait } from "@/components/GroqWait";
 import {
   ATTEMPT_LABEL, checkLabel, circled, count, delta, FIX_GIVEN, parseTestFailures, pct, REJECTION_LABEL,
 } from "@/lib/format";
@@ -128,7 +129,8 @@ function CheckView({ step, final }: { step: Step; final: boolean }) {
   );
 }
 
-function StepView({ step, n, item, isLast }: { step: Step; n: number; item: ItemView; isLast: boolean }) {
+function StepView({ step, n, item, next }: { step: Step; n: number; item: ItemView; next?: Step }) {
+  const isLast = next == null;
   const [showCode, setShowCode] = useState(false);
   const codeId = useId();
   const winner = item.status === "accepted" && n === acceptedAt(item);
@@ -156,8 +158,14 @@ function StepView({ step, n, item, isLast }: { step: Step; n: number; item: Item
       )}
       <div className="mt-1">
         {step.check ? <CheckView step={step} final={item.status === "rejected" && isLast} />
-          : isLast && !finished(item) && (
-            <p className="text-xs text-muted">{step.code == null && step.source.type !== "prune" ? "Fixing…" : "Checking…"}</p>
+          : isLast && !finished(item) ? (
+            <p className="text-xs text-muted">
+              {step.code == null && step.source.type !== "prune"
+                ? item.pending ? <GroqWait pending={item.pending} detailed /> : "Fixing…"
+                : "Checking…"}
+            </p>
+          ) : next?.source.type === "auto_fix" && ( // e.g. stray characters cleaned from import paths
+            <p className="text-xs text-muted">Not checked: auto-fixed first.</p>
           )}
       </div>
     </li>
@@ -208,7 +216,9 @@ function Item({ item }: { item: ItemView }) {
           <span className="min-w-0 break-all font-mono">
             {item.file} <span className="text-muted">· {shown}{more > 0 && ` +${more} more`}</span>
           </span>
-          <span className={`shrink-0 ${statusColor}`}>{statusLabel(item)}</span>
+          <span className={`shrink-0 ${statusColor}`}>
+            {item.pending && !finished(item) ? <GroqWait pending={item.pending} /> : statusLabel(item)}
+          </span>
           {item.steps.length > 0 && <span className="basis-full text-xs text-muted">{oneLiner(item.steps)}</span>}
         </span>
       </summary>
@@ -223,11 +233,11 @@ function Item({ item }: { item: ItemView }) {
         )}
         {item.steps.length > 0 && (
           <ol aria-label="Attempts">
-            {item.steps.map((st, i) => <StepView key={i} step={st} n={i + 1} item={item} isLast={i === item.steps.length - 1} />)}
+            {item.steps.map((st, i) => <StepView key={i} step={st} n={i + 1} item={item} next={item.steps[i + 1]} />)}
           </ol>
         )}
         <ResultLine item={item} />
-        {empty && <p className="text-xs text-muted">No details yet.</p>}
+        {empty && <p className="text-xs text-muted">{item.pending ? <GroqWait pending={item.pending} detailed /> : "No details yet."}</p>}
       </div>
     </details>
   );

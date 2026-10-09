@@ -6,11 +6,13 @@ import { useEffect, useState } from "react";
 import { CoverageChart } from "@/components/CoverageChart";
 import { CoverageMeter } from "@/components/CoverageMeter";
 import { FileTable } from "@/components/FileTable";
+import { GroqWait } from "@/components/GroqWait";
 import { SummaryCard } from "@/components/SummaryCard";
 import { TestFiles } from "@/components/TestFiles";
 import { Timeline } from "@/components/Timeline";
 import { api } from "@/lib/api";
 import { duration, tokens } from "@/lib/format";
+import { waitingOn } from "@/lib/runState";
 import { useJobEvents } from "@/lib/useJobEvents";
 
 function AllRuns() {
@@ -34,6 +36,7 @@ export default function JobPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const running = state.status === "running" || state.status === "connecting";
   const elapsed = useElapsed(state.startedAt, running);
+  const waiting = running ? waitingOn(state) : undefined;
 
   const cancel = async () => {
     setCancelling(true);
@@ -93,7 +96,9 @@ export default function JobPage() {
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
 
       <CoverageMeter percent={state.percent} target={state.target} baseline={state.baseline?.percent} />
-      <p className="text-sm text-muted" aria-live="polite">{state.activity}</p>
+      <p className="text-sm text-muted" aria-live="polite">
+        {waiting ? <><GroqWait pending={waiting} detailed /> ({waiting.file})</> : state.activity}
+      </p>
       {state.removedTests.length > 0 && (
         <p className="text-xs text-muted">Removed {state.removedTests.length} existing test files from the working copy before starting.</p>
       )}

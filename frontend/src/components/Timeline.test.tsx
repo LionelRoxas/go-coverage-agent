@@ -1,7 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Timeline } from "./Timeline";
 import { REJECTION_LABEL } from "@/lib/format";
 import {
@@ -179,5 +179,76 @@ describe("Timeline", () => {
     expect(screen.getByText("No details yet.")).toBeInTheDocument();
     rerender(<Timeline iterations={[]} />);
     expect(screen.getByText("Nothing yet.")).toBeInTheDocument();
+  });
+});
+
+// Job 86b6d88b558c's events (trimmed), with the llm_request events the backend now sends before each Groq call.
+const T0 = 1791539500;
+const stuckFixer: JobEvent[] = [
+  { seq: 0, ts: T0, type: "job_started", data: { repo_path: "semver", target_coverage: 100, options: { max_fix_attempts: 2 }, model: "openai/gpt-oss-120b" } },
+  { seq: 3, ts: T0, type: "iteration_started", data: { index: 1, percent: 1.43 } },
+  { seq: 4, ts: T0, type: "plan_created", data: { index: 1, items: [{ file: "constraints.go", functions: ["parseConstraint"], uncovered_statements: 100 }] } },
+  { seq: 5, ts: T0, type: "llm_request", data: { index: 1, file: "constraints.go", role: "writer", reasoning_effort: "medium" } },
+  { seq: 6, ts: T0 + 9, type: "llm_call", data: { index: 1, file: "constraints.go", role: "writer", prompt_tokens: 4518, completion_tokens: 3871, total_tokens: 8389, reasoning_effort: "medium" } },
+  { seq: 7, ts: T0 + 9, type: "candidate_generated", data: { index: 1, file: "constraints.go", test_file: "constraints_test.go", code: "func TestParseConstraint_Uncovered(t *testing.T) {}\n" } },
+  { seq: 8, ts: T0 + 9, type: "validation_result", data: { index: 1, file: "constraints.go", kind: "compile_error", output: "undefined: x", failed_tests: [] } },
+  { seq: 9, ts: T0 + 9, type: "fix_attempt", data: { index: 1, file: "constraints.go", attempt: 1, kind: "compile_error" } },
+  { seq: 10, ts: T0 + 10, type: "llm_request", data: { index: 1, file: "constraints.go", role: "fixer", reasoning_effort: "medium", attempt: 1 } },
+];
+
+describe("Timeline waiting on Groq", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("shows a ticking wait on the fixer step and the status chip instead of Fixing…", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime((T0 + 10 + 102) * 1000);
+    renderRun(stuckFixer);
+    expect(screen.getByText("Waiting for Groq · fixer · medium reasoning · 1m 42s")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for Groq · 1m 42s")).toBeInTheDocument();
+    expect(screen.queryByText("Fixing…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Running…")).not.toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(screen.getByText("Waiting for Groq · fixer · medium reasoning · 1m 43s")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for Groq · 1m 43s")).toBeInTheDocument();
+  });
+
+  it("shows the writer's wait before any attempt exists", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime((T0 + 5) * 1000);
+    renderRun(stuckFixer.slice(0, 4));
+    expect(screen.getByText("Waiting for Groq · writer · medium reasoning · 5s")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for Groq · 5s")).toBeInTheDocument();
+    expect(screen.queryByText("Writing…")).not.toBeInTheDocument();
+    expect(screen.queryByText("No details yet.")).not.toBeInTheDocument();
+  });
+
+  it("goes back to the plain labels once the answer arrives, and for old runs", () => {
+    renderRun(movingFixed.slice(0, 7));
+    expect(screen.getByText("Fixing…")).toBeInTheDocument();
+    expect(screen.queryByText(/Waiting for Groq/)).not.toBeInTheDocument();
+  });
+
+  it("labels a Groq timeout instead of a generic model error", () => {
+    renderRun([...stuckFixer, { seq: 11, ts: T0 + 250, type: "validation_result",
+      data: { index: 1, file: "constraints.go", kind: "llm_timeout", output: "Groq did not answer within 240 s", failed_tests: [] } },
+      { seq: 12, ts: T0 + 250, type: "candidate_rejected", data: { index: 1, file: "constraints.go", reason: "llm_timeout" } }]);
+    expect(screen.getByText(/Groq timed out: nothing to check/)).toBeInTheDocument();
+    expect(screen.getByText("Groq did not answer within 240 s")).toBeInTheDocument();
+    expect(screen.getByText(/rejected after attempt 2: Groq timed out\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Model error/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Waiting for Groq/)).not.toBeInTheDocument();
+  });
+
+  it("marks a version that was cleaned up before its first check", () => {
+    const cleaned: JobEvent[] = [...stuckFixer.slice(0, 5),
+      { ...stuckFixer[5], seq: 7 },
+      { seq: 8, ts: T0 + 9, type: "mechanical_repair", data: { index: 1, file: "constraints.go", repair: 0, description: "cleaned import path 'testing\' → 'testing'" } },
+      { ...stuckFixer[5], seq: 9 },
+      { seq: 10, ts: T0 + 11, type: "validation_result", data: { index: 1, file: "constraints.go", kind: "accepted", output: "", failed_tests: [] } }];
+    renderRun(cleaned);
+    expect(steps()).toHaveLength(2);
+    expect(within(steps()[0]).getByText("Not checked: auto-fixed first.")).toBeInTheDocument();
+    expect(within(steps()[1]).getByText("Auto-fixed, no LLM call").parentElement)
+      .toHaveTextContent("Auto-fixed, no LLM call: cleaned import path 'testing\' → 'testing'");
   });
 });

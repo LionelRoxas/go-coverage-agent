@@ -15,6 +15,9 @@ export type StepSource =
 // One attempt: a version of the test code plus the result of checking it (no check yet while it runs).
 export type Step = { source: StepSource; code?: string; testCount?: number; check?: Check };
 
+// A request sent to Groq that has not answered yet (llm_request until its llm_call or validation_result).
+export type PendingRequest = { since: number; role: string; effort?: string };
+
 export type ItemView = {
   file: string;
   functions: string[];
@@ -29,6 +32,7 @@ export type ItemView = {
   percentAfter?: number;
   rejectReason?: string;
   writerTokens?: number; // the writer's llm_call arrives just before its candidate_generated
+  pending?: PendingRequest;
 };
 export type IterationView = { index: number; startPercent: number; endPercent?: number; items: ItemView[] };
 export type RunState = {
@@ -68,6 +72,19 @@ function withIteration(s: RunState, index: number, fn: (it: IterationView) => It
 
 function withItem(s: RunState, index: number, file: string, fn: (item: ItemView) => ItemView): RunState {
   return withIteration(s, index, (it) => ({ ...it, items: it.items.map((i) => (i.file === file ? fn(i) : i)) }));
+}
+
+// No request is waiting any more: a rate-limit pause (its own activity line) or the end of the job.
+function clearPending(s: RunState): RunState {
+  if (!s.iterations.some((it) => it.items.some((i) => i.pending))) return s;
+  return { ...s, iterations: s.iterations.map((it) => ({
+    ...it, items: it.items.map((i) => (i.pending ? { ...i, pending: undefined } : i)) })) };
+}
+
+// The item whose Groq request is still waiting, if any (requests are made one at a time).
+export function waitingOn(s: RunState): (PendingRequest & { file: string }) | undefined {
+  for (const it of s.iterations) for (const i of it.items) if (i.pending) return { file: i.file, ...i.pending };
+  return undefined;
 }
 
 // After an item finishes, point the activity line at the next item still waiting for its tests.
@@ -126,8 +143,11 @@ export function reduce(state: RunState, ev: RunAction): RunState {
         })),
         activity: d.items.length ? `Writing tests for ${d.items[0].file}…` : s.activity,
       };
+    case "llm_request":
+      return withItem(s, d.index, d.file, (i) => ({
+        ...i, pending: { since: ev.ts, role: d.role, effort: d.reasoning_effort ?? undefined } }));
     case "llm_call": {
-      const next = { ...s, tokens: d.total_tokens };
+      const next = withItem({ ...s, tokens: d.total_tokens }, d.index, d.file, (i) => ({ ...i, pending: undefined }));
       if (d.role === "writer") return withItem(next, d.index, d.file, (i) => ({ ...i, writerTokens: d.completion_tokens }));
       if (d.role !== "fixer") return next;
       return withItem(next, d.index, d.file, (i) => {
@@ -138,14 +158,14 @@ export function reduce(state: RunState, ev: RunAction): RunState {
       });
     }
     case "rate_limited":
-      return { ...s, activity: `Waiting ${Math.round(d.seconds)}s for the Groq rate limit (${d.reason === "tpm" ? "tokens per minute" : "HTTP 429"})…` };
+      return { ...clearPending(s), activity: `Waiting ${Math.round(d.seconds)}s for the Groq rate limit (${d.reason === "tpm" ? "tokens per minute" : "HTTP 429"})…` };
     case "candidate_generated":
       return { ...withItem(s, d.index, d.file, (i) => ({ ...addCode(i, d.code ?? ""), status: "validating",
                                                           testPlan: d.test_plan ?? i.testPlan, code: d.code })),
                activity: `Compiling and running tests for ${d.file}…` };
     case "validation_result":
       return withItem(s, d.index, d.file, (i) =>
-        addCheck(i, { kind: d.kind, output: d.output ?? "", failedTests: d.failed_tests ?? [] }));
+        addCheck({ ...i, pending: undefined }, { kind: d.kind, output: d.output ?? "", failedTests: d.failed_tests ?? [] }));
     case "mechanical_repair":
       return withItem(s, d.index, d.file, (i) => ({
         ...i, steps: [...i.steps, { source: { type: "auto_fix", description: d.description ?? "" } }] }));
@@ -177,12 +197,12 @@ export function reduce(state: RunState, ev: RunAction): RunState {
                history: [...s.history, { label: `Iter ${d.index}`, percent: d.end_percent }] };
     case "job_completed":
     case "job_cancelled":
-      return { ...s, status: ev.type === "job_completed" ? "completed" : "cancelled", summary: d as Summary,
+      return { ...clearPending(s), status: ev.type === "job_completed" ? "completed" : "cancelled", summary: d as Summary,
                percent: d.final_percent, activity: d.message };
     case "job_failed":
       // cancelled before the baseline finished: there is no Summary, so the backend reports it as a failure reason
-      if (d.reason === "cancelled") return { ...s, status: "cancelled", activity: "Cancelled." };
-      return { ...s, status: "failed", failure: { reason: d.reason, message: d.message, output: d.output },
+      if (d.reason === "cancelled") return { ...clearPending(s), status: "cancelled", activity: "Cancelled." };
+      return { ...clearPending(s), status: "failed", failure: { reason: d.reason, message: d.message, output: d.output },
                activity: d.message };
     default:
       return s;

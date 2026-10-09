@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import { describe, expect, it } from "vitest";
-import { initialState, reduce } from "./runState";
+import { initialState, reduce, waitingOn } from "./runState";
 import type { JobEvent } from "./types";
 import { constraintsFixTooLarge, constraintsNoGain, constraintsRenamed, loadFirstTry, movingFixed, normPruned } from "./fixtures/traceEvents";
 
@@ -251,5 +251,45 @@ describe("reduce: attempt trace", () => {
     expect(item.steps[1].check).toEqual({ kind: "accepted", output: "", failedTests: [] });
     expect(item.tests).toEqual([]);
     expect(item.percentBefore).toBeUndefined();
+  });
+});
+
+describe("waiting on Groq (llm_request)", () => {
+  const start = () => {
+    let n = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const e = (type: string, data: Record<string, any>, ts = 100): JobEvent => ({ seq: n++, ts, type, data });
+    const base = [e("job_started", { repo_path: "semver", target_coverage: 100, model: "m" }),
+      e("iteration_started", { index: 1, percent: 0 }),
+      e("plan_created", { index: 1, items: [{ file: "constraints.go", functions: ["A"], uncovered_statements: 1 }] })];
+    return { e, base };
+  };
+  const at = { index: 1, file: "constraints.go" };
+  const itemIn = (events: JobEvent[]) => run(events).iterations[0].items[0];
+
+  it("records the pending writer request and clears it on the matching llm_call", () => {
+    const { e, base } = start();
+    const req = e("llm_request", { ...at, role: "writer", reasoning_effort: "medium" }, 500);
+    expect(itemIn([...base, req]).pending).toEqual({ since: 500, role: "writer", effort: "medium" });
+    expect(waitingOn(run([...base, req]))).toEqual({ file: "constraints.go", since: 500, role: "writer", effort: "medium" });
+    const call = e("llm_call", { ...at, role: "writer", completion_tokens: 5, total_tokens: 9 });
+    expect(itemIn([...base, req, call]).pending).toBeUndefined();
+    expect(waitingOn(run([...base, req, call]))).toBeUndefined();
+  });
+
+  it("clears the pending fixer request on validation_result (a failed request), a rate-limit wait and cancel", () => {
+    const { e, base } = start();
+    const req = () => e("llm_request", { ...at, role: "fixer", reasoning_effort: "medium", attempt: 1 });
+    expect(itemIn([...base, req(), e("validation_result", { ...at, kind: "llm_timeout", output: "Groq did not answer within 240 s" })]).pending).toBeUndefined();
+    const limited = run([...base, req(), e("rate_limited", { seconds: 12, reason: "429" })]);
+    expect(limited.iterations[0].items[0].pending).toBeUndefined();
+    expect(limited.activity).toMatch(/^Waiting 12s for the Groq rate limit/);
+    expect(itemIn([...base, req(), e("job_cancelled", { message: "Cancelled.", final_percent: 0 })]).pending).toBeUndefined();
+    expect(itemIn([...base, req(), e("job_failed", { reason: "cancelled" })]).pending).toBeUndefined();
+  });
+
+  it("old runs without llm_request have nothing pending", () => {
+    expect(waitingOn(run(normPruned))).toBeUndefined();
+    expect(run(normPruned).iterations.flatMap((it) => it.items).every((i) => i.pending === undefined)).toBe(true);
   });
 });
