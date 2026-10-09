@@ -8,3 +8,4 @@ repos/*
 !repos/.gitkeep
 output/*
 !output/.gitkeep
+compose.local*.yml

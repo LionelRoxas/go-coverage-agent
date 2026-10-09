@@ -13,4 +13,4 @@ test-backend: backend-image
 test-integration: backend-image
 	docker run --rm gca-backend uv run --no-sync pytest -m integration
 test-frontend:
-	cd frontend && npm test
+	cd frontend && npm ci && npm test
