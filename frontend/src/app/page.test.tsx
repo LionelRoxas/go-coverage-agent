@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // @vitest-environment jsdom
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SetupPage from "./page";
@@ -9,6 +9,9 @@ import type { Health, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
 import { emptySkips } from "@/lib/upload";
 
 const push = vi.fn();
+// The wizard ignores Start for 500 ms after the review opens; tests move this clock instead of waiting.
+const clock = vi.hoisted(() => ({ t: 0 }));
+vi.mock("@/lib/clock", () => ({ now: () => clock.t }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/lib/api", async (orig) => {
   const real = await orig<typeof import("@/lib/api")>();
@@ -47,6 +50,7 @@ const stepItems = () => within(within(stepper()).getByRole("list")).getAllByRole
 const states = () => stepItems().map((li) => li.getAttribute("data-state"));
 /** The one-line stepper shown on phones. */
 const compactStepper = () => within(stepper()).getByText(/^Step \d of 4$/).parentElement!;
+const form = () => stepper().closest("form")!;
 const stepHeading = () => screen.getByRole("heading", { level: 2, name: /^Step \d of 4: / });
 
 /** Waits for the first repository to be selected, then presses Next until the review step. */
@@ -61,12 +65,14 @@ async function toReview(user: User) {
   // review would otherwise also submit the form and start a run.
   expect(startButton()).not.toBe(next);
   expect(mocked.startJob).not.toHaveBeenCalled();
+  clock.t += 1000; // the user reads the review before pressing Start
 }
 
 describe("SetupPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    clock.t = 0;
   });
 
   it("opens with a plain headline, one supporting line, a measured result and a How it works link, before the wizard", async () => {
@@ -101,6 +107,7 @@ describe("SetupPage", () => {
     for (const li of items) expect(within(li).queryByRole("button")).not.toBeInTheDocument();
     expect(stepHeading()).toHaveTextContent("Choose a repository");
     expect(compactStepper()).toHaveTextContent(/^Step 1 of 4 · Choose a repository$/);
+    expect(compactStepper()).toHaveAttribute("aria-current", "step");
     expect(screen.getByText(/Pick a sample \(it downloads the first time\)/)).toHaveTextContent(
       "Pick a sample (it downloads the first time), or upload a Go project folder of your own.");
     expect(await screen.findByRole("tablist", { name: "Repository source" })).toBeInTheDocument();
@@ -161,15 +168,78 @@ describe("SetupPage", () => {
     expect(screen.getByRole("spinbutton", { name: "Target coverage percent" })).toHaveValue(65);
   });
 
-  it("does not start a run or advance when Enter is pressed in the target field", async () => {
+  it("ignores a form submission that does not come from Start (Enter in a field) on every step", async () => {
     setup();
+    mocked.startJob.mockResolvedValue({ job_id: "abc" });
     const user = userEvent.setup();
     render(<SetupPage />);
     await waitFor(() => expect(nextButton()).toBeEnabled());
     await user.click(nextButton());
-    await user.type(screen.getByRole("spinbutton", { name: "Target coverage percent" }), "{Enter}");
-    expect(mocked.startJob).not.toHaveBeenCalled();
+    // In a browser Enter in the number field submits the form implicitly, with no submitter.
+    fireEvent.submit(form());
     expect(stepHeading()).toHaveTextContent("Set a target");
+    await user.click(nextButton());
+    fireEvent.submit(form());
+    expect(stepHeading()).toHaveTextContent("Advanced options (optional)");
+    await user.click(nextButton());
+    clock.t += 1000;
+    await waitFor(() => expect(startButton()).toBeEnabled());
+    fireEvent.submit(form());
+    expect(mocked.startJob).not.toHaveBeenCalled();
+    await user.click(startButton()); // the control: Start itself does start
+    await waitFor(() => expect(mocked.startJob).toHaveBeenCalledOnce());
+  });
+
+  it("does not start a run on a double-click of Next at step 3", async () => {
+    setup();
+    mocked.startJob.mockResolvedValue({ job_id: "abc" });
+    const user = userEvent.setup();
+    render(<SetupPage />);
+    await waitFor(() => expect(nextButton()).toBeEnabled());
+    await user.click(nextButton());
+    await user.click(nextButton());
+    await waitFor(() => expect(mocked.health).toHaveBeenCalled());
+    await user.click(nextButton());
+    // the second click lands on Start, which now sits where Next was
+    await user.click(startButton());
+    expect(mocked.startJob).not.toHaveBeenCalled();
+    expect(stepHeading()).toHaveTextContent("Review & start");
+    // a second click of a multi-click is ignored too, whenever it comes
+    clock.t += 600;
+    fireEvent.click(startButton(), { detail: 2 });
+    expect(mocked.startJob).not.toHaveBeenCalled();
+    await user.click(startButton());
+    await waitFor(() => expect(mocked.startJob).toHaveBeenCalledOnce());
+  });
+
+  it("locks Back, Edit and the stepper while a run is starting", async () => {
+    setup();
+    mocked.startJob.mockReturnValue(new Promise(() => {}));
+    const user = userEvent.setup();
+    render(<SetupPage />);
+    await toReview(user);
+    await waitFor(() => expect(startButton()).toBeEnabled());
+    await user.click(startButton());
+    expect(await screen.findByRole("button", { name: "Starting…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Edit target" })).toBeDisabled();
+    await user.click(within(stepItems()[0]).getByRole("button"));
+    expect(stepHeading()).toHaveTextContent("Review & start");
+  });
+
+  it("keeps Next disabled on step 1 while a sample downloads, then enables it with the new selection", async () => {
+    setup({ repos: [repo], samples: sampleList() });
+    let finish!: (r: RepoInfo) => void;
+    mocked.downloadSample.mockReturnValue(new Promise((r) => { finish = r; }));
+    const user = userEvent.setup();
+    render(<SetupPage />);
+    await waitFor(() => expect(nextButton()).toBeEnabled()); // stats is preselected
+    await user.click(await screen.findByRole("button", { name: /o\/semver/ }));
+    expect(nextButton()).toBeDisabled();
+    mocked.repos.mockResolvedValue([repo, { ...repo, path: "semver", module: "github.com/o/semver" }]);
+    finish({ ...repo, path: "semver", module: "github.com/o/semver" });
+    await waitFor(() => expect(nextButton()).toBeEnabled());
+    expect(screen.getByText(/Selected:/)).toHaveTextContent("Selected: semver");
   });
 
   it("shows the four limits directly on step 3, blocks Next on an invalid value and Skip keeps the defaults", async () => {
@@ -189,7 +259,10 @@ describe("SetupPage", () => {
     expect(screen.getByText("Enter a whole number from 1 to 30.")).toBeInTheDocument();
     expect(iterations).toHaveAttribute("aria-invalid", "true");
 
-    await user.click(screen.getByRole("button", { name: "Skip" }));
+    expect(screen.getByText(/discards these changes/)).toHaveTextContent(
+      "You changed a limit. Skip (use defaults) discards these changes.");
+    expect(screen.getByRole("button", { name: "Skip (use defaults)" })).toHaveAccessibleDescription(/discards these changes/);
+    await user.click(screen.getByRole("button", { name: "Skip (use defaults)" }));
     expect(stepHeading()).toHaveTextContent("Review & start");
     expect(screen.getByRole("group", { name: "Advanced options" })).toHaveTextContent("Defaults");
   });
@@ -209,6 +282,7 @@ describe("SetupPage", () => {
     const advanced = screen.getByRole("group", { name: "Advanced options" });
     expect(advanced).toHaveTextContent("Max iterations: 10");
     expect(advanced).not.toHaveTextContent("Defaults");
+    clock.t += 1000;
     await waitFor(() => expect(startButton()).toBeEnabled());
     await user.click(startButton());
     await waitFor(() => expect(mocked.startJob).toHaveBeenCalledWith(expect.objectContaining({
@@ -229,8 +303,13 @@ describe("SetupPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Edit target" }));
     expect(screen.getByRole("heading", { level: 2, name: "Step 2 of 4: Set a target" })).toHaveFocus();
-    // going back keeps the later steps done and reachable from the stepper
-    expect(states()).toEqual(["done", "current", "done", "upcoming"]);
+    // going back keeps the later steps done and the review reachable (visited, not done) from the stepper
+    expect(states()).toEqual(["done", "current", "done", "visited"]);
+    expect(within(stepItems()[3]).getByRole("button")).toHaveTextContent("Review & start");
+    expect(within(stepItems()[3]).queryByText(", done")).not.toBeInTheDocument();
+    await user.click(within(stepItems()[3]).getByRole("button"));
+    expect(screen.getByRole("heading", { level: 2, name: "Step 4 of 4: Review & start" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Edit target" }));
     await user.click(within(stepItems()[0]).getByRole("button"));
     expect(stepHeading()).toHaveTextContent("Choose a repository");
     expect(stepHeading()).toHaveFocus();
@@ -254,6 +333,7 @@ describe("SetupPage", () => {
     await user.clear(screen.getByRole("spinbutton", { name: "Target coverage percent" }));
     expect(states()).toEqual(["done", "current", "upcoming", "upcoming"]);
     expect(within(stepItems()[2]).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(stepItems()[3]).queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("warns about a missing Groq key and disables Start", async () => {

@@ -9,6 +9,7 @@ import { MIN_TOKENS_TO_START, TokenBudget, budgetBlocked } from "@/components/To
 import { WizardStepper, type StepState } from "@/components/WizardStepper";
 import { Button, cardClass, cx, inlineLinkClass, inputClass, ledeClass, pageTitleClass, sectionHeadingClass } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
+import { now } from "@/lib/clock";
 import type { Health, JobOptions, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
 import type { PickedFile } from "@/lib/upload";
 
@@ -82,15 +83,22 @@ const HINTS = [
   "Usually 1–5 minutes on a paid Groq key; free-trial keys take much longer. You can leave this page; the run keeps going.",
 ] as const;
 const REVIEW = 3;
+/**
+ * Start ignores presses this soon after the review opens: Start sits where Next was, so the second click of a
+ * double-click (or a double tap) on Next would otherwise start a run.
+ */
+const START_GRACE_MS = 500;
 
 /** One line of the review: what was chosen, and an Edit link back to the step that chose it. */
-function ReviewRow({ label, editLabel, onEdit, children }: { label: string; editLabel: string; onEdit: () => void; children: React.ReactNode }) {
+function ReviewRow({ label, editLabel, onEdit, disabled, children }: {
+  label: string; editLabel: string; onEdit: () => void; disabled: boolean; children: React.ReactNode;
+}) {
   return (
     <div role="group" aria-label={label}
          className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 py-3 sm:grid-cols-[9.5rem_minmax(0,1fr)_auto]">
       <p className="text-sm text-muted">{label}</p>
       <div className="col-start-1 row-start-2 min-w-0 text-sm sm:col-start-2 sm:row-start-1">{children}</div>
-      <Button variant="link" size="sm" aria-label={editLabel} onClick={onEdit}
+      <Button variant="link" size="sm" aria-label={editLabel} onClick={onEdit} disabled={disabled}
               className="col-start-2 row-span-2 row-start-1 self-start sm:col-start-3 sm:row-span-1">
         Edit
       </Button>
@@ -115,8 +123,13 @@ export default function SetupPage() {
   const [step, setStep] = useState(0);
   /** The furthest step reached; steps before it stay done (and clickable) when the user goes back. */
   const [furthest, setFurthest] = useState(0);
+  /** Downloads and uploads in flight: their result replaces the selection, so step 1 waits for them. */
+  const [pending, setPending] = useState(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusHeading = useRef(false);
+  const startRef = useRef<HTMLButtonElement>(null);
+  /** When the review step last opened, from `now()`. */
+  const reviewSince = useRef(0);
 
   const sampleIds = new Set(samples.map((s) => s.id));
   const folders = repos.filter((r) => !sampleIds.has(r.path));
@@ -149,6 +162,8 @@ export default function SetupPage() {
   }, [step]);
 
   function goTo(i: number) {
+    if (busy) return; // a run is being started: stay on the review
+    if (i === REVIEW) reviewSince.current = now();
     focusHeading.current = true;
     setStep(i);
     setFurthest((f) => Math.max(f, i));
@@ -171,7 +186,17 @@ export default function SetupPage() {
 
   const onJobs = useCallback((jobs: JobSnapshot[]) => setRunning(jobs.some((j) => j.status === "running")), []);
 
-  async function download(id: string) {
+  /** Runs a download or upload, keeping Next disabled until its result is selected. */
+  async function tracked<T>(work: () => Promise<T>): Promise<T> {
+    setPending((n) => n + 1);
+    try {
+      return await work();
+    } finally {
+      setPending((n) => n - 1);
+    }
+  }
+
+  const download = (id: string) => tracked(async () => {
     const info = await api.downloadSample(id);
     setRepo(info.path);
     try {
@@ -179,9 +204,9 @@ export default function SetupPage() {
     } catch {
       // the clone succeeded; the lists refresh on the next Refresh
     }
-  }
+  });
 
-  async function upload(files: PickedFile[], name: string | undefined, onProgress: (fraction: number) => void) {
+  const upload = (files: PickedFile[], name: string | undefined, onProgress: (fraction: number) => void) => tracked(async () => {
     const info = await api.uploadRepo(files, name, onProgress);
     setRepo(info.path);
     try {
@@ -190,13 +215,19 @@ export default function SetupPage() {
       // the upload succeeded; the lists refresh on the next Refresh
     }
     return info;
-  }
+  });
 
   const targetValid = Number.isFinite(target) && target >= 1 && target <= 100;
   const limitErrors = LIMITS.map((l) => limitError(opts[l.key], l));
-  const valid = [!!selected, targetValid, limitErrors.every((e) => e === null), true];
-  const states: StepState[] = STEPS.map((_, i) =>
-    i === step ? "current" : i < furthest && i < REVIEW && valid.slice(0, i + 1).every(Boolean) ? "done" : "upcoming");
+  const valid = [!!selected && pending === 0, targetValid, limitErrors.every((e) => e === null), true];
+  // Done: finished before and still valid, along with every step before it. The review is never done; once it has
+  // been opened it stays reachable ("visited") while the steps before it are valid.
+  const states: StepState[] = STEPS.map((_, i) => {
+    if (i === step) return "current";
+    if (!valid.slice(0, i + 1).every(Boolean)) return "upcoming";
+    if (i === REVIEW) return furthest === REVIEW ? "visited" : "upcoming";
+    return i < furthest ? "done" : "upcoming";
+  });
   const changed = LIMITS.filter((l) => opts[l.key] !== DEFAULTS[l.key]);
 
   const tokensLeft = typeof health?.tokens_left_today === "number" ? health.tokens_left_today : null;
@@ -216,10 +247,14 @@ export default function SetupPage() {
     }
   }
 
-  // Only the Start button submits; Enter in a field on an earlier step does nothing.
-  function submit(e: React.FormEvent) {
+  // Only a press of Start itself submits, on the review step, once the grace period has passed. Enter in a field
+  // (implicit submission has no Start submitter) and the tail of a double-click on Next do nothing.
+  function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (step === REVIEW && canStart) void start();
+    const submitter = (e.nativeEvent as SubmitEvent).submitter;
+    if (step !== REVIEW || !canStart || !submitter || submitter !== startRef.current) return;
+    if (now() - reviewSince.current < START_GRACE_MS) return;
+    void start();
   }
 
   return (
@@ -252,7 +287,7 @@ export default function SetupPage() {
 
             <div className="space-y-5 px-4 py-5 sm:px-6 sm:py-6">
               <div className="space-y-1">
-                <h2 ref={headingRef} tabIndex={-1} className={cx(sectionHeadingClass, "text-lg focus:outline-none")}>
+                <h2 ref={headingRef} tabIndex={-1} className={cx(sectionHeadingClass, "text-lg")}>
                   <span className="sr-only">Step {step + 1} of {STEPS.length}:</span>{" "}{STEPS[step]}
                 </h2>
                 <p className="max-w-prose text-sm leading-relaxed text-muted">{HINTS[step]}</p>
@@ -291,6 +326,11 @@ export default function SetupPage() {
 
               {step === 2 && (
                 <div className="grid max-w-xl gap-x-6 gap-y-4 sm:grid-cols-2">
+                  {changed.length > 0 && (
+                    <p id="skip-note" className="text-xs text-muted sm:col-span-2">
+                      You changed {changed.length === 1 ? "a limit" : "some limits"}. Skip (use defaults) discards these changes.
+                    </p>
+                  )}
                   {LIMITS.map((l, i) => {
                     const err = limitErrors[i];
                     const id = `limit-${l.key}`;
@@ -312,7 +352,7 @@ export default function SetupPage() {
               {step === REVIEW && (
                 <>
                   <div className="divide-y divide-border border-y border-border">
-                    <ReviewRow label="Repository" editLabel="Edit repository" onEdit={() => goTo(0)}>
+                    <ReviewRow label="Repository" editLabel="Edit repository" onEdit={() => goTo(0)} disabled={busy}>
                       {selected && (
                         <>
                           <span className="block break-all font-mono text-text">{selected.path}</span>
@@ -320,10 +360,10 @@ export default function SetupPage() {
                         </>
                       )}
                     </ReviewRow>
-                    <ReviewRow label="Target" editLabel="Edit target" onEdit={() => goTo(1)}>
+                    <ReviewRow label="Target" editLabel="Edit target" onEdit={() => goTo(1)} disabled={busy}>
                       <span className="font-mono">{target}%</span> <span className="text-muted">of the code tested</span>
                     </ReviewRow>
-                    <ReviewRow label="Advanced options" editLabel="Edit advanced options" onEdit={() => goTo(2)}>
+                    <ReviewRow label="Advanced options" editLabel="Edit advanced options" onEdit={() => goTo(2)} disabled={busy}>
                       {changed.length === 0 ? (
                         <span className="text-muted">Defaults</span>
                       ) : (
@@ -348,23 +388,29 @@ export default function SetupPage() {
               {error && <p role="alert" className="text-sm text-danger">{error}</p>}
             </div>
 
-            <div className="space-y-2 rounded-b-md border-t border-border bg-surface px-4 py-3 max-sm:sticky max-sm:bottom-0 max-sm:z-10 sm:px-6 sm:py-4">
+            <div className="space-y-2 rounded-b-md border-t border-border bg-surface px-4 py-3 max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
               {/* On phones the budget line takes its own row above Back and Start, so the sticky bar stays two rows. */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                {step > 0 && <Button onClick={() => goTo(step - 1)} className="max-sm:order-2">Back</Button>}
+                {step > 0 && <Button onClick={() => goTo(step - 1)} disabled={busy} className="max-sm:order-2">Back</Button>}
                 {step === REVIEW && tokensLeft != null && (
                   <div className="max-sm:order-1 max-sm:w-full sm:ml-auto">
                     <TokenBudget left={tokensLeft} min={minTokens} id="budget-reason" />
                   </div>
                 )}
                 <div className="ml-auto flex items-center gap-3 max-sm:order-3">
-                  {step === 2 && <Button variant="ghost" onClick={() => { setOpts(DEFAULTS); goTo(REVIEW); }}>Skip</Button>}
+                  {step === 2 && (
+                    <Button variant="ghost" aria-describedby={changed.length > 0 ? "skip-note" : undefined}
+                            onClick={() => { setOpts(DEFAULTS); goTo(REVIEW); }}>
+                      Skip (use defaults)
+                    </Button>
+                  )}
                   {step < REVIEW ? (
                     <Button key="next" variant="primary" disabled={!valid[step]} onClick={() => goTo(step + 1)}>Next</Button>
                   ) : (
                     // Its own key: reusing the Next button's element as a submit button would let the click that
                     // opens the review also submit the form.
-                    <Button key="start" type="submit" variant="primary" disabled={!canStart}
+                    <Button key="start" ref={startRef} type="submit" variant="primary" disabled={!canStart}
+                            onClick={(e) => { if (e.detail > 1) e.preventDefault(); /* the 2nd+ click of a multi-click */ }}
                             aria-describedby={noBudget ? "budget-reason" : undefined}>
                       {busy ? "Starting…" : "Start"}
                     </Button>

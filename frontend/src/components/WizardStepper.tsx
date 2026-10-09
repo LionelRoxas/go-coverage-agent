@@ -1,14 +1,15 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import { cx } from "@/components/ui";
 
-export type StepState = "done" | "current" | "upcoming";
+/** "visited": opened before and reachable again, but not finished (the review step). */
+export type StepState = "done" | "current" | "visited" | "upcoming";
 
 type Props = {
   label: string;
   steps: readonly string[];
   /** Index of the step on screen. */
   current: number;
-  /** State of each step, in order. Only "done" steps can be clicked. */
+  /** State of each step, in order. Only "done" and "visited" steps can be clicked. */
   states: readonly StepState[];
   onJump: (index: number) => void;
 };
@@ -30,7 +31,7 @@ export function WizardStepper({ label, steps, current, states, onJump }: Props) 
   return (
     <nav aria-label={label}>
       <div className="space-y-2 sm:hidden">
-        <p className="text-sm">
+        <p aria-current="step" className="text-sm">
           <span className="font-medium">Step {current + 1} of {total}</span>
           <span className="text-muted"> · {steps[current]}</span>
         </p>
@@ -42,12 +43,13 @@ export function WizardStepper({ label, steps, current, states, onJump }: Props) 
       <ol className="hidden grid-cols-4 gap-2 sm:grid">
         {steps.map((title, i) => {
           const state = states[i];
+          const clickable = state === "done" || state === "visited";
           const body = (
             <>
               <span aria-hidden className={cx("block h-1 rounded-full transition-colors",
                 state === "upcoming" ? "bg-border" : "bg-accent")} />
               <span className={cx("flex items-start gap-1.5 pt-2 text-left text-xs leading-snug",
-                state === "current" ? "font-semibold text-text" : state === "done" ? "text-text" : "text-muted")}>
+                state === "current" ? "font-semibold text-text" : clickable ? "text-text" : "text-muted")}>
                 {state === "done" ? (
                   <span className="mt-px text-accent"><Check /></span>
                 ) : (
@@ -62,7 +64,7 @@ export function WizardStepper({ label, steps, current, states, onJump }: Props) 
           );
           return (
             <li key={title} data-state={state} aria-current={state === "current" ? "step" : undefined} className="min-w-0">
-              {state === "done" ? (
+              {clickable ? (
                 <button type="button" onClick={() => onJump(i)}
                         className="block w-full rounded-sm pb-0.5 hover:[&>span:last-child]:text-accent">
                   {body}
