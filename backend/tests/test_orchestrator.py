@@ -252,7 +252,7 @@ async def test_missing_import_is_repaired_without_calling_fixer(ws):
     summary = await orch.run(report(set()))
     assert agents.fix_kinds == [] and summary.tests_added == ["TestA"]
     assert v.snips[1].imports == ["testing", "errors"]
-    assert ("mechanical_repair", {"index": 1, "file": "a.go", "repair": 1}) in events
+    assert ("mechanical_repair", {"index": 1, "file": "a.go", "repair": 1, "description": "added import errors"}) in events
     assert sum(1 for t, _ in events if t == "llm_call") == 1
 
 

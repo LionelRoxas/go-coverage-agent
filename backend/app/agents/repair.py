@@ -20,18 +20,24 @@ STD_IMPORTS = {
 _UNDEFINED = re.compile(r"undefined: (\w+)")
 
 
-def mechanical_repair(snippet: TestSnippet, output: str, package: str) -> TestSnippet | None:
-    """Return a corrected snippet, or None when the compiler output has no mechanically fixable error."""
+def mechanical_repair(snippet: TestSnippet, output: str, package: str) -> tuple[TestSnippet, str] | None:
+    """Return (corrected snippet, human description), or None when nothing in the compiler output is mechanically fixable."""
     names = set(_UNDEFINED.findall(output))
     imports, code = list(snippet.imports), snippet.code
+    notes: list[str] = []
     for name in sorted(names):
         path = STD_IMPORTS.get(name)
         if path and path not in imports and name != package:
             imports.append(path)
+    added = imports[len(snippet.imports):]
+    if added:
+        notes.append(f"added import{'s' if len(added) > 1 else ''} {', '.join(added)}")
     if package in names:
         qualifier = re.compile(rf"(?<![\w.]){re.escape(package)}\.(?=[A-Za-z_])")
         # only code tokens: comments and string/rune literals are left untouched
         code = "".join(qualifier.sub("", text) if blank is None else text for text, blank in go_segments(code))
+        if code != snippet.code:
+            notes.append(f"removed the `{package}.` qualifier")
     if imports == snippet.imports and code == snippet.code:
         return None
-    return snippet.model_copy(update={"imports": imports, "code": code})
+    return snippet.model_copy(update={"imports": imports, "code": code}), "; ".join(notes)

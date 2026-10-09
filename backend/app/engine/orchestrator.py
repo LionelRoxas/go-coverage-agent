@@ -173,9 +173,9 @@ class Orchestrator:
                         repaired = mechanical_repair(snip, result.output, package)
                         if repaired is not None:  # forgotten import / self-qualified identifier: no LLM call needed
                             repairs += 1
-                            await self.emit("mechanical_repair", {**base, "repair": repairs})
+                            await self.emit("mechanical_repair", {**base, "repair": repairs, "description": repaired[1]})
                             ws.restore(snap)
-                            snip = repaired
+                            snip = repaired[0]
                             await self._generated(base, test_file, snip)
                             result = await self._validate(base, validator.validate(test_file, package, snip, self.report))
                             continue
