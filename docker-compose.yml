@@ -23,5 +23,16 @@ services:
       timeout: 3s
       retries: 5
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: "http://localhost:${BACKEND_PORT:-8000}"
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   gocache: {}
