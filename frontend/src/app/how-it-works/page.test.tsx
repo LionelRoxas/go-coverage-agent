@@ -15,7 +15,7 @@ const STEP_TITLES = [
 describe("HowItWorksPage", () => {
   it("explains the tool and coverage in plain words", () => {
     render(<HowItWorksPage />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/writes those checks for a Go project by itself/);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/writes those checks for a project written in Go \(a programming language\) by itself/);
     expect(screen.getByRole("heading", { name: "What “coverage” means" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "8 of 10 lines run by a test: 80% coverage" })).toBeInTheDocument();
   });
@@ -28,13 +28,14 @@ describe("HowItWorksPage", () => {
       const details = li.querySelector("details");
       expect(details).not.toBeNull();
       expect(details).not.toHaveAttribute("open");
-      expect(within(li).getByText("Technical detail")).toBeInTheDocument();
+      const title = within(li).getByRole("heading", { level: 3 }).textContent;
+      expect(details!.querySelector("summary")).toHaveTextContent(`Technical detail: ${title}`);
     }
     // the precise version still names the real values
     expect(within(steps[1]).getByText(/up to 3 items per round/)).toBeInTheDocument();
     expect(within(steps[2]).getByText(/openai\/gpt-oss-120b/)).toBeInTheDocument();
     expect(within(steps[3]).getByText(/-count=2/)).toBeInTheDocument();
-    expect(within(steps[4]).getByText(/full attempt history/)).toBeInTheDocument();
+    expect(within(steps[4]).getByText(/history of every earlier attempt/)).toBeInTheDocument();
   });
 
   it("shows the repeat connector from step 5 back to step 2", () => {

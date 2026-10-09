@@ -15,48 +15,48 @@ type Step = { title: string; plain: string; tech: ReactNode };
 const STEPS: Step[] = [
   {
     title: "Make a safe copy and measure",
-    plain: "It works on a copy of your project, so your own files are never changed. It removes the copy’s existing tests, so it starts from zero. Then it measures how much of the code is checked.",
+    plain: "It works on a copy of your project, so your own files are never changed. It removes the copy’s existing tests, so it starts from zero and the result shows only what this tool wrote. Then it measures how much of the code is checked.",
     tech: <>The repository is copied into a scratch workspace; by default every existing <code className={code}>_test.go</code> file is deleted from the copy. A seed test file in each package makes untested packages count too. The baseline comes from <code className={code}>go test -count=2 -covermode=set -coverprofile</code>: covered statements divided by all statements.</>,
   },
   {
     title: "Pick what to work on (no AI)",
     plain: "It finds the parts of the code that no test reaches yet. It picks a few at a time, biggest gaps first. This step follows fixed rules, so it uses no AI.",
-    tech: <>A deterministic planner groups each file’s functions with uncovered statements, largest first, into one item of at most 8 functions or 100 uncovered statements, then takes up to 3 items per round. Functions that failed twice, or that are too large for one request, are skipped.</>,
+    tech: <>A deterministic planner groups each file’s functions with uncovered statements, largest first, into one item of at most 8 functions or 100 uncovered statements (a larger single function goes alone), then takes up to 3 items per round. Functions that failed twice, or that are too large for one request, are skipped.</>,
   },
   {
     title: "Write the checks (AI)",
     plain: "It sends that code to an AI model, which writes new tests for the lines nothing checks yet. It also lists the tests that already exist, so the AI does not repeat them.",
-    tech: <>The Writer calls Groq (<code className={code}>openai/gpt-oss-120b</code>, reasoning effort <code className={code}>medium</code>). The request holds the target functions with uncovered lines marked <code className={code}>{"// UNCOVERED"}</code>, the names of existing tests, and nearby code, capped at <code className={code}>MAX_PROMPT_TOKENS</code> (12,000). An answer too large to finish splits the item in half and retries.</>,
+    tech: <>The Writer calls Groq (<code className={code}>openai/gpt-oss-120b</code>, reasoning effort <code className={code}>medium</code>). The request holds the target functions with uncovered lines marked <code className={code}>{"// UNCOVERED"}</code>, the names of existing tests, and nearby code, capped at <code className={code}>MAX_PROMPT_TOKENS</code> (12,000). An answer too large to finish is retried at <code className={code}>low</code> effort, then the item is split in half and retried.</>,
   },
   {
     title: "Try them out",
-    plain: "It runs the new tests for real. They must build, pass twice in a row, and reach code that was not checked before. Tests that would use the network or start other programs are refused before they run.",
+    plain: "It runs the new tests for real. They must be valid code the computer accepts, pass twice in a row, and run code that no test ran before. Tests that would use the network or start other programs are refused before they run.",
     tech: <>Five gates in order: a guard (standard-library or same-module imports only; no <code className={code}>os/exec</code>, <code className={code}>net</code>, <code className={code}>unsafe</code>, <code className={code}>syscall</code>, process starts or build tags), merge into the package’s test file, compile, <code className={code}>go vet</code>, then <code className={code}>go test -count=2</code> with a coverage profile. The covered statements must be a strict superset of the previous set: nothing lost, something gained.</>,
   },
   {
     title: "Keep, repair or undo",
-    plain: "If only some new tests fail, it drops those and keeps the rest. Simple mistakes, like a missing import, are fixed without AI; harder ones go back to the AI with everything tried so far, up to 2 more times. If nothing works, the change is undone, so the project is never left broken.",
-    tech: <>Prune: when only new tests fail, and not all of them, they are removed and the rest re-checked. Mechanical repairs (no model call, up to 3): stray characters in import paths cleaned, forgotten imports added, self-qualified names fixed, a duplicate <code className={code}>Test…</code> name renamed to <code className={code}>_2</code>, <code className={code}>_3</code>. The Fixer (<code className={code}>medium</code> effort) gets the full attempt history, including failing assertions and their observed values; up to 2 Fixer attempts. A Groq timeout is retried once at <code className={code}>low</code> effort. Otherwise the test file, <code className={code}>go.mod</code> and <code className={code}>go.sum</code> are rolled back to the snapshot taken before the attempt.</>,
+    plain: "Tests that fail are dropped if the rest still work. Small slips are fixed automatically without AI; harder ones go back to the AI, with everything tried so far, for up to 2 more tries. If nothing works, the change is undone, so the project is never left broken.",
+    tech: <>Prune: when only new tests fail, and not all of them, they are removed and the rest re-checked. Mechanical repairs (no model call, up to 3): forgotten imports added, self-qualified names fixed, a duplicate <code className={code}>Test…</code> name renamed to <code className={code}>_2</code>, <code className={code}>_3</code>; stray characters around import paths are cleaned on every answer. The Fixer (<code className={code}>medium</code> effort) gets a compact history of every earlier attempt, including failing assertions and their observed values; up to 2 Fixer attempts. Any Groq timeout (Writer or Fixer) is retried once at <code className={code}>low</code> effort. Otherwise the test file, <code className={code}>go.mod</code> and <code className={code}>go.sum</code> are rolled back to the snapshot taken before the attempt.</>,
   },
 ];
 
 const STOPS = [
   { rule: "It reached the goal", why: "Coverage hit the target you set (80% unless you change it)." },
-  { rule: "The last rounds added very little", why: "Two rounds in a row each added less than 1 percentage point." },
+  { rule: "The last rounds added very little", why: "Two rounds in a row each raised coverage by less than 1% (for example, from 60% to 60.5%)." },
   { rule: "It ran out of rounds (20 by default)", why: "A round is one pass through steps 2 to 5." },
   { rule: "It used up its AI budget", why: "Each run, and each day, has a limit on how much AI it may use." },
   { rule: "Nothing is left that it can work on", why: "Every remaining gap was tried twice without success, or is too big to send in one go." },
 ];
 
 const RESULTS = [
-  { id: "stats", repo: "montanaflynn/stats", what: "a statistics library", from: 0, to: 80.75, label: "0% → 80.75%", rounds: 12, time: "about 4 minutes" },
-  { id: "semver", repo: "Masterminds/semver", what: "a version-number library", from: 1.43, to: 84.59, label: "1.4% → 84.6%", rounds: 4, time: "about 2 minutes" },
+  { id: "stats", repo: "montanaflynn/stats", what: "ready-made code for statistics", from: 0, to: 80.75, label: "0% → 80.75%", rounds: 12, time: "about 4 minutes" },
+  { id: "semver", repo: "Masterminds/semver", what: "ready-made code for comparing version numbers", from: 1.43, to: 84.59, label: "1.4% → 84.6%", rounds: 4, time: "about 2 minutes" },
 ];
 
 const GLOSSARY = [
   { term: "Test", def: "A small program that runs a piece of the code and checks the answer is right." },
   { term: "Coverage", def: "The share of the code’s lines that at least one test runs." },
-  { term: "AI model", def: "A language model on Groq’s servers that writes and fixes the tests. Nothing else in the loop uses AI." },
+  { term: "AI model", def: "An AI that writes text and code, run by the company Groq. It writes and fixes the tests. Nothing else in the loop uses AI." },
 ];
 
 // Ten "lines of code", eight of them run by a test. Widths vary so it reads as code, not a progress bar.
@@ -97,7 +97,7 @@ function CoverageLines() {
 function RepeatBracket({ index }: { index: number }) {
   if (index === 0) return null;
   const shape = index === 1 ? "top-3 bottom-0 rounded-tr-md border-t-2"
-    : index === STEPS.length - 1 ? "top-0 h-3 rounded-br-md border-b-2" : "inset-y-0";
+    : index === STEPS.length - 1 ? "inset-y-0 rounded-br-md border-b-2" : "inset-y-0";
   return (
     <span aria-hidden className={`absolute right-0 w-4 border-r-2 border-accent/60 ${shape}`}>
       {index === 1 && (
@@ -115,7 +115,7 @@ export default function HowItWorksPage() {
           Software teams write small automatic checks, called tests, that prove their code works.
         </p>
         <h1 className="text-2xl font-semibold leading-snug tracking-tight sm:text-[2rem] sm:leading-tight">
-          This tool writes those checks for a Go project by itself, keeps only the ones that actually work, and stops when enough of the code is checked.
+          This tool writes those checks for a project written in Go (a programming language) by itself, keeps only the ones that actually work, and stops when enough of the code is checked.
         </h1>
       </section>
 
@@ -147,7 +147,7 @@ export default function HowItWorksPage() {
                 <p className="leading-relaxed text-muted">{s.plain}</p>
                 <details className="group pt-1">
                   <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-sm font-medium text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
-                    <span>Technical detail</span><Chevron />
+                    <span>Technical detail<span className="sr-only">: {s.title}</span></span><Chevron />
                   </summary>
                   <p className="mt-2 border-l-2 border-border pl-3 text-sm leading-relaxed text-muted">{s.tech}</p>
                 </details>
@@ -186,7 +186,7 @@ export default function HowItWorksPage() {
           <ul className="space-y-3 leading-relaxed text-muted">
             <li>Only tests that pass, twice in a row, are kept.</li>
             <li>A failing test is dropped or undone, so it never counts toward the number.</li>
-            <li>The result was also checked independently: for one stats run, the kept tests were re-run in a fresh copy of the project. They all passed and measured 80.5%.</li>
+            <li>The result was also checked independently: an earlier stats run (which reached 80.51%) had its kept tests re-run in a fresh copy of the project. They all passed and measured 80.5%.</li>
           </ul>
         </section>
       </div>
@@ -194,7 +194,7 @@ export default function HowItWorksPage() {
       <section aria-labelledby="result-heading" className="space-y-4">
         <div className="space-y-2">
           <h2 id="result-heading" className={h2}>Measured results</h2>
-          <p className="leading-relaxed text-muted">Two real open-source Go projects, with their own tests removed first. Goal: 80%.</p>
+          <p className="leading-relaxed text-muted">Two real open-source Go projects, with their own tests removed first, so they start at or near 0%. Goal: 80%.</p>
         </div>
         <ul className="divide-y divide-border rounded-md border border-border bg-surface">
           {RESULTS.map((r) => (
