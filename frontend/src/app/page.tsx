@@ -2,12 +2,12 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RepoPicker, type PickerTab } from "@/components/RepoPicker";
 import { RunsPanel } from "@/components/RunsPanel";
-import { Step } from "@/components/Step";
 import { MIN_TOKENS_TO_START, TokenBudget, budgetBlocked } from "@/components/TokenBudget";
-import { Button, cardClass, inlineLinkClass, inputClass, ledeClass, pageTitleClass } from "@/components/ui";
+import { WizardStepper, type StepState } from "@/components/WizardStepper";
+import { Button, cardClass, cx, inlineLinkClass, inputClass, ledeClass, pageTitleClass, sectionHeadingClass } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import type { Health, JobOptions, JobSnapshot, RepoInfo, Sample } from "@/lib/types";
 import type { PickedFile } from "@/lib/upload";
@@ -29,7 +29,7 @@ function pickTab(folders: RepoInfo[]): PickerTab {
   return "folders";
 }
 
-// Header and body share the columns, so the measured run sits above Run history and the aside starts level with step 1.
+// Header and body share the columns, so the measured run sits above Run history and the aside starts level with the wizard.
 const COLUMNS = "grid gap-10 lg:grid-cols-[minmax(0,1fr)_23rem] lg:gap-14";
 
 // Coverage after each round of a real run: montanaflynn/stats, goal 100%, run 0e1f8bf7442a
@@ -56,6 +56,48 @@ function MeasuredRun() {
   );
 }
 
+type Limits = typeof DEFAULTS;
+type LimitKey = keyof Limits;
+
+/** The four advanced limits: field, label, range, input step and whether only whole numbers are allowed. */
+const LIMITS: readonly { key: LimitKey; label: string; min: number; max: number; step: number }[] = [
+  { key: "max_iterations", label: "Max iterations", min: 1, max: 30, step: 1 },
+  { key: "min_gain", label: "Stop when an iteration gains less than (pp)", min: 0, max: 10, step: 0.5 },
+  { key: "targets_per_iteration", label: "Files per iteration", min: 1, max: 5, step: 1 },
+  { key: "max_fix_attempts", label: "Fix attempts per file", min: 0, max: 4, step: 1 },
+];
+
+/** The error for one limit, or null when its value is usable. */
+function limitError(value: number, { min, max, step }: (typeof LIMITS)[number]): string | null {
+  const whole = step === 1;
+  if (Number.isFinite(value) && value >= min && value <= max && (!whole || Number.isInteger(value))) return null;
+  return whole ? `Enter a whole number from ${min} to ${max}.` : `Enter a number from ${min} to ${max}.`;
+}
+
+const STEPS = ["Choose a repository", "Set a target", "Advanced options (optional)", "Review & start"] as const;
+const HINTS = [
+  "Pick a sample (it downloads the first time), or upload a Go project folder of your own.",
+  "The share of the code you want tests to run. 80% is a good start; higher takes longer.",
+  "The defaults work for most runs. Change them to limit how long a run keeps trying.",
+  "Usually 1–5 minutes on a paid Groq key; free-trial keys take much longer. You can leave this page; the run keeps going.",
+] as const;
+const REVIEW = 3;
+
+/** One line of the review: what was chosen, and an Edit link back to the step that chose it. */
+function ReviewRow({ label, editLabel, onEdit, children }: { label: string; editLabel: string; onEdit: () => void; children: React.ReactNode }) {
+  return (
+    <div role="group" aria-label={label}
+         className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 py-3 sm:grid-cols-[9.5rem_minmax(0,1fr)_auto]">
+      <p className="text-sm text-muted">{label}</p>
+      <div className="col-start-1 row-start-2 min-w-0 text-sm sm:col-start-2 sm:row-start-1">{children}</div>
+      <Button variant="link" size="sm" aria-label={editLabel} onClick={onEdit}
+              className="col-start-2 row-span-2 row-start-1 self-start sm:col-start-3 sm:row-span-1">
+        Edit
+      </Button>
+    </div>
+  );
+}
+
 export default function SetupPage() {
   const router = useRouter();
   const [health, setHealth] = useState<Health | null>(null);
@@ -63,13 +105,18 @@ export default function SetupPage() {
   const [running, setRunning] = useState(false);
   const [repo, setRepo] = useState("");
   const [target, setTarget] = useState(80);
-  const [opts, setOpts] = useState(DEFAULTS);
+  const [opts, setOpts] = useState<Limits>(DEFAULTS);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [tab, setTab] = useState<PickerTab>("samples");
   const [samplesFailed, setSamplesFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [step, setStep] = useState(0);
+  /** The furthest step reached; steps before it stay done (and clickable) when the user goes back. */
+  const [furthest, setFurthest] = useState(0);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusHeading = useRef(false);
 
   const sampleIds = new Set(samples.map((s) => s.id));
   const folders = repos.filter((r) => !sampleIds.has(r.path));
@@ -92,6 +139,20 @@ export default function SetupPage() {
       if (failed && failed.status === "rejected") setError((failed.reason as Error).message);
     });
   }, []);
+
+  // Move focus to the new step's heading (it names the step and its position) after Back, Next, Skip or a jump,
+  // but not on the first render.
+  useEffect(() => {
+    if (!focusHeading.current) return;
+    focusHeading.current = false;
+    headingRef.current?.focus();
+  }, [step]);
+
+  function goTo(i: number) {
+    focusHeading.current = true;
+    setStep(i);
+    setFurthest((f) => Math.max(f, i));
+  }
 
   function changeTab(t: PickerTab) {
     setTab(t);
@@ -131,8 +192,19 @@ export default function SetupPage() {
     return info;
   }
 
-  async function start(e: React.FormEvent) {
-    e.preventDefault();
+  const targetValid = Number.isFinite(target) && target >= 1 && target <= 100;
+  const limitErrors = LIMITS.map((l) => limitError(opts[l.key], l));
+  const valid = [!!selected, targetValid, limitErrors.every((e) => e === null), true];
+  const states: StepState[] = STEPS.map((_, i) =>
+    i === step ? "current" : i < furthest && i < REVIEW && valid.slice(0, i + 1).every(Boolean) ? "done" : "upcoming");
+  const changed = LIMITS.filter((l) => opts[l.key] !== DEFAULTS[l.key]);
+
+  const tokensLeft = typeof health?.tokens_left_today === "number" ? health.tokens_left_today : null;
+  const minTokens = health?.min_daily_tokens_to_start ?? MIN_TOKENS_TO_START;
+  const noBudget = tokensLeft != null && budgetBlocked(tokensLeft, minTokens);
+  const canStart = !busy && !!selected && targetValid && valid[2] && !!health?.llm_configured && !running && !noBudget;
+
+  async function start() {
     setBusy(true);
     setError(null);
     try {
@@ -144,10 +216,11 @@ export default function SetupPage() {
     }
   }
 
-  const targetValid = Number.isFinite(target) && target >= 1 && target <= 100;
-  const tokensLeft = typeof health?.tokens_left_today === "number" ? health.tokens_left_today : null;
-  const minTokens = health?.min_daily_tokens_to_start ?? MIN_TOKENS_TO_START;
-  const noBudget = tokensLeft != null && budgetBlocked(tokensLeft, minTokens);
+  // Only the Start button submits; Enter in a field on an earlier step does nothing.
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (step === REVIEW && canStart) void start();
+  }
 
   return (
     <div className="space-y-10">
@@ -165,96 +238,143 @@ export default function SetupPage() {
       </header>
 
       <div className={COLUMNS}>
-        <form onSubmit={start} className="min-w-0 max-w-2xl space-y-8">
+        <div className="min-w-0 max-w-2xl space-y-6">
           {health && !health.llm_configured && (
             <div role="alert" className={`${cardClass({ tone: "warn" })} border-l-4 text-sm`}>
               No Groq API key configured. Add <code className="font-mono">GROQ_API_KEY</code> to <code className="font-mono">.env</code> and restart <code className="font-mono">docker compose</code>.
             </div>
           )}
-          <ol aria-label="Steps to start a run">
-            <Step n={1} title="Choose a repository" done={!!selected}
-                  hint="Pick a sample (it downloads the first time), or upload a Go project folder of your own.">
-              <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
-                          onDownload={download} onRefresh={reload} onUpload={upload} uploadLimits={health?.upload_limits} hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} loading={!loaded} />
-              <div className="space-y-1.5">
-                <p className="text-sm text-muted">
-                  {selected ? (
-                    <>Selected: <span className="font-mono text-text">{selected.path}</span> · <span className="font-mono">{selected.module}</span> · {selected.go_files} source files</>
-                  ) : "Nothing selected yet. Pick a repository above."}
-                </p>
-              </div>
-            </Step>
 
-            <Step n={2} title="Set a target" done={targetValid}
-                  hint="The share of the code you want tests to run. 80% is a good start; higher takes longer.">
-              <div className="space-y-2">
-                <label htmlFor="target" className="sr-only">Target coverage</label>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <input id="target" type="range" min={10} max={100} step={1} value={Math.min(100, Math.max(10, target || 10))}
-                         onChange={(e) => setTarget(Number(e.target.value))} className="w-full max-w-64 accent-[var(--accent)]" />
-                  <div className="flex items-center gap-2">
-                    <input type="number" min={1} max={100} value={Number.isNaN(target) ? "" : target} aria-label="Target coverage percent"
-                           onChange={(e) => setTarget(e.target.value === "" ? NaN : Number(e.target.value))}
-                           className={`w-20 ${inputClass}`} />
-                    <span className="text-sm text-muted">%</span>
+          <form onSubmit={submit} noValidate className={cardClass({ padded: false })}>
+            <div className="border-b border-border px-4 pb-4 pt-4 sm:px-6 sm:pt-5">
+              <WizardStepper label="Steps to start a run" steps={STEPS} current={step} states={states} onJump={goTo} />
+            </div>
+
+            <div className="space-y-5 px-4 py-5 sm:px-6 sm:py-6">
+              <div className="space-y-1">
+                <h2 ref={headingRef} tabIndex={-1} className={cx(sectionHeadingClass, "text-lg focus:outline-none")}>
+                  <span className="sr-only">Step {step + 1} of {STEPS.length}:</span>{" "}{STEPS[step]}
+                </h2>
+                <p className="max-w-prose text-sm leading-relaxed text-muted">{HINTS[step]}</p>
+              </div>
+
+              {step === 0 && (
+                <>
+                  <RepoPicker tab={tab} onTabChange={changeTab} samples={samples} folders={folders} value={repo} onChange={setRepo}
+                              onDownload={download} onRefresh={reload} onUpload={upload} uploadLimits={health?.upload_limits}
+                              hostDir={health?.host_repos_dir ?? null} samplesFailed={samplesFailed} loading={!loaded} />
+                  <p className="text-sm text-muted">
+                    {selected ? (
+                      <>Selected: <span className="font-mono text-text">{selected.path}</span> · <span className="font-mono">{selected.module}</span> · {selected.go_files} source files</>
+                    ) : "Nothing selected yet. Pick a repository above."}
+                  </p>
+                </>
+              )}
+
+              {step === 1 && (
+                <div className="space-y-2">
+                  <label htmlFor="target" className="sr-only">Target coverage</label>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <input id="target" type="range" min={10} max={100} step={1} value={Math.min(100, Math.max(10, target || 10))}
+                           onChange={(e) => setTarget(Number(e.target.value))} className="w-full max-w-64 accent-[var(--accent)]" />
+                    <div className="flex items-center gap-2">
+                      <input type="number" min={1} max={100} value={Number.isNaN(target) ? "" : target} aria-label="Target coverage percent"
+                             aria-invalid={!targetValid} aria-describedby={targetValid ? undefined : "target-error"}
+                             onChange={(e) => setTarget(e.target.value === "" ? NaN : Number(e.target.value))}
+                             className={`w-20 ${inputClass}`} />
+                      <span className="text-sm text-muted">%</span>
+                    </div>
                   </div>
+                  {!targetValid && <p id="target-error" className="text-xs text-danger">Enter a target between 1 and 100.</p>}
                 </div>
-                {!targetValid && <p className="text-xs text-danger">Enter a target between 1 and 100.</p>}
-              </div>
-            </Step>
+              )}
 
-            <Step n={3} title="Advanced options (optional)" optional
-                  hint="The defaults work for most runs. Change them to limit how long a run keeps trying.">
-              <details className="group max-w-xl">
-                <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm text-muted hover:text-text [&::-webkit-details-marker]:hidden">
-                  <svg aria-hidden viewBox="0 0 12 12" className="h-3 w-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2l4 4-4 4" /></svg>
-                  Show the four limits
-                </summary>
-                <div className={`mt-3 grid gap-x-6 gap-y-4 sm:grid-cols-2 ${cardClass()}`}>
-                  {([
-                    ["max_iterations", "Max iterations", 1, 30, 1],
-                    ["min_gain", "Stop when an iteration gains less than (pp)", 0, 10, 0.5],
-                    ["targets_per_iteration", "Files per iteration", 1, 5, 1],
-                    ["max_fix_attempts", "Fix attempts per file", 0, 4, 1],
-                  ] as const).map(([key, label, min, max, step]) => (
-                    <label key={key} className="flex flex-col justify-between gap-1.5 text-sm">
-                      <span className="block text-xs leading-snug text-muted">{label}</span>
-                      <input type="number" min={min} max={max} step={step} value={opts[key]}
-                             onChange={(e) => setOpts({ ...opts, [key]: Number(e.target.value) })}
-                             className={`w-24 ${inputClass}`} />
-                    </label>
-                  ))}
+              {step === 2 && (
+                <div className="grid max-w-xl gap-x-6 gap-y-4 sm:grid-cols-2">
+                  {LIMITS.map((l, i) => {
+                    const err = limitErrors[i];
+                    const id = `limit-${l.key}`;
+                    return (
+                      <div key={l.key} className="flex flex-col gap-1.5">
+                        <label htmlFor={id} className="block text-xs leading-snug text-muted">{l.label}</label>
+                        <input id={id} type="number" min={l.min} max={l.max} step={l.step}
+                               value={Number.isNaN(opts[l.key]) ? "" : opts[l.key]}
+                               aria-invalid={err !== null} aria-describedby={err ? `${id}-error` : undefined}
+                               onChange={(e) => setOpts({ ...opts, [l.key]: e.target.value === "" ? NaN : Number(e.target.value) })}
+                               className={`w-24 ${inputClass}`} />
+                        {err && <p id={`${id}-error`} className="text-xs text-danger">{err}</p>}
+                      </div>
+                    );
+                  })}
                 </div>
-              </details>
-            </Step>
+              )}
 
-            <Step n={4} title="Start the run" last
-                  hint="Usually 1–5 minutes on a paid Groq key; free-trial keys take much longer. You can leave this page; the run keeps going.">
+              {step === REVIEW && (
+                <>
+                  <div className="divide-y divide-border border-y border-border">
+                    <ReviewRow label="Repository" editLabel="Edit repository" onEdit={() => goTo(0)}>
+                      {selected && (
+                        <>
+                          <span className="block break-all font-mono text-text">{selected.path}</span>
+                          <span className="block break-all font-mono text-xs text-muted">{selected.module} · {selected.go_files} source files</span>
+                        </>
+                      )}
+                    </ReviewRow>
+                    <ReviewRow label="Target" editLabel="Edit target" onEdit={() => goTo(1)}>
+                      <span className="font-mono">{target}%</span> <span className="text-muted">of the code tested</span>
+                    </ReviewRow>
+                    <ReviewRow label="Advanced options" editLabel="Edit advanced options" onEdit={() => goTo(2)}>
+                      {changed.length === 0 ? (
+                        <span className="text-muted">Defaults</span>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {changed.map((l) => <li key={l.key}>{l.label}: <span className="font-mono">{opts[l.key]}</span></li>)}
+                        </ul>
+                      )}
+                    </ReviewRow>
+                  </div>
+
+                  <section aria-labelledby="next-heading" className="max-w-prose space-y-1.5 border-l-2 border-border pl-3 text-xs leading-relaxed text-muted">
+                    <h3 id="next-heading" className="font-medium text-text">What happens next</h3>
+                    <ul className="space-y-1">
+                      <li>You land on the run page, which shows coverage and each step as it happens.</li>
+                      <li>When it finishes, the new tests are saved in <code className="font-mono text-text">./output/&lt;run id&gt;/tests</code>.</li>
+                      <li>For a plain explanation of what it does, read <Link href="/how-it-works" className={inlineLinkClass}>How it works</Link>.</li>
+                    </ul>
+                  </section>
+                </>
+              )}
+
               {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+            </div>
 
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <Button type="submit" variant="primary"
-                          disabled={busy || !repo || !targetValid || !health?.llm_configured || running || noBudget}
-                          aria-describedby={noBudget ? "budget-reason" : undefined}>
-                    {busy ? "Starting…" : "Start"}
-                  </Button>
-                  {tokensLeft != null && <TokenBudget left={tokensLeft} min={minTokens} id="budget-reason" />}
+            <div className="space-y-2 rounded-b-md border-t border-border bg-surface px-4 py-3 max-sm:sticky max-sm:bottom-0 max-sm:z-10 sm:px-6 sm:py-4">
+              {/* On phones the budget line takes its own row above Back and Start, so the sticky bar stays two rows. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                {step > 0 && <Button onClick={() => goTo(step - 1)} className="max-sm:order-2">Back</Button>}
+                {step === REVIEW && tokensLeft != null && (
+                  <div className="max-sm:order-1 max-sm:w-full sm:ml-auto">
+                    <TokenBudget left={tokensLeft} min={minTokens} id="budget-reason" />
+                  </div>
+                )}
+                <div className="ml-auto flex items-center gap-3 max-sm:order-3">
+                  {step === 2 && <Button variant="ghost" onClick={() => { setOpts(DEFAULTS); goTo(REVIEW); }}>Skip</Button>}
+                  {step < REVIEW ? (
+                    <Button key="next" variant="primary" disabled={!valid[step]} onClick={() => goTo(step + 1)}>Next</Button>
+                  ) : (
+                    // Its own key: reusing the Next button's element as a submit button would let the click that
+                    // opens the review also submit the form.
+                    <Button key="start" type="submit" variant="primary" disabled={!canStart}
+                            aria-describedby={noBudget ? "budget-reason" : undefined}>
+                      {busy ? "Starting…" : "Start"}
+                    </Button>
+                  )}
                 </div>
-                {running && <p className="text-xs text-muted">A run is in progress. Follow it in Run history.</p>}
               </div>
-
-              <section aria-labelledby="next-heading" className="max-w-prose space-y-1.5 border-l-2 border-border pl-3 text-xs leading-relaxed text-muted">
-                <h3 id="next-heading" className="font-medium text-text">What happens next</h3>
-                <ul className="space-y-1">
-                  <li>You land on the run page, which shows coverage and each step as it happens.</li>
-                  <li>When it finishes, the new tests are saved in <code className="font-mono text-text">./output/&lt;run id&gt;/tests</code>.</li>
-                  <li>For a plain explanation of what it does, read <Link href="/how-it-works" className={inlineLinkClass}>How it works</Link>.</li>
-                </ul>
-              </section>
-            </Step>
-          </ol>
-        </form>
+              {step === REVIEW && running && <p className="text-right text-xs text-muted">A run is in progress. Follow it in Run history.</p>}
+            </div>
+          </form>
+        </div>
         <RunsPanel onJobs={onJobs} />
       </div>
     </div>
