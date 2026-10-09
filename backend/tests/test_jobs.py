@@ -105,6 +105,16 @@ async def test_failures_become_job_failed_events(tmp_path):
     assert job.events[-1].data["reason"] == "internal_error"
 
 
+async def test_cancel_during_setup_marks_job_cancelled(tmp_path):
+    async def cancelled(job, emit, cancel):
+        raise JobFailed("cancelled", "Cancelled before the baseline finished.")
+
+    job = manager(tmp_path, cancelled).start(JobRequest(repo_path="stats"))
+    await finish(job)
+    assert job.status is JobStatus.CANCELLED
+    assert job.events[-1].type == "job_failed" and job.events[-1].data["reason"] == "cancelled"
+
+
 async def test_events_jsonl_ends_with_terminal_event(tmp_path):
     async def runner(job, emit, cancel):
         return summary()

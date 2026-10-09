@@ -19,10 +19,15 @@ log = logging.getLogger(__name__)
 __all__ = ["JobFailed", "prepare", "run_job", "write_artifacts"]
 
 
-def write_artifacts(dest: Path, ws: Workspace | None, summary: Summary | None, events: list[Event]) -> None:
+def write_artifacts(dest: Path, ws: Workspace | None, summary: Summary | None, events: list[Event],
+                    accepted: list[str] | None = None) -> None:
+    """Without a summary (failed job) export only the accepted test files when known, else every test file."""
     dest.mkdir(parents=True, exist_ok=True)
     if ws is not None:
-        files = summary.test_files if summary is not None else ws.test_files()
+        if summary is not None:
+            files = summary.test_files
+        else:
+            files = accepted if accepted is not None else ws.test_files()
         for rel in files:
             src = ws.path(rel)
             if src.exists():
@@ -46,6 +51,9 @@ async def run_job(job_id: str, request: JobRequest, settings: Settings, llm: LLM
         raise JobFailed("llm_auth", str(e)) from e
     finally:
         try:
-            write_artifacts(settings.output_dir / job_id, prepared.deps.ws if prepared else None, summary, events())
+            log_events = events()
+            accepted = sorted({e.data["test_file"] for e in log_events if e.type == "candidate_accepted"})
+            write_artifacts(settings.output_dir / job_id, prepared.deps.ws if prepared else None, summary, log_events,
+                            accepted)
         except Exception:  # never mask the job's own outcome
             log.exception("could not write artifacts for job %s", job_id)

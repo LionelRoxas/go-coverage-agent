@@ -54,6 +54,18 @@ def test_write_artifacts_without_summary_exports_tests_but_not_seed(tmp_path):
     assert not (dest / "report.json").exists()
 
 
+def test_write_artifacts_failure_path_exports_only_accepted_files(tmp_path):
+    (tmp_path / "repo").mkdir()
+    (tmp_path / "scratch").mkdir()
+    ws = Workspace(tmp_path / "repo", tmp_path / "scratch")
+    ws.write_test("mean_test.go", "package stats" + chr(10))
+    ws.write_test("half_baked_test.go", "package stats" + chr(10))
+    dest = tmp_path / "out"
+    write_artifacts(dest, ws, None, [], accepted=["mean_test.go"])
+    assert (dest / "tests" / "mean_test.go").exists()
+    assert not (dest / "tests" / "half_baked_test.go").exists()
+
+
 class _Prepared:
     class deps:
         ws = None

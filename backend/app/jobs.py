@@ -143,7 +143,8 @@ class JobManager:
                 job.status = JobStatus.COMPLETED
                 await job.emit("job_completed", summary.model_dump(mode="json"))
         except JobFailed as e:
-            job.status = JobStatus.FAILED
+            # cancelled during setup: no Summary exists, so the event stays job_failed (reason "cancelled")
+            job.status = JobStatus.CANCELLED if e.reason == "cancelled" else JobStatus.FAILED
             await job.emit("job_failed", {"reason": e.reason, "message": e.message, "output": e.output[:8000]})
         except Exception as e:  # noqa: BLE001 — surface anything unexpected to the UI
             log.exception("job %s crashed", job.id)
