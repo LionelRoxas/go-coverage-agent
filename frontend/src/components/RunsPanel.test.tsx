@@ -175,4 +175,17 @@ describe("RunsPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load runs: backend down");
     expect(screen.getByText(/files stay in/)).toBeInTheDocument();
   });
+
+  it("keeps a run that is writing its summary in the busy list, with Stop summary", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    vi.mocked(api.jobs).mockResolvedValue([job({ id: "w", status: "completed", writing_summary: true, percent: 81.07, summary })]);
+    vi.mocked(api.cancel).mockResolvedValue({} as never);
+    render(<RunsPanel />);
+    const busy = await screen.findByRole("list", { name: "Running" });
+    expect(busy).toHaveTextContent("Writing summary…");
+    expect(busy).toHaveTextContent("Completed");
+    expect(screen.queryByRole("list", { name: "Past runs" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Stop summary" }));
+    expect(api.cancel).toHaveBeenCalledWith("w");
+  });
 });

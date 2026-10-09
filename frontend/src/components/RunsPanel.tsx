@@ -18,11 +18,15 @@ function ago(seconds: number) {
   return `${Math.floor(h / 24)} d ago`;
 }
 
+/** Running, or writing its AI summary: either way the backend refuses a new run until it is done. */
+export const isBusy = (j: JobSnapshot) => j.status === "running" || !!j.writing_summary;
+
 function RunningCard({ job, now, onChanged }: { job: JobSnapshot; now: number; onChanged: () => void }) {
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { percent } = job;
   const target = job.request.target_coverage;
+  const summarizing = !!job.writing_summary;
 
   async function cancel() {
     setCancelling(true);
@@ -40,7 +44,7 @@ function RunningCard({ job, now, onChanged }: { job: JobSnapshot; now: number; o
     <li className={`space-y-3 ${staticTileClass({ accent: true })}`}>
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 break-all font-mono text-sm font-medium">{job.request.repo_path}</span>
-        <StatusChip status="running" />
+        <StatusChip status={summarizing ? job.status : "running"} />
       </div>
       <div className="space-y-1.5">
         <div className="flex items-baseline justify-between gap-2 text-xs text-muted">
@@ -57,11 +61,13 @@ function RunningCard({ job, now, onChanged }: { job: JobSnapshot; now: number; o
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-mono text-xs tabular-nums text-muted">{duration(Math.max(0, now - job.created_at))}</span>
+        {summarizing
+          ? <span className="text-xs text-muted">Writing summary…</span>
+          : <span className="font-mono text-xs tabular-nums text-muted">{duration(Math.max(0, now - job.created_at))}</span>}
         <div className="flex items-center gap-2">
           <Link href={`/jobs/${job.id}`} className={buttonClass({ variant: "primary", size: "sm" })}>Open</Link>
           <Button variant="danger" size="sm" onClick={cancel} disabled={cancelling}>
-            {cancelling ? "Cancelling…" : "Cancel"}
+            {cancelling ? "Cancelling…" : summarizing ? "Stop summary" : "Cancel"}
           </Button>
         </div>
       </div>
@@ -120,7 +126,7 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
     }
   }, [onJobs]);
 
-  const anyRunning = !!jobs?.some((j) => j.status === "running");
+  const anyRunning = !!jobs?.some(isBusy);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -141,8 +147,8 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
   }, [anyRunning]);
 
   const sorted = [...(jobs ?? [])].sort((a, b) => b.created_at - a.created_at);
-  const running = sorted.filter((j) => j.status === "running");
-  const past = sorted.filter((j) => j.status !== "running");
+  const running = sorted.filter(isBusy);
+  const past = sorted.filter((j) => !isBusy(j));
 
   return (
     <aside aria-labelledby="runs-heading"

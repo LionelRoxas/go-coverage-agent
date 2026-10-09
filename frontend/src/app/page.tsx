@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RepoPicker, type PickerTab } from "@/components/RepoPicker";
-import { RunsPanel } from "@/components/RunsPanel";
+import { isBusy, RunsPanel } from "@/components/RunsPanel";
 import { MIN_TOKENS_TO_START, TokenBudget, budgetBlocked } from "@/components/TokenBudget";
 import { WizardStepper, type StepState } from "@/components/WizardStepper";
 import { Button, cardClass, cx, inlineLinkClass, inputClass, ledeClass, pageTitleClass, sectionHeadingClass } from "@/components/ui";
@@ -185,7 +185,7 @@ export default function SetupPage() {
     setSamples(s);
   }
 
-  const onJobs = useCallback((jobs: JobSnapshot[]) => setRunning(jobs.some((j) => j.status === "running")), []);
+  const onJobs = useCallback((jobs: JobSnapshot[]) => setRunning(jobs.some(isBusy)), []);
 
   /** Runs a download or upload, keeping Next disabled until its result is selected. */
   async function tracked<T>(work: () => Promise<T>): Promise<T> {

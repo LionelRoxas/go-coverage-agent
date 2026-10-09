@@ -62,13 +62,14 @@ export type TechnicalSummary = {
   how_to_run: string;
   next_steps: string[];
 };
-export type CostUsd = { input: number; output: number; total: number };
+/** run: the run itself (what the text talks about); summary: the summary call; input/output/total: both together. */
+export type CostUsd = { run: number; summary: number; input: number; output: number; total: number };
 export type SummaryGenerated = {
   business: BusinessSummary;
   technical: TechnicalSummary;
   dropped_sentences: number;
   tokens: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
-  /** The run plus the summary call; only when GROQ_PRICE_*_PER_M are set. */
+  /** Only when GROQ_PRICE_*_PER_M are set. */
   cost_usd?: CostUsd;
 };
 
@@ -117,4 +118,6 @@ export type JobSnapshot = {
   percent: number | null;
   event_count: number;
   summary: Summary | null;
+  /** The run has ended and its AI summary is being written; the job still counts as busy. Older backends omit it. */
+  writing_summary?: boolean;
 };

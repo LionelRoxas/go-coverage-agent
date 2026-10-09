@@ -1,7 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
 import { useState, type ReactNode } from "react";
-import { AI_NOTE, costLine, toMarkdown } from "@/lib/aiSummary";
+import { AI_NOTE, costLine, EMPTY_PART, hasText, toMarkdown } from "@/lib/aiSummary";
 import { api } from "@/lib/api";
 import type { AiSummaryView } from "@/lib/runState";
 import type { SummaryGenerated } from "@/lib/types";
@@ -42,10 +42,17 @@ function Headline({ text }: { text: string }) {
   return <p className="max-w-[40rem] text-lg font-semibold leading-snug tracking-tight text-balance sm:text-xl"><Prose text={text} /></p>;
 }
 
+/** Shown when the grounding check left nothing of a part. */
+function Empty() {
+  return <p className="text-sm text-muted">{EMPTY_PART} The summary card above has the run&apos;s measured results.</p>;
+}
+
 function Business({ ai }: { ai: SummaryGenerated }) {
   const b = ai.business;
+  if (!hasText(b) && !ai.cost_usd) return <Empty />;
   return (
     <>
+      {!hasText(b) && <Empty />}
       <Headline text={b.headline} />
       <dl className="space-y-4">
         {b.outcome && <Row label="Outcome"><Prose text={b.outcome} /></Row>}
@@ -68,6 +75,7 @@ function Business({ ai }: { ai: SummaryGenerated }) {
 
 function Technical({ ai }: { ai: SummaryGenerated }) {
   const t = ai.technical;
+  if (!hasText(t)) return <Empty />;
   return (
     <>
       <Headline text={t.headline} />
@@ -121,7 +129,10 @@ export function AiSummary({ view, jobId, repo, model, onRequested }: {
   const [tab, setTab] = useState<Audience>("business");
   const [requesting, setRequesting] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
   const waiting = view.status === "waiting";
+  const cancelled = view.status === "failed" && view.error?.reason === "cancelled";
   const result = waiting ? undefined : view.result;
 
   const write = async () => {
@@ -134,6 +145,19 @@ export function AiSummary({ view, jobId, repo, model, onRequested }: {
       setRequestError((e as Error).message);
     } finally {
       setRequesting(false);
+    }
+  };
+
+  // Cancel during the summary call stops only the summary; the run keeps its result.
+  const stop = async () => {
+    setStopping(true);
+    setStopError(null);
+    try {
+      await api.cancel(jobId);
+    } catch (e) {
+      setStopError((e as Error).message);
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -152,13 +176,20 @@ export function AiSummary({ view, jobId, repo, model, onRequested }: {
           {result && view.generatedAt != null && (
             <CopyMarkdown markdown={toMarkdown(result, { repo, model, generatedAt: view.generatedAt })} />
           )}
-          <Button size="sm" onClick={write} disabled={waiting || requesting}>
-            {requesting ? "Starting…" : action}
-          </Button>
+          {waiting ? (
+            <Button size="sm" variant="danger" onClick={stop} disabled={stopping}>
+              {stopping ? "Stopping…" : "Stop"}
+            </Button>
+          ) : (
+            <Button size="sm" onClick={write} disabled={requesting}>
+              {requesting ? "Starting…" : action}
+            </Button>
+          )}
         </div>
       </div>
 
       {requestError && <p role="alert" className="text-sm text-danger">Couldn&apos;t start the summary: {requestError}</p>}
+      {stopError && waiting && <p role="alert" className="text-sm text-danger">Couldn&apos;t stop the summary: {stopError}</p>}
 
       {waiting && (
         <div className="space-y-3">
@@ -173,14 +204,15 @@ export function AiSummary({ view, jobId, repo, model, onRequested }: {
       )}
       {view.status === "off" && <p className="text-sm text-muted">Summary was turned off for this run.</p>}
       {view.status === "none" && <p className="text-sm text-muted">No summary was written for this run.</p>}
-      {view.status === "failed" && view.error && (
+      {cancelled && <p className="text-sm text-muted">The summary was stopped before it was written.</p>}
+      {view.status === "failed" && view.error && !cancelled && (
         <p role="alert" className="text-sm text-danger">Couldn&apos;t write the summary: {view.error.message}</p>
       )}
 
       {result && (
         <div className="space-y-5">
           <Tabs label="Summary for" tabs={TABS} value={tab} onChange={setTab} idPrefix={PREFIX} />
-          <div role="tabpanel" id={ids.panel} aria-labelledby={ids.tab} className="space-y-5">
+          <div role="tabpanel" id={ids.panel} aria-labelledby={ids.tab} tabIndex={0} className="space-y-5">
             {tab === "business" ? <Business ai={result} /> : <Technical ai={result} />}
           </div>
           {result.dropped_sentences > 0 && (

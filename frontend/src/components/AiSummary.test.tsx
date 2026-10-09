@@ -11,7 +11,7 @@ import { AiSummary } from "./AiSummary";
 
 vi.mock("@/lib/api", async (orig) => {
   const real = await orig<typeof import("@/lib/api")>();
-  return { ...real, api: { writeSummary: vi.fn() } };
+  return { ...real, api: { writeSummary: vi.fn(), cancel: vi.fn() } };
 });
 
 const done: AiSummaryView = { status: "done", result: statsSummary, generatedAt: 1791547520 };
@@ -41,7 +41,8 @@ describe("AiSummary", () => {
     expect(panel).toHaveTextContent(statsSummary.business.headline);
     expect(within(panel).getByText("Recommendation")).toBeInTheDocument();
     expect(within(panel).getAllByRole("listitem")).toHaveLength(2);
-    expect(panel).toHaveTextContent("Estimated cost: $0.07 (input $0.01, output $0.06)");
+    expect(panel).toHaveTextContent("Run cost $0.07 · summary $0.0013 · total $0.07 (input $0.01, output $0.06)");
+    expect(panel).toHaveAttribute("tabindex", "0");
   });
 
   it("switches to the engineering summary by click and by arrow key", async () => {
@@ -74,13 +75,34 @@ describe("AiSummary", () => {
     expect(screen.getByText(/2 sentences were left out/)).toBeInTheDocument();
   });
 
-  it("while writing: a Groq wait, no tabs, and Write again disabled", () => {
+  it("while writing: a Groq wait, no tabs, and Stop, which cancels only the summary", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.cancel).mockResolvedValueOnce({} as never);
     show({ status: "waiting", pending: { since: Date.now() / 1000, role: "summarizer", effort: "medium" }, result: statsSummary });
     expect(screen.getByText(/Writing the summary…/)).toBeInTheDocument();
     expect(screen.getAllByText(/Waiting for Groq/).length).toBeGreaterThan(0);
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.getByRole("button", { name: "Write again" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Write again" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy as Markdown" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(api.cancel).toHaveBeenCalledWith("e2de1ca387cb");
+  });
+
+  it("after Stop: says the summary was stopped and offers Try again, without an error", () => {
+    show({ status: "failed", error: { reason: "cancelled", message: "Cancelled while the summary was being written." } });
+    expect(screen.getByText("The summary was stopped before it was written.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
+  });
+
+  it("a tab the grounding check emptied says so instead of showing nothing", async () => {
+    const user = userEvent.setup();
+    const technical = { headline: "", what_was_tested: "", where_tests_live: "", gaps: [], suspected_bugs: [],
+                        rejected_or_failed: "", how_to_run: "", next_steps: [] };
+    show({ ...done, result: { ...statsSummary, technical, dropped_sentences: 9 } });
+    await user.click(screen.getByRole("tab", { name: "For engineering teams" }));
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Nothing in this part could be checked against the run's data.");
+    expect(screen.getByRole("tabpanel")).not.toHaveTextContent("None reported.");
   });
 
   it("when it failed: the message and a retry that asks the backend and reopens the stream", async () => {
