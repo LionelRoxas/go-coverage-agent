@@ -19,8 +19,9 @@ cp .env.example .env          # then paste your key into GROQ_API_KEY
 docker compose up --build
 ```
 
-Open http://localhost:3000 (or `http://localhost:${FRONTEND_PORT}` if you changed it), click
-**Use sample repo (montanaflynn/stats)**, then **Start**. The target defaults to 80%.
+Open http://localhost:3000 (or `http://localhost:${FRONTEND_PORT}` if you changed it), click the
+**montanaflynn/stats** card under **Sample repos**, then **Start**. The target defaults to 80%.
+The New run page walks you through four numbered steps: choose a repository, set a target, optional advanced options, start the run.
 
 **Model:** `openai/gpt-oss-120b` on Groq (fallback: `openai/gpt-oss-20b`, set `GROQ_MODEL` in `.env`). The model name is also
 reported by `GET /api/health` and shown in the UI.
@@ -43,7 +44,7 @@ If `.env` is missing or has no key, the stack still starts and the UI shows a "N
 
 ## Using your own repository
 
-The Repository section of the setup page has two tabs.
+Step 1 of the setup page, **Choose a repository**, has two tabs.
 
 **Sample repos** lists six small, dependency-free Go libraries. Click one and it is downloaded into `./repos/<id>` (shallow clone of a pinned release tag, no submodules; stats: default branch, the assessment's evaluation repo), then selected. Nothing else is fetched.
 
@@ -149,12 +150,12 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <table>
 <tr>
 <td valign="top">
-<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with the Sample repos tab, one sample selected, and the Run history panel"></a>
-<br><b>Setup page: sample repos and Run history</b><br>The Sample repos tab with six cards (all six downloaded, so each shows Ready), <code>montanaflynn/stats</code> selected, the Selected summary (stats, <code>github.com/montanaflynn/stats</code>, 58 source files) with a short note under it (the code is sent to Groq, where <code>openai/gpt-oss-120b</code> writes the tests; the agent works on a copy and your repository is never modified), a closed Advanced options row, the Start button with "About 1.6M tokens left today" and an ⓘ button beside it, and the Run history panel on the right: stats 0.0% to 80.3%, semver 1.4% to 80.1%, and a cancelled stats run at 8.6%.
+<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with four numbered steps, the Sample repos tab, one sample selected, and the Run history panel"></a>
+<br><b>Setup page: numbered steps and Run history</b><br>The form as four numbered steps on a rail (1 Choose a repository and 2 Set a target show filled markers once done; 3 Advanced options is marked optional), each with a one-line hint. Step 1 holds the Sample repos tab with six cards (all six downloaded, so each shows Ready), <code>montanaflynn/stats</code> selected, the Selected summary (stats, <code>github.com/montanaflynn/stats</code>, 58 source files) with a short note under it (the code is sent to Groq, where <code>openai/gpt-oss-120b</code> writes the tests; the agent works on a copy and your repository is never modified), the closed Advanced options step, step 4 with the Start button, "About 1.6M tokens left today" and an ⓘ button beside it, and a short "What happens next" list (the run page, <code>./output/&lt;run id&gt;/tests</code>, How it works), and the Run history panel on the right: stats 0.0% to 80.3%, semver 1.4% to 80.1%, and a cancelled stats run at 8.6%.
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="Setup page and Run history panel in the dark theme"></a>
-<br><b>Dark theme</b><br>The same setup page and Run history panel in the dark theme.
+<br><b>Dark theme</b><br>The same numbered setup steps and Run history panel in the dark theme.
 </td>
 </tr>
 <tr>
@@ -164,7 +165,7 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 </td>
 <td valign="top">
 <a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="Setup page on a phone-width screen"></a>
-<br><b>Setup page on mobile</b><br>The setup page at 390 px wide: the navbar collapses to a short title and S / L / D theme buttons, the sample cards stack in one column, the token budget line sits beside Start, and Run history follows below.
+<br><b>Setup page on mobile</b><br>The setup page at 390 px wide: the navbar collapses to a short title and S / L / D theme buttons, the numbered steps keep their rail, the sample cards stack in one column, the token budget line sits beside Start with "What happens next" under it, and Run history follows below.
 </td>
 </tr>
 <tr>
