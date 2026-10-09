@@ -20,8 +20,9 @@ docker compose up --build
 ```
 
 Open http://localhost:3000 (or `http://localhost:${FRONTEND_PORT}` if you changed it), click the
-**montanaflynn/stats** card under **Sample repos**, then **Start**. The target defaults to 80%.
-The New run page walks you through four numbered steps: choose a repository, set a target, optional advanced options, start the run.
+**montanaflynn/stats** card under **Sample repos**, then follow the four steps: **Next** to set a target (80% by default),
+**Next** or **Skip** past the optional advanced options, then **Start** on the review step.
+The New run page shows one step at a time: choose a repository, set a target, optional advanced options, review & start.
 
 **Model:** `openai/gpt-oss-120b` on Groq (fallback: `openai/gpt-oss-20b`, set `GROQ_MODEL` in `.env`). The model name is also
 reported by `GET /api/health` and shown in the UI.
@@ -175,18 +176,18 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <table>
 <tr>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="Setup page with the header, the Sample repos tab with montanaflynn/stats selected, and the Run history panel"></a>
-<br><b>Setup page</b><br>The header, a chart of a measured run (0% to 100% in 22 rounds), step 1 with the six sample repos (<code>montanaflynn/stats</code> selected) and the Run history panel with three past runs.
+<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="New run page at step 1 of the wizard: the header, the four-step stepper, the Sample repos tab with montanaflynn/stats selected, and the Run history panel"></a>
+<br><b>New run, step 1</b><br>The header, a chart of a measured run (0% to 100% in 22 rounds), and the wizard on step 1 of 4: the stepper above the six sample repos (<code>montanaflynn/stats</code> selected), beside the Run history panel with three past runs.
 </td>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="The same setup page and Run history panel in the dark theme"></a>
-<br><b>Dark theme</b><br>The same setup page in the dark theme: stats 0.0% to 81.1%, semver 1.4% to 83.5% and stats 0.0% to 100.0% in Run history.
+<a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="The review step of the New run wizard and the Run history panel in the dark theme"></a>
+<br><b>Review &amp; start, dark theme</b><br>Step 4 of 4: the chosen repository, the 80% target and default advanced options, each with an Edit link, then Start with the token budget beside it. Run history shows stats 0.0% to 81.1%, semver 1.4% to 83.5% and stats 0.0% to 100.0%.
 </td>
 </tr>
 <tr>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Your folders tab after uploading a copy of stats: the drop area, the upload result, the uploaded module selected and the HOST_REPOS_DIR note"></a>
-<br><b>Your folders</b><br>After uploading a local copy of <code>montanaflynn/stats</code>: "Uploaded stats (118 Go files). Skipped: 29 files in .git, 8 hidden files.", with <code>uploads/stats</code> selected under Go modules in <code>./repos</code> and the one-line <code>HOST_REPOS_DIR</code> note below it.
+<a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Step 1 of the New run wizard on the Your folders tab after uploading a copy of stats: the drop area, the upload result, the uploaded module selected and the HOST_REPOS_DIR note"></a>
+<br><b>Your folders</b><br>Step 1 on the Your folders tab, after uploading a local copy of <code>montanaflynn/stats</code>: "Uploaded stats (118 Go files). Skipped: 29 files in .git, 8 hidden files.", with <code>uploads/stats</code> selected under Go modules in <code>./repos</code> and the one-line <code>HOST_REPOS_DIR</code> note below it. The upload selects the folder; Next moves on.
 </td>
 <td valign="top" width="50%">
 <a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Run in progress at 19.9 percent with a Cancel button and the Activity list ending in a running item"></a>
@@ -228,8 +229,8 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <table>
 <tr>
 <td valign="top" width="33%">
-<a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="Setup page on a 390 pixel wide phone screen"></a>
-<br><b>New run on a phone</b><br>The header, the measured-run chart and step 1 at 390 px wide.
+<a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="New run page at step 1 on a 390 pixel wide phone screen"></a>
+<br><b>New run on a phone</b><br>The header, the measured-run chart and the wizard at 390 px wide: "Step 1 of 4 · Choose a repository" with a progress bar, and Next pinned to the bottom of the box.
 </td>
 <td valign="top" width="33%">
 <a href="docs/screenshots/gallery-mobile.png"><img src="docs/screenshots/gallery-mobile.png" width="100%" alt="Run page on a 390 pixel wide phone screen"></a>
