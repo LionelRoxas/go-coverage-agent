@@ -150,7 +150,7 @@ Pydantic `BaseSettings` from env:
 - `GROQ_API_KEY` (required to start jobs), `GROQ_MODEL`, `GROQ_REASONING_EFFORT` (default `low`)
 - `GROQ_MAX_COMPLETION_TOKENS` (default unset: no output cap is sent, so the model maximum applies), `CALL_TOKEN_RESERVATION` (default 8,000: tokens reserved per call for daily-ledger checks and TPM pacing, never sent to Groq), `DAILY_TOKEN_BUDGET` (default 2,000,000 for a paid plan; free-tier keys should set `DAILY_TOKEN_BUDGET=190000`)
 - `REPOS_DIR=/repos`, `OUTPUT_DIR=/output`, `WORK_DIR=/work`
-- loop defaults (§7.4), command timeouts, `CORS_ORIGINS=http://localhost:3000`
+- loop defaults (§7.4), command timeouts, `CORS_ORIGINS=["http://localhost:3000"]` (JSON list; set by docker-compose from `FRONTEND_PORT`, and the compose value overrides `.env`)
 
 The app starts without a key. `/api/health` reports `llm_configured: false`, and the UI shows a setup banner instead of a dead page.
 
