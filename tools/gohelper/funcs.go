@@ -2,7 +2,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -164,7 +163,3 @@ func declNames(f *ast.File) []string {
 	}
 	return names
 }
-
-// Merge and Prune are temporary stubs; Task 3 replaces them.
-func Merge(testFile, snippetFile string) error    { return errors.New("not implemented") }
-func Prune(testFile string, names []string) error { return errors.New("not implemented") }
