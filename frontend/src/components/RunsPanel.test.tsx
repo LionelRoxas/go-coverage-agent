@@ -19,6 +19,15 @@ const job = (o: Partial<JobSnapshot> & { id: string }): JobSnapshot => ({
 } as unknown as JobSnapshot);
 const summary = { baseline_percent: 12.5, final_percent: 83.2 } as JobSnapshot["summary"];
 
+/**
+ * findBy* resolves as soon as the DOM shows the text, but the useEffect that starts or clears the intervals runs
+ * later: while waitFor polls, RTL turns the act environment off, so React flushes passive effects in a Scheduler
+ * task (setImmediate), and RTL resumes the test after a setTimeout(0). Node runs those two in either order, so
+ * under load the test used to read vi.getTimerCount() before the effects ran ("expected +0 to be 2"). act()
+ * flushes React's pending work before returning, so the count is read after the effects.
+ */
+const flushEffects = () => act(async () => {});
+
 describe("RunsPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -122,10 +131,12 @@ describe("RunsPanel", () => {
     vi.mocked(api.jobs).mockResolvedValue([job({ id: "r1", status: "running", percent: 5 })]);
     render(<RunsPanel />);
     await screen.findByText("Running");
+    await flushEffects();
     expect(vi.getTimerCount()).toBe(2); // 3 s poll + 1 s ticker
     vi.mocked(api.jobs).mockResolvedValue([job({ id: "r1", status: "completed", summary })]);
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     await screen.findByText("Completed");
+    await flushEffects();
     expect(vi.getTimerCount()).toBe(0);
   });
 
