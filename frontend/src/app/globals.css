@@ -14,6 +14,7 @@
   --on-accent: #ffffff;
   --danger: #b3261e;
   --warn: #9a5b00;
+  --logo-deep: #043736;
   color-scheme: light;
 }
 
@@ -30,6 +31,7 @@
     --on-accent: #06251c;
     --danger: #f2766c;
     --warn: #e3ab3b;
+    --logo-deep: #4fb3ab;
     color-scheme: dark;
   }
 }
@@ -44,6 +46,7 @@
   --on-accent: #06251c;
   --danger: #f2766c;
   --warn: #e3ab3b;
+  --logo-deep: #4fb3ab;
   color-scheme: dark;
 }
 

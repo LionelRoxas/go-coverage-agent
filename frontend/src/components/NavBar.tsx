@@ -1,0 +1,50 @@
+// AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+"use client";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { SpectroCloudLogo } from "@/components/SpectroCloudLogo";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { api } from "@/lib/api";
+
+const LINKS = [
+  { href: "/", label: "Runs", active: (p: string) => p === "/" || p.startsWith("/jobs/") },
+  { href: "/how-it-works", label: "How it works", active: (p: string) => p === "/how-it-works" },
+];
+
+export function NavBar() {
+  const pathname = usePathname() ?? "/";
+  const [model, setModel] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api.health().then((h) => { if (alive) setModel(h.model || null); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <header className="sticky top-0 z-20 border-b border-border bg-bg/85 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-3 sm:gap-4 sm:px-4">
+        <SpectroCloudLogo className="h-[22px] w-auto shrink-0 sm:h-[26px]" />
+        <span aria-hidden className="hidden h-5 w-px bg-border sm:block" />
+        <Link href="/" className="hidden whitespace-nowrap text-sm font-semibold tracking-tight sm:block">Go Coverage Agent</Link>
+        <nav aria-label="Main" className="flex h-full items-stretch gap-0.5 sm:ml-2 sm:gap-1">
+          {LINKS.map((l) => {
+            const active = l.active(pathname);
+            return (
+              <Link key={l.href} href={l.href} aria-current={active ? "page" : undefined}
+                    className={`relative flex items-center whitespace-nowrap px-2 text-sm transition-colors sm:px-3 ${active ? "font-medium text-text" : "text-muted hover:text-text"}`}>
+                {l.label}
+                {active && <span aria-hidden className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent sm:inset-x-3" />}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="ml-auto flex items-center gap-3">
+          {model && <span title="Model" className="hidden rounded-sm border border-border bg-surface px-2 py-0.5 font-mono text-xs text-muted sm:inline">{model}</span>}
+          <ThemeToggle />
+        </div>
+      </div>
+    </header>
+  );
+}
