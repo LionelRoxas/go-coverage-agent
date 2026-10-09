@@ -1,0 +1,146 @@
+# AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+"""Groq chat completions with strict structured output, pacing, budgets and clear failure modes."""
+from __future__ import annotations
+
+import asyncio
+import math
+from typing import Any, Awaitable, Callable, Protocol, TypeVar
+
+import groq
+from pydantic import BaseModel, ValidationError
+
+from app.config import Settings
+from app.llm.limits import RateLimiter, UsageLedger
+from app.llm.schema import to_strict_schema
+from app.models import TokenUsage
+
+T = TypeVar("T", bound=BaseModel)
+Emit = Callable[[str, dict[str, Any]], Awaitable[None]]
+
+
+class LLMError(Exception):
+    """The current item failed; the loop can continue."""
+
+
+class LLMBudgetExhausted(LLMError):
+    """No more tokens available (job budget, daily ledger, or Groq daily cap). Stop gracefully."""
+
+
+class LLMFatal(LLMError):
+    """Configuration problem (e.g. invalid key). Fail the job."""
+
+
+class LLMCancelled(LLMError):
+    """The job was cancelled while waiting on the LLM (e.g. during a rate-limit pause)."""
+
+
+def estimate_tokens(text: str) -> int:
+    return math.ceil(len(text) / 3.5)
+
+
+class LLMClient(Protocol):
+    async def complete(self, *, role: str, system: str, user: str, schema: type[T]) -> tuple[T, TokenUsage]: ...
+
+
+class GroqLLM:
+    MAX_RATE_RETRIES = 5
+    MAX_NET_RETRIES = 3
+    MAX_RETRY_AFTER_S = 90.0
+
+    def __init__(self, settings: Settings, ledger: UsageLedger, limiter: RateLimiter,
+                 emit: Emit | None = None, client: Any = None,
+                 sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+                 cancel: asyncio.Event | None = None):
+        self.s, self.ledger, self.limiter = settings, ledger, limiter
+        self._emit, self._sleep, self._cancel = emit, sleep, cancel
+        self._client = client or groq.AsyncGroq(api_key=settings.groq_api_key, max_retries=0, timeout=120.0)
+
+    async def _wait(self, seconds: float, reason: str) -> None:
+        if self._emit:
+            await self._emit("rate_limited", {"seconds": round(seconds, 1), "reason": reason})
+        if self._cancel is None:
+            await self._sleep(seconds)
+            return
+        try:  # wake up immediately if the user cancels during a long rate-limit pause
+            await asyncio.wait_for(self._cancel.wait(), timeout=seconds)
+        except asyncio.TimeoutError:
+            return
+        raise LLMCancelled("cancelled while waiting for the rate limit")
+
+    async def _request(self, **kwargs: Any) -> Any:
+        call = asyncio.ensure_future(self._client.chat.completions.with_raw_response.create(**kwargs))
+        if self._cancel is None:
+            return await call
+        stop = asyncio.ensure_future(self._cancel.wait())
+        done, _ = await asyncio.wait({call, stop}, return_when=asyncio.FIRST_COMPLETED)
+        if call in done:
+            stop.cancel()
+            return call.result()
+        call.cancel()
+        raise LLMCancelled("cancelled during an LLM request")
+
+    async def complete(self, *, role: str, system: str, user: str, schema: type[T]) -> tuple[T, TokenUsage]:
+        prompt_tokens = estimate_tokens(system) + estimate_tokens(user)
+        if prompt_tokens > self.s.max_prompt_tokens:
+            raise LLMError(f"prompt is ~{prompt_tokens} tokens, over the {self.s.max_prompt_tokens} limit")
+        if self.ledger.remaining() < self.s.max_tokens_per_call:
+            raise LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
+
+        effort = self.s.groq_reasoning_effort
+        truncated = False
+        rate_retries = net_retries = 0
+        spent = TokenUsage()
+        response_format = {"type": "json_schema", "json_schema": {
+            "name": schema.__name__, "strict": True, "schema": to_strict_schema(schema)}}
+
+        while True:
+            wait = self.limiter.wait_needed(self.s.max_tokens_per_call)
+            if wait > 0:
+                await self._wait(wait, "tpm")
+                self.limiter.reset()
+            try:
+                raw = await self._request(
+                    model=self.s.groq_model,
+                    messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                    response_format=response_format,
+                    reasoning_effort=effort,
+                    max_completion_tokens=self.s.max_tokens_per_call - prompt_tokens,
+                    temperature=0.2,
+                )
+            except groq.AuthenticationError as e:
+                raise LLMFatal("Groq rejected the API key (401). Check GROQ_API_KEY in .env.") from e
+            except groq.RateLimitError as e:
+                retry_after = float(e.response.headers.get("retry-after", "60"))
+                if retry_after > self.MAX_RETRY_AFTER_S or rate_retries >= self.MAX_RATE_RETRIES:
+                    raise LLMBudgetExhausted(
+                        f"Groq asked us to wait {retry_after:.0f}s, which usually means the daily token cap was hit."
+                    ) from e
+                rate_retries += 1
+                await self._wait(retry_after, "429")
+                continue
+            except (groq.APIConnectionError, groq.InternalServerError) as e:
+                if net_retries >= self.MAX_NET_RETRIES:
+                    raise LLMError(f"Groq is unreachable: {e}") from e
+                net_retries += 1
+                await self._sleep(2.0 ** net_retries)
+                continue
+            except groq.APIStatusError as e:
+                raise LLMError(f"Groq returned {e.status_code}: {e.message}") from e
+
+            self.limiter.update(raw.headers)
+            completion = raw.parse()
+            usage = TokenUsage(prompt_tokens=completion.usage.prompt_tokens,
+                               completion_tokens=completion.usage.completion_tokens)
+            spent = spent.add(usage)
+            self.ledger.add(usage.total)
+            choice = completion.choices[0]
+            if choice.finish_reason == "length":
+                # Retrying only helps if we can lower the reasoning effort; otherwise it re-spends the same tokens.
+                if truncated or effort == "low":
+                    raise LLMError("the model's answer was truncated; skipping this target")
+                truncated, effort = True, "low"
+                continue
+            try:
+                return schema.model_validate_json(choice.message.content or ""), spent
+            except ValidationError as e:
+                raise LLMError(f"model output does not match {schema.__name__} ({e.error_count()} errors)") from e
