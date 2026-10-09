@@ -95,7 +95,7 @@ Your repository is never modified: the agent works on a copy, and the generated 
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-The loop is plain, testable Python. The LLM only writes and fixes tests. The app explains the same loop in plain language at `/how-it-works`, and step by step for technical readers at `/walkthrough` (each How it works step links to its Walkthrough section).
+The loop is plain, testable Python. The LLM only writes and fixes tests, and summarizes the finished run. The app explains the same loop in plain language at `/how-it-works`, and step by step for technical readers at `/walkthrough` (each How it works step links to its Walkthrough section).
 
 1. **Measure.** Copy the repo, delete existing `_test.go` files (default), and measure baseline coverage per package with `go test -coverprofile`.
 2. **Plan.** A deterministic planner ranks files by uncovered statements and picks up to 3 targets per iteration (no planning tokens).
@@ -103,6 +103,7 @@ The loop is plain, testable Python. The LLM only writes and fixes tests. The app
 4. **Merge and validate.** A Go AST helper appends the tests to `<source>_test.go`. The candidate must pass the import guard, `go vet`, and `go test -count=2`, and the set of covered blocks must be a strict superset of the previous one.
 5. **Repair.** Failing assertions are pruned test by test; stray quotes or backslashes around import paths, forgotten imports, unqualified identifiers and reused test names are fixed mechanically; anything else goes to the Fixer LLM (up to 2 attempts). Rejected candidates are rolled back.
 6. **Stop** on target reached, marginal gains (less than `min_gain` points for `patience` iterations), max iterations, no remaining targets, token budget, or cancel. Artifacts are always written.
+7. **Summarize.** After the result is shown, one more LLM call writes two summaries from the run's measured facts (coverage, rounds, time, tokens, an estimated cost when `GROQ_PRICE_*_PER_M` are set, rejected targets, the least-covered files, suspected bugs): one **for stakeholders** (outcome, efficiency, risks, recommendation) and one **for engineering teams** (what was tested, where the tests are, gaps, how to run them, next steps). A deterministic check then drops any sentence whose numbers, files or test names are not in those facts. The run page shows both in tabs with Copy as Markdown and Write again, and they are saved as `output/<job_id>/SUMMARY.md` (and `ai_summary` in `report.json`). Turn it off with the "Write an AI summary at the end" checkbox in the advanced options.
 
 **The UI.** The setup page has a **Runs** panel: a live card for a running job (with Cancel) and past runs with before to after coverage. The job page has an "← All runs" link. The header has a System / Light / Dark toggle (remembered per browser) and a **How it works** page. The Spectro Cloud logo in the navbar is there because this is a take-home for Spectro Cloud; it is not a Spectro Cloud product.
 
@@ -216,6 +217,13 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 </tr>
 <tr>
 <td valign="top" width="50%">
+<a href="docs/screenshots/gallery-summary-ai.png"><img src="docs/screenshots/gallery-summary-ai.png" width="100%" alt="The Summary section of a finished stats run on the For stakeholders tab: a headline about coverage rising from 0% to 81.1%, then Outcome, Efficiency with an estimated cost, Risks and Recommendation, with Copy as Markdown and Write again buttons"></a>
+<br><b>AI summary</b><br>Under the summary card, two tabs: For stakeholders (shown: outcome, efficiency with the estimated cost, risks, recommendation) and For engineering teams (what was tested, where the tests are, how to run them, gaps, suspected bugs, next steps), with Copy as Markdown (the same text as <code>SUMMARY.md</code>) and Write again. No Groq call was made for this screenshot: the text was written by hand from run <code>e2de1ca387cb</code>'s facts, and a backend test checks that it passes the same grounding check as a real summary.
+</td>
+<td valign="top" width="50%"></td>
+</tr>
+<tr>
+<td valign="top" width="50%">
 <a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page: the five steps of a run side by side, steps 2 to 5 marked as one round with an arrow back to step 2"></a>
 <br><b>How it works</b><br>The five steps of a run in plain words, with steps 2 to 5 marked as one round that repeats until the goal or a stop rule; each step links to its Walkthrough section.
 </td>
@@ -245,7 +253,7 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 
 ## Configuration
 
-Options (`POST /api/jobs`). The UI's "Advanced" section exposes max iterations, min gain, files per iteration (`targets_per_iteration`) and fix attempts; the rest (`patience`, `delete_existing_tests`, `max_llm_tokens`, `exclude_patterns`) are API-only:
+Options (`POST /api/jobs`). The UI's "Advanced" section exposes max iterations, min gain, files per iteration (`targets_per_iteration`), fix attempts and the AI summary (`write_summary`); the rest (`patience`, `delete_existing_tests`, `max_llm_tokens`, `exclude_patterns`) are API-only:
 
 | Option | Default | Range |
 |---|---|---|
@@ -258,6 +266,7 @@ Options (`POST /api/jobs`). The UI's "Advanced" section exposes max iterations, 
 | `delete_existing_tests` | true | bool |
 | `max_llm_tokens` (per job) | 1,000,000 | 10K-2M |
 | `exclude_patterns` (module-relative globs) | `["examples/**", "testdata/**"]` | list |
+| `write_summary` (AI summary after the run) | true | bool |
 
 Environment variables (`.env`, same layout as `.env.example`). Only the key is required; everything else has a built-in default.
 
@@ -272,6 +281,7 @@ Environment variables (`.env`, same layout as `.env.example`). Only the key is r
 | `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only); run `make up` again after changing |
 | `HOST_REPOS_DIR` | `./repos` | Host folder whose Go modules appear under "Your folders" |
 | `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily token cap (not a Groq limit), counted in `output/.usage.json`, reset at midnight UTC. Raise it freely on a paid key |
+| `GROQ_PRICE_INPUT_PER_M` / `GROQ_PRICE_OUTPUT_PER_M` | (unset) | Groq prices in USD per 1M input / output tokens. When both are set, the AI summary shows an estimated cost; unset shows none. `.env.example` has `0.15` / `0.60` commented out (openai/gpt-oss-120b on Groq at the time of writing; check console.groq.com pricing) |
 | **Free-trial Groq key** (8K tokens/min, 200K/day): set all three | | |
 | `DAILY_TOKEN_BUDGET` | | Free trial: `190000` |
 | `MAX_PROMPT_TOKENS` | 12000 | Prompt-size cap per call. Free trial: `4500` |
