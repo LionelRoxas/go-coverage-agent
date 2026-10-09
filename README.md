@@ -21,7 +21,7 @@ docker compose up --build
 
 Open http://localhost:3000 (or `http://localhost:${FRONTEND_PORT}` if you changed it), click the
 **montanaflynn/stats** card under **Sample repos**, then follow the four steps: **Next** to set a target (80% by default),
-**Next** or **Skip** past the optional advanced options, then **Start** on the review step.
+**Next** or **Skip (use defaults)** past the optional advanced options, then **Start** on the review step.
 The New run page shows one step at a time: choose a repository, set a target, optional advanced options, review & start.
 
 **Model:** `openai/gpt-oss-120b` on Groq (fallback: `openai/gpt-oss-20b`, set `GROQ_MODEL` in `.env`). The model name is also
@@ -229,8 +229,8 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <table>
 <tr>
 <td valign="top" width="33%">
-<a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="New run page at step 1 on a 390 pixel wide phone screen"></a>
-<br><b>New run on a phone</b><br>The header, the measured-run chart and the wizard at 390 px wide: "Step 1 of 4 · Choose a repository" with a progress bar, and Next pinned to the bottom of the box.
+<a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="The New run wizard at step 1 on a 390 pixel wide phone screen"></a>
+<br><b>New run on a phone</b><br>The wizard at 390 px wide, scrolled to the box: "Step 1 of 4 · Choose a repository" with a progress bar, the sample repos (<code>montanaflynn/stats</code> selected), and Next pinned to the bottom of the box.
 </td>
 <td valign="top" width="33%">
 <a href="docs/screenshots/gallery-mobile.png"><img src="docs/screenshots/gallery-mobile.png" width="100%" alt="Run page on a 390 pixel wide phone screen"></a>
