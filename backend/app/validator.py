@@ -68,7 +68,7 @@ def error_lines(output: str, filename: str) -> list[int]:
 
 def decls_at(src: str, lines: list[int]) -> list[str]:
     """Names of the top-level declarations enclosing the given 1-based lines of `src`, in first-mention order."""
-    starts = [(n, m.group(1)) for n, text in enumerate(src.splitlines(), 1) if (m := _TOP_DECL.match(text))]
+    starts = [(n, m.group(1)) for n, text in enumerate(src.split("\n"), 1) if (m := _TOP_DECL.match(text))]  # Go counts only \n
     names: list[str] = []
     for line in lines:
         enclosing = [name for start, name in starts if start <= line]
