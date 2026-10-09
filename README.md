@@ -222,20 +222,24 @@ Options (`POST /api/jobs`). The UI's "Advanced" section exposes max iterations, 
 | `max_llm_tokens` (per job) | 1,000,000 | 10K-2M |
 | `exclude_patterns` (module-relative globs) | `["examples/**", "testdata/**"]` | list |
 
-Environment variables (`.env`, see `.env.example`):
+Environment variables (`.env`, same layout as `.env.example`). Only the key is required; everything else has a built-in default.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `GROQ_API_KEY` | (empty) | Required to start a job |
-| `GROQ_MODEL` | `openai/gpt-oss-120b` | Fallback: `openai/gpt-oss-20b` |
-| `GROQ_WRITER_REASONING_EFFORT` | `medium` | Writer's `reasoning_effort`: `low`, `medium` or `high` |
-| `GROQ_FIXER_REASONING_EFFORT` | `high` | Fixer's `reasoning_effort`: `low`, `medium` or `high`. A truncated answer is retried automatically one level lower (`high` → `medium` → `low`). The former `GROQ_REASONING_EFFORT` is no longer read |
-| `GROQ_MAX_COMPLETION_TOKENS` | `65536` | Output-token limit sent with every call; 65536 is the model maximum (empty omits it, and Groq then applies a smaller default) |
-| `CALL_TOKEN_RESERVATION` | 16000 | Tokens reserved per call for rate pacing; keep it at least `MAX_PROMPT_TOKENS` plus the expected answer (`8000` on free-trial keys); lower means more calls/min |
-| `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily cap (not a Groq limit), counted in `output/.usage.json` and reset at midnight UTC. Raise it freely on a paid key; set `190000` on free-trial keys |
-| `MAX_PROMPT_TOKENS` | 12000 | Estimated prompt-size cap per call; set `4500` on free-trial keys (8K tokens/min) |
-| `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only); rebuild after changing |
-| `HOST_REPOS_DIR` | `./repos` | Absolute host path whose subfolders are Go modules |
+| **Required** | | |
+| `GROQ_API_KEY` | (empty) | Needed to start a job |
+| **Optional** | | |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | `openai/gpt-oss-20b` is cheaper and weaker |
+| `GROQ_WRITER_REASONING_EFFORT` | `medium` | Writer's reasoning effort (`medium` or `high`) |
+| `GROQ_FIXER_REASONING_EFFORT` | `high` | Fixer's reasoning effort. If an answer is cut off for length, it is retried automatically one level lower |
+| `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only); run `make up` again after changing |
+| `HOST_REPOS_DIR` | `./repos` | Host folder whose Go modules appear under "Your folders" |
+| **Free-trial Groq key** (8K tokens/min, 200K/day): set all three | | |
+| `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily cap (not a Groq limit), counted in `output/.usage.json`, reset at midnight UTC. Free trial: `190000` |
+| `MAX_PROMPT_TOKENS` | 12000 | Prompt-size cap per call. Free trial: `4500` |
+| `CALL_TOKEN_RESERVATION` | 16000 | Tokens reserved per call for rate pacing. Free trial: `8000` |
+| **Advanced** | | |
+| `GROQ_MAX_COMPLETION_TOKENS` | 65536 | Output-token cap per call (the model maximum). Empty does not mean unlimited: Groq then applies a smaller default |
 
 ## Running the tests
 
