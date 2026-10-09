@@ -60,12 +60,12 @@ export default function JobPage() {
   if (error && state.status === "connecting") {
     return (
       <div className="space-y-4">
-      <AllRuns />
-      <section role="alert" className="space-y-2 rounded-md border border-danger p-4">
-        <h1 className="font-semibold">Couldn&apos;t load this run</h1>
-        <p className="text-sm">{error}</p>
-        <Link className="text-sm text-accent underline-offset-4 hover:underline" href="/">Back to setup</Link>
-      </section>
+        <AllRuns />
+        <section role="alert" className="space-y-2 rounded-md border border-danger p-4">
+          <h1 className="font-semibold">Couldn&apos;t load this run</h1>
+          <p className="text-sm">{error}</p>
+          <Link className="text-sm text-accent underline-offset-4 hover:underline" href="/">Back to setup</Link>
+        </section>
       </div>
     );
   }

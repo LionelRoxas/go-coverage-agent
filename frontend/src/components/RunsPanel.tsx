@@ -1,7 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { duration, pct } from "@/lib/format";
 import type { JobSnapshot } from "@/lib/types";
@@ -27,15 +27,6 @@ const CHIP: Record<JobSnapshot["status"], { label: string; cls: string }> = {
 function Chip({ status }: { status: JobSnapshot["status"] }) {
   const c = CHIP[status];
   return <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium ${c.cls}`}>{c.label}</span>;
-}
-
-function useNow() {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now() / 1000), 1000);
-    return () => clearInterval(t);
-  }, []);
-  return now;
 }
 
 function RunningCard({ job, now, onChanged }: { job: JobSnapshot; now: number; onChanged: () => void }) {
@@ -114,14 +105,30 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
   const [jobs, setJobs] = useState<JobSnapshot[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  // Skips when a fetch is already pending (slow backend) and drops results that arrive after unmount.
   const load = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
       const j = await api.jobs();
+      if (!mounted.current) return;
       setJobs(j);
+      setNow(Date.now() / 1000);
       setError(null);
       onJobs?.(j);
     } catch (e) {
-      setError((e as Error).message);
+      if (mounted.current) setError((e as Error).message);
+    } finally {
+      inFlight.current = false;
     }
   }, [onJobs]);
 
@@ -138,7 +145,13 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
     return () => clearInterval(t);
   }, [anyRunning, load]);
 
-  const now = useNow();
+  // The 1 s ticker drives the running cards' elapsed time, so it only runs while a job is running.
+  useEffect(() => {
+    if (!anyRunning) return;
+    const t = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(t);
+  }, [anyRunning]);
+
   const sorted = [...(jobs ?? [])].sort((a, b) => b.created_at - a.created_at);
   const running = sorted.filter((j) => j.status === "running");
   const past = sorted.filter((j) => j.status !== "running");

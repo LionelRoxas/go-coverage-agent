@@ -102,6 +102,34 @@ describe("RunsPanel", () => {
     expect(api.jobs).toHaveBeenCalledTimes(1);
   });
 
+  it("does not start an overlapping fetch while one is still pending", async () => {
+    const running = [job({ id: "r1", status: "running", percent: 5 })];
+    vi.mocked(api.jobs).mockResolvedValueOnce(running);
+    render(<RunsPanel />);
+    await screen.findByText("Running");
+    let release!: (j: JobSnapshot[]) => void;
+    vi.mocked(api.jobs).mockImplementation(() => new Promise((r) => { release = r; }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(api.jobs).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(api.jobs).toHaveBeenCalledTimes(2);
+    await act(async () => { release(running); await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(api.jobs).toHaveBeenCalledTimes(3);
+  });
+
+  it("runs the 1 s ticker only while a job is running", async () => {
+    vi.mocked(api.jobs).mockResolvedValue([job({ id: "d1", status: "completed", summary })]);
+    render(<RunsPanel />);
+    await screen.findByText("Completed");
+    expect(vi.getTimerCount()).toBe(0);
+    vi.mocked(api.jobs).mockResolvedValue([job({ id: "r1", status: "running", percent: 5 })]);
+    const { unmount } = render(<RunsPanel />);
+    await screen.findByText("Running");
+    expect(vi.getTimerCount()).toBeGreaterThanOrEqual(2);
+    unmount();
+  });
+
   it("shows an inline error when loading fails", async () => {
     vi.mocked(api.jobs).mockRejectedValue(new Error("backend down"));
     render(<RunsPanel />);
