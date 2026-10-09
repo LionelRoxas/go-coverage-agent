@@ -12,7 +12,7 @@ Requirements: Docker Desktop with Compose v2.24+, and a Groq API key from https:
 Node 22+ is only needed to run the frontend tests outside Docker.
 
 ```bash
-git clone <this repo> && cd go-coverage-agent
+git clone https://github.com/LionelRoxas/go-coverage-agent.git && cd go-coverage-agent
 cp .env.example .env          # then paste your key into GROQ_API_KEY
 docker compose up --build
 ```
