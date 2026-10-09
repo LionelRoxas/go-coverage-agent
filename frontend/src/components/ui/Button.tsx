@@ -1,5 +1,5 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-import type { ButtonHTMLAttributes } from "react";
+import type { ComponentPropsWithRef } from "react";
 import { cx } from "./classes";
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "link";
@@ -33,7 +33,8 @@ export function buttonClass({ variant = "secondary", size = "md", unavailable = 
   return cx(BASE, box, VARIANT[variant]);
 }
 
-type Props = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize };
+/** Every native button prop, `ref` included (React 19 passes it through as a prop). */
+type Props = ComponentPropsWithRef<"button"> & { variant?: ButtonVariant; size?: ButtonSize };
 
 export function Button({ variant, size, className, type = "button", ...rest }: Props) {
   return <button type={type} className={cx(buttonClass({ variant, size }), className)} {...rest} />;

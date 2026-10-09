@@ -1,7 +1,12 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 /** Shared class recipes for elements that are not worth a component of their own. */
 
-/** Joins class names, skipping falsy values. */
+/**
+ * Joins class names, skipping falsy values. It does not resolve Tailwind conflicts: when two classes set the same
+ * property at the same breakpoint, the order of the generated CSS decides, not their order here. So callers add
+ * classes for properties the base recipe leaves open (margin, width, layout) and never override a base utility;
+ * when a variant needs a different value, the primitive gets an option for it (e.g. Badge `mono`).
+ */
 export const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
 
 /** Max width and side gutters shared by the navbar and every page. */

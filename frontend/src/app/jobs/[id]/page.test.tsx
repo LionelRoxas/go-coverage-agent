@@ -126,6 +126,28 @@ describe("JobPage", () => {
     expect(document.querySelector('[aria-live="polite"]')).toBeNull();
   });
 
+  // A failed run's message is in the failure card and a cancelled run's in its summary, so neither keeps the line.
+  it.each([
+    ["job_failed", { reason: "repo_does_not_build", message: "The repository does not build.", output: "x" }, "Failed"],
+    ["job_cancelled", { stop_reason: "cancelled", message: "Cancelled.", target: 80, baseline_percent: 0, final_percent: 12,
+      iterations: [], test_files: [], tests_added: [], suspected_bugs: [], per_file: [],
+      tokens: { prompt_tokens: 1, completion_tokens: 1 }, duration_s: 5 }, "Cancelled"],
+  ] as const)("drops the live activity line after %s", async (type, data, chip) => {
+    vi.mocked(api.job).mockResolvedValue({} as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    act(() => {
+      const send = (seq: number, t: string, d: object) =>
+        FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq, ts: 1, type: t, data: d }) });
+      send(0, "job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" });
+    });
+    expect(document.querySelector('[aria-live="polite"]')).not.toBeNull();
+    act(() => FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq: 1, ts: 1, type, data }) }));
+    expect((await screen.findAllByText(chip)).length).toBeGreaterThan(0); // the status chip (and the card heading)
+    expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+  });
+
   it("titles the page after the run", async () => {
     expect(await generateMetadata({ params: Promise.resolve({ id: "e2de1ca387cb" }) })).toEqual({ title: "Run e2de1ca387cb" });
   });

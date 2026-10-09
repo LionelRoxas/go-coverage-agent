@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import type { RepoInfo, Sample, UploadLimits } from "@/lib/types";
 import { FolderUpload, type UploadFn } from "./FolderUpload";
-import { Badge, Button, EmptyState, LoadingStatus, Skeleton, tileClass } from "./ui";
+import { Badge, Button, EmptyState, LoadingStatus, Skeleton, staticTileClass, tileClass } from "./ui";
 
 export type PickerTab = "samples" | "folders";
 const TABS: { id: PickerTab; label: string }[] = [
@@ -151,7 +151,7 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
             <div data-testid="samples-loading" className="grid gap-2 sm:grid-cols-2">
               <LoadingStatus>Loading sample repositories…</LoadingStatus>
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} aria-hidden className="space-y-2 rounded-md border border-border px-3 py-2.5">
+                <div key={i} aria-hidden className={`space-y-2 ${staticTileClass()}`}>
                   <span className="flex justify-between gap-4"><Skeleton className="h-4 w-36" /><Skeleton className="h-4 w-12 rounded-full" /></span>
                   <Skeleton className="h-3 w-44" />
                   <Skeleton className="h-3 w-20" />

@@ -2,10 +2,11 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import {
   Badge, Button, buttonClass, Card, cardClass, codeBlockClass, cx, EmptyState, LoadingStatus, PageHeader,
-  pageTitleClass, SectionHeading, Skeleton, statementTitleClass, StatusChip, StatusPanel, tileClass,
+  pageTitleClass, SectionHeading, Skeleton, statementTitleClass, staticTileClass, StatusChip, StatusPanel, tileClass,
 } from "./index";
 
 describe("Button", () => {
@@ -16,6 +17,12 @@ describe("Button", () => {
     expect(b).toHaveAttribute("type", "button");
     await userEvent.click(b);
     expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("hands its ref to the DOM button", () => {
+    const ref = createRef<HTMLButtonElement>();
+    render(<Button ref={ref}>Next</Button>);
+    expect(ref.current).toBe(screen.getByRole("button", { name: "Next" }));
   });
 
   it("keeps an explicit submit type", () => {
@@ -92,6 +99,21 @@ describe("Card and tiles", () => {
     expect(tileClass(true)).toContain("shadow-[inset_3px_0_0_var(--accent)]");
     expect(tileClass(false)).toContain("not-disabled:hover:border-accent");
   });
+
+  it("draws an unavailable tile flat instead of faded", () => {
+    render(<button type="button" disabled className={tileClass()}>o/stats</button>);
+    const tile = screen.getByRole("button", { name: "o/stats" });
+    expect(tile.className).not.toMatch(/opacity/);
+    expect(tile).toHaveClass("disabled:bg-border/30", "disabled:text-muted");
+  });
+
+  it("gives static tiles (placeholders, the running run) the same box and fill as tiles", () => {
+    const box = ["rounded-md", "border", "px-3", "py-2.5", "border-border", "bg-bg"];
+    for (const c of box) expect(tileClass().split(" ")).toContain(c);
+    for (const c of box) expect(staticTileClass().split(" ")).toContain(c);
+    expect(staticTileClass({ accent: true })).toContain("border-l-accent");
+    expect(staticTileClass()).not.toContain("hover");
+  });
 });
 
 describe("Badge and StatusChip", () => {
@@ -108,6 +130,14 @@ describe("Badge and StatusChip", () => {
   it("defaults to the neutral tone", () => {
     render(<Badge>Ready</Badge>);
     expect(screen.getByText("Ready")).toHaveClass("border-border-strong", "text-muted");
+  });
+
+  it("passes HTML attributes through and has a mono option instead of class overrides", () => {
+    render(<Badge mono title="Model" data-testid="m">openai/gpt-oss-120b</Badge>);
+    const b = screen.getByTestId("m");
+    expect(b).toHaveAttribute("title", "Model");
+    expect(b).toHaveClass("font-mono", "font-normal");
+    expect(b).not.toHaveClass("font-medium");
   });
 });
 

@@ -47,7 +47,8 @@ export function NavBar() {
         </nav>
         <div className="ml-auto flex items-center gap-3">
           {/* From 1024 px only: at tablet width it would wrap. */}
-          {model && <span title="Model" className="hidden lg:inline-flex"><Badge className="whitespace-nowrap bg-surface font-mono font-normal">{model}</Badge></span>}
+          {/* The wrapper owns the display (Badge is inline-flex), so `hidden` never competes with it. */}
+          {model && <span className="hidden lg:inline-flex"><Badge mono title="Model" className="whitespace-nowrap bg-surface">{model}</Badge></span>}
           <ThemeToggle />
         </div>
       </div>

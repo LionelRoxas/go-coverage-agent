@@ -2,7 +2,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, buttonClass, cardClass, EmptyState, LoadingStatus, sectionHeadingClass, Skeleton, StatusChip, tileClass } from "@/components/ui";
+import { Button, buttonClass, cardClass, EmptyState, LoadingStatus, sectionHeadingClass, Skeleton, staticTileClass, StatusChip, tileClass } from "@/components/ui";
 import { api } from "@/lib/api";
 import { duration, pct } from "@/lib/format";
 import type { JobSnapshot } from "@/lib/types";
@@ -37,7 +37,7 @@ function RunningCard({ job, now, onChanged }: { job: JobSnapshot; now: number; o
   }
 
   return (
-    <li className="space-y-3 rounded-md border border-border border-l-4 border-l-accent bg-bg p-3">
+    <li className={`space-y-3 ${staticTileClass({ accent: true })}`}>
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 break-all font-mono text-sm font-medium">{job.request.repo_path}</span>
         <StatusChip status="running" />
@@ -156,7 +156,7 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
         <div data-testid="runs-loading" className="space-y-2">
           <LoadingStatus>Loading runs…</LoadingStatus>
           {[0, 1, 2].map((i) => (
-            <div key={i} aria-hidden className="space-y-2 rounded-md border border-border bg-bg px-3 py-2.5">
+            <div key={i} aria-hidden className={`space-y-2 ${staticTileClass()}`}>
               <span className="flex justify-between gap-4"><Skeleton className="h-4 w-28" /><Skeleton className="h-4 w-16 rounded-full" /></span>
               <span className="flex justify-between gap-4"><Skeleton className="h-3 w-40" /><Skeleton className="h-3 w-12" /></span>
             </div>

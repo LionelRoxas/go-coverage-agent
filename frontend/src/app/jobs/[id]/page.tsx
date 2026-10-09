@@ -37,7 +37,8 @@ export default function JobPage() {
   const { state, notFound, error, connection } = useJobEvents(id);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
-  const running = state.status === "running" || state.status === "connecting";
+  // "connecting" returns early below, so the clock and Cancel only ever see a known status.
+  const running = state.status === "running";
   const elapsed = useElapsed(state.startedAt, running);
   const waiting = running ? waitingOn(state) : undefined;
 
@@ -96,7 +97,7 @@ export default function JobPage() {
     );
   }
 
-  const job = state.status as "running" | "completed" | "failed" | "cancelled";
+  const job = state.status; // narrowed: "connecting" returned above
   return (
     <div className="space-y-10">
       <AllRuns />

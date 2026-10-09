@@ -3,7 +3,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 import PageError from "./error";
+import GlobalError from "./global-error";
 import NotFound, { metadata } from "./not-found";
 
 describe("app/error.tsx", () => {
@@ -23,12 +25,28 @@ describe("app/error.tsx", () => {
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(retry).toHaveBeenCalledOnce();
     expect(screen.getByRole("link", { name: "Go to New run" })).toHaveAttribute("href", "/");
+    expect(document.title).toBe("This page stopped working · Go Coverage Agent");
   });
 
   it("leaves out the reference line when there is no digest", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     render(<PageError error={new Error("x")} retry={() => {}} />);
     expect(screen.queryByText(/Error reference/)).not.toBeInTheDocument();
+  });
+});
+
+describe("app/global-error.tsx", () => {
+  it("renders its own document with a title, the error reference and Try again, never the raw message", () => {
+    const html = renderToStaticMarkup(
+      <GlobalError error={Object.assign(new Error("layout exploded"), { digest: "d1" })} retry={() => {}} />);
+    expect(html).toMatch(/^<html lang="en">.*<body class="[^"]*bg-bg[^"]*">/);
+    expect(html).toContain("<title>Something went wrong · Go Coverage Agent</title>");
+    expect(html).toContain("<h1");
+    expect(html).toContain("Something went wrong</h1>");
+    expect(html).toContain("Error reference: d1");
+    expect(html).toContain(">Try again</button>");
+    expect(html).toContain('href="/"');
+    expect(html).not.toContain("layout exploded");
   });
 });
 

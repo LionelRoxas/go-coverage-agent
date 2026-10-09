@@ -1,5 +1,5 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-import type { ReactNode } from "react";
+import type { HTMLAttributes } from "react";
 import type { JobSnapshot } from "@/lib/types";
 import { cx } from "./classes";
 
@@ -12,11 +12,16 @@ const TONE: Record<BadgeTone, string> = {
   warn: "border-warn text-warn",
 };
 
-export function Badge({ tone = "neutral", className, children }: { tone?: BadgeTone; className?: string; children: ReactNode }) {
+type BadgeProps = HTMLAttributes<HTMLSpanElement> & {
+  tone?: BadgeTone;
+  /** Monospace at normal weight, for values such as a model name; otherwise sans at medium weight. */
+  mono?: boolean;
+};
+
+export function Badge({ tone = "neutral", mono = false, className, ...rest }: BadgeProps) {
   return (
-    <span className={cx("inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium leading-4", TONE[tone], className)}>
-      {children}
-    </span>
+    <span className={cx("inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs leading-4",
+                        mono ? "font-mono font-normal" : "font-medium", TONE[tone], className)} {...rest} />
   );
 }
 
