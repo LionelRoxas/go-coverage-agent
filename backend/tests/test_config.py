@@ -9,4 +9,6 @@ def test_llm_configured_reflects_key(monkeypatch):
     s = Settings()
     assert s.llm_configured is True
     assert s.groq_model == "openai/gpt-oss-120b"
-    assert s.max_tokens_per_call == 7000
+    assert s.call_token_reservation == 8000
+    assert s.groq_max_completion_tokens is None
+    assert s.daily_token_budget == 2_000_000

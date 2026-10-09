@@ -102,7 +102,7 @@ class GroqLLM:
         prompt_tokens = estimate_tokens(system) + estimate_tokens(user)
         if prompt_tokens > self.s.max_prompt_tokens:
             raise LLMError(f"prompt is ~{prompt_tokens} tokens, over the {self.s.max_prompt_tokens} limit")
-        if self.ledger.remaining() < self.s.max_tokens_per_call:
+        if self.ledger.remaining() < self.s.call_token_reservation:
             raise LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
 
         effort = self.s.groq_reasoning_effort
@@ -113,8 +113,12 @@ class GroqLLM:
         response_format = {"type": "json_schema", "json_schema": {
             "name": schema.__name__, "strict": True, "schema": to_strict_schema(schema)}}
 
+        extra: dict[str, Any] = {}
+        if self.s.groq_max_completion_tokens is not None:
+            extra["max_completion_tokens"] = self.s.groq_max_completion_tokens
+
         while True:
-            wait = self.limiter.wait_needed(self.s.max_tokens_per_call)
+            wait = self.limiter.wait_needed(self.s.call_token_reservation)
             if wait > 0:
                 await self._wait(wait, "tpm")
                 self.limiter.reset()
@@ -124,8 +128,8 @@ class GroqLLM:
                     messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                     response_format=response_format,
                     reasoning_effort=effort,
-                    max_completion_tokens=self.s.max_tokens_per_call - prompt_tokens,
                     temperature=0.2,
+                    **extra,
                 )
             except groq.AuthenticationError as e:
                 raise LLMFatal("Groq rejected the API key (401). Check GROQ_API_KEY in .env.") from e

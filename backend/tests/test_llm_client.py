@@ -80,8 +80,15 @@ async def test_success_parses_and_counts_usage(tmp_path):
     kw = fake.calls[0]
     assert kw["response_format"]["json_schema"]["strict"] is True
     assert kw["reasoning_effort"] == "low"
-    assert kw["max_completion_tokens"] == 7000 - 2  # "sys"+"usr" ≈ 2 tokens
+    assert "max_completion_tokens" not in kw
     assert llm.ledger.used_today() == 150
+
+
+async def test_configured_completion_cap_is_sent_verbatim(tmp_path):
+    llm, fake, _ = make(tmp_path, [Raw(Completion('{"answer": "hi"}', "stop"))])
+    llm.s = Settings(groq_api_key="k", groq_max_completion_tokens=1234)
+    await call(llm)
+    assert fake.calls[0]["max_completion_tokens"] == 1234
 
 
 async def test_401_is_fatal(tmp_path):
@@ -121,6 +128,7 @@ async def test_schema_mismatch_is_llm_error(tmp_path):
 async def test_daily_budget_checked_before_calling(tmp_path):
     llm, fake, _ = make(tmp_path, [])
     llm.ledger.add(190_000)
+    assert llm.ledger.remaining() < llm.s.call_token_reservation
     with pytest.raises(LLMBudgetExhausted):
         await call(llm)
     assert fake.calls == []

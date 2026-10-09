@@ -110,7 +110,7 @@ class JobOptions(BaseModel):
     targets_per_iteration: int = Field(3, ge=1, le=5)
     max_fix_attempts: int = Field(2, ge=0, le=4)
     delete_existing_tests: bool = True
-    max_llm_tokens: int = Field(180_000, ge=10_000, le=2_000_000)
+    max_llm_tokens: int = Field(1_000_000, ge=10_000, le=2_000_000)
     exclude_patterns: list[str] = Field(default_factory=lambda: ["examples/**", "testdata/**"])
 
 

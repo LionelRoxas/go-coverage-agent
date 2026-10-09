@@ -11,9 +11,10 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     groq_reasoning_effort: Literal["low", "medium", "high"] = "low"
-    max_tokens_per_call: int = 7000
+    groq_max_completion_tokens: int | None = None  # None: send no cap, the model maximum applies
+    call_token_reservation: int = 8000  # pacing/ledger reserve per call; never sent to Groq
     max_prompt_tokens: int = 4500
-    daily_token_budget: int = 190_000
+    daily_token_budget: int = 2_000_000
     min_daily_tokens_to_start: int = 20_000
 
     repos_dir: Path = Path("/repos")

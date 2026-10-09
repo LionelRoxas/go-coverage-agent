@@ -148,7 +148,7 @@ Each unit has one purpose and a narrow interface, and it can be tested on its ow
 Pydantic `BaseSettings` from env:
 
 - `GROQ_API_KEY` (required to start jobs), `GROQ_MODEL`, `GROQ_REASONING_EFFORT` (default `low`)
-- `MAX_TOKENS_PER_CALL` (default 7,000: prompt + completion), `DAILY_TOKEN_BUDGET` (default 190,000)
+- `GROQ_MAX_COMPLETION_TOKENS` (default unset: no output cap is sent, so the model maximum applies), `CALL_TOKEN_RESERVATION` (default 8,000: tokens reserved per call for daily-ledger checks and TPM pacing, never sent to Groq), `DAILY_TOKEN_BUDGET` (default 2,000,000 for a paid plan; free-tier keys should set `DAILY_TOKEN_BUDGET=190000`)
 - `REPOS_DIR=/repos`, `OUTPUT_DIR=/output`, `WORK_DIR=/work`
 - loop defaults (§7.4), command timeouts, `CORS_ORIGINS=http://localhost:3000`
 
@@ -214,7 +214,7 @@ Formatting needs no separate step: `gohelper merge` writes `go/format` output, a
 
 ### 5.7 `llm`: Groq client wrapper
 
-- `complete(role, system, user, schema) -> (parsed, Usage)` with `response_format = json_schema, strict: true`, `reasoning_effort` from config, and `max_completion_tokens = MAX_TOKENS_PER_CALL − estimated_prompt_tokens` (estimate = chars/3.5, conservative). If the prompt alone exceeds ~4,500 tokens, the context builder must have trimmed it already (§6.1); the client asserts this.
+- `complete(role, system, user, schema) -> (parsed, Usage)` with `response_format = json_schema, strict: true`, `reasoning_effort` from config, and no `max_completion_tokens` by default (it is sent only when `GROQ_MAX_COMPLETION_TOKENS` is set, so hidden reasoning tokens cannot truncate the answer). The prompt estimate is chars/3.5, conservative. If the prompt alone exceeds ~4,500 tokens, the context builder must have trimmed it already (§6.1); the client asserts this.
 - **Schema normalizer** `to_strict_schema(model) -> dict`: converts Pydantic JSON Schema to Groq strict rules. All properties go into `required`, `additionalProperties: false` on every object, Optional → `["T","null"]`, and unsupported keywords (`default`, `title`, `maxItems`, `minLength`) are stripped. Limits are enforced **after** parsing. It's unit tested.
 - **Failure handling:**
   - `finish_reason == "length"` (truncated, often from reasoning tokens) → if the effort was above `low`, retry once at `low`. Otherwise fail the item, since an identical retry would just re-spend the tokens.
@@ -306,7 +306,7 @@ Each has its own context and contract, so prompts stay small, failures are attri
 
 **Documented limits for `gpt-oss-120b`** (Groq rate-limits page, verified 2026-10-08): **8K tokens/min, 200K tokens/day, 30 requests/min, 1K requests/day.** Free-tier numbers weren't published separately. The account's limits page is authoritative.
 
-- **Per call:** hard cap 7K (prompt ≤4.5K + completion). `reasoning_effort=low` by default, because reasoning tokens count toward the cap. The effective cadence is about 1 call per minute.
+- **Per call:** no output cap by default (configurable via `GROQ_MAX_COMPLETION_TOKENS`); the prompt stays ≤4.5K. An 8K reservation (`CALL_TOKEN_RESERVATION`) is used for TPM pacing and the daily-ledger check. Defaults assume a paid plan: 1M tokens per job and 2M per day; free-tier keys should set `DAILY_TOKEN_BUDGET=190000` (the README repeats this). `reasoning_effort=low` by default. On the free tier the effective cadence is about 1 call per minute.
 - **For `stats`** (about 60 small source files, no tests after deletion): 80% probably needs 20–35 Writer calls plus fixes. That's roughly 30–45 minutes and 120–190K tokens, close to the daily cap. Most `stats` functions are short, so per-call tokens will likely be lower than the cap. **Day 1 of the plan measures real per-call usage and updates these numbers.**
 - **Built-in mitigations:**
   - Compact context.
@@ -403,7 +403,7 @@ This guarantees coverage never regresses, the suite is never redundant, and the 
 | `targets_per_iteration` | 3 | 1–5 |
 | `max_fix_attempts` | 2 | 0–4 |
 | `delete_existing_tests` | true | bool |
-| `max_llm_tokens` (per job) | 180,000 | 10K–2M |
+| `max_llm_tokens` (per job) | 1,000,000 | 10K–2M |
 | `exclude_patterns` (module-relative path globs) | `["examples/**", "testdata/**"]` | list |
 
 ### 7.5 Stop reasons
