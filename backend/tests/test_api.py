@@ -5,6 +5,7 @@ import pytest
 from app.config import Settings
 from app.jobs import JobManager
 from app.main import create_app
+from app.repos import RepoInfo
 from app.models import StopReason, Summary, TokenUsage
 
 
@@ -171,3 +172,18 @@ async def test_unhandled_exception_is_500_envelope(tmp_path):
         r = await client.get("/api/jobs")
     assert r.status_code == 500
     assert r.json() == {"error": {"code": "internal_error", "message": "Internal server error"}}
+
+
+async def test_cross_origin_post_is_blocked(env, monkeypatch):
+    client, _ = env
+    calls = []
+
+    async def fake_clone(settings):
+        calls.append(1)
+        return RepoInfo(path="stats", module="m", go_files=0, test_files=0)
+
+    monkeypatch.setattr("app.api.clone_sample", fake_clone)
+    r = await client.post("/api/repos/sample", headers={"Origin": "https://evil.example"})
+    assert r.status_code == 403 and r.json()["error"]["code"] == "forbidden_origin" and not calls
+    r = await client.post("/api/repos/sample", headers={"Origin": "http://localhost:3000"})
+    assert r.status_code == 200 and calls == [1]

@@ -1,4 +1,6 @@
 # AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
+import asyncio
+
 import pytest
 
 from app.config import Settings
@@ -81,3 +83,19 @@ async def test_clone_sample_never_touches_existing_non_module_dir(tmp_path, monk
     with pytest.raises(RuntimeError, match="not a Go module"):
         await clone_sample(settings)
     assert (settings.repos_dir / "stats" / "mine.txt").read_text() == "keep"
+
+
+async def test_concurrent_clones_run_git_once(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    calls = []
+
+    async def slow(argv, cwd, **k):
+        calls.append(argv)
+        await asyncio.sleep(0.05)
+        (settings.repos_dir / "stats").mkdir()
+        (settings.repos_dir / "stats" / "go.mod").write_text("module example.com/stats\n")
+        return _result(0)
+
+    monkeypatch.setattr("app.repos.run", slow)
+    a, b = await asyncio.gather(clone_sample(settings), clone_sample(settings))
+    assert len(calls) == 1 and a.path == b.path == "stats"

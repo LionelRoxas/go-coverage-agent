@@ -1,6 +1,7 @@
 # AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 from pathlib import Path
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 from app.config import Settings
 from app.gotools import read_module_info, run
 
+_clone_lock = asyncio.Lock()
 _SKIP = {"vendor", "node_modules", "testdata"}
 
 
@@ -57,6 +59,11 @@ def list_repos(repos_dir: Path) -> list[RepoInfo]:
 
 
 async def clone_sample(settings: Settings) -> RepoInfo:
+    async with _clone_lock:
+        return await _clone_sample_locked(settings)
+
+
+async def _clone_sample_locked(settings: Settings) -> RepoInfo:
     dest = settings.repos_dir / "stats"
     if not (dest / "go.mod").exists():
         if dest.exists():
