@@ -518,8 +518,8 @@ volumes: { gocache: {} }
 ### 10.3 Execution safety (generated code is untrusted)
 
 - Runs inside the container as non-root, never on the host. Only the workspace copy is executed or modified.
-- **Environment allowlist:** the API key is not passed to test processes. Code running as the same container user could still read it via `/proc`, so the guard also rejects `StartProcess` and `/proc/` in generated code (a speed bump, not a sandbox).
-- **Import guard:** the snippet may import only standard library packages and the module's own packages. These are denied: `os/exec`, `net`, `net/*`, `syscall`, `unsafe`, `plugin`, `runtime/debug`.
+- **Environment allowlist:** the API key is not passed to test processes. Code running as the same container user could still read it via `/proc`, so the guard also rejects `StartProcess` and `/proc/` in generated code (cheap filters, bypassable via string concatenation or reflection; no further denylist rules will be added). The guard does not make generated code safe; the real control is a per-job sandbox with a separate uid and no network (§11, future work).
+- **Import/content guard (best-effort filter, not a sandbox):** the snippet may import only standard library packages and the module's own packages. These are denied: `os/exec`, `net`, `net/*`, `syscall`, `unsafe`, `plugin`, `runtime/debug`.
 - Timeouts at two levels (`-timeout=60s`, process 120s), with process-group kill and output caps.
 - Only fixed commands run; the LLM can't choose commands.
 - Ports bound to loopback only.

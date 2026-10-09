@@ -194,14 +194,14 @@ cd frontend && npm ci && npm test
 - **Deterministic loop, LLM only for writing and fixing tests** (structured JSON output, no tool calls). Why: reliability, token cost, testability, safety. The LLM never gets a shell.
 - **Append-only test generation** through a small Go AST helper. Accepted tests can't be lost, and failing tests are pruned one by one.
 - **Strict acceptance:** a candidate is kept only if vet is clean, tests pass twice, and covered blocks strictly grow. Coverage never regresses.
-- **The container is the sandbox:** non-root, env allowlist (the API key is not passed to test processes, although code running as the same container user could still read it via `/proc`), import allowlist, timeouts with process-group kill, loopback-only ports. No Docker socket mount, because that would give the backend root-equivalent access to the host.
+- **The container is the only real isolation, and it is not a per-job sandbox.** The import/content guard is a best-effort filter, not a security boundary, and does not make generated code safe. Defense in depth: non-root, env allowlist (the API key is not passed to test processes, although code running as the same container user could still read it via `/proc`), best-effort import filter, timeouts with process-group kill, loopback-only ports. No Docker socket mount, because that would give the backend root-equivalent access to the host.
 - **Token economy over generality:** a measured run showed that most Fixer calls were for mechanical errors (forgotten imports), so those are repaired without an LLM call, and the planner packs as many statements as fit into one prompt. See spec §6.7.
 - **Groq only:** fast iterations; the cost is that reviewers need a key and rate limits shape run time on free keys. Output tokens are left uncapped by default (suited to a paid key).
 
 ## Limitations
 
 - Expected values for floating-point code are partly characterization tests: when a generated assertion fails, the fixer may adopt the observed value if it's plausible. Real bugs may therefore be encoded rather than flagged; review generated assertions before trusting them.
-- Generated tests run inside the backend container and could read files there (including the backend's environment via `/proc`) and start processes. The guard rejects `StartProcess` and `/proc/` references, but that is a speed bump, not a sandbox. The production fix is a per-job sandbox with a separate uid (gVisor/Firecracker, no network).
+- Generated tests run inside the backend container and could read files there (including the backend's environment via `/proc`) and start processes. The guard's rejection of `StartProcess` and `/proc/` is a cheap best-effort filter and is easy to bypass (string concatenation, reflection); it is not a sandbox. The real control for untrusted generated code is a per-job sandbox with a separate uid and no network (gVisor/Firecracker), listed as production future work.
 - The repository's source code is sent to Groq.
 - Jobs are in memory. Restarting the backend forgets the job list, but `./output` keeps all artifacts.
 - Results depend on Groq rate limits and on the model; run time and final coverage vary between runs.
