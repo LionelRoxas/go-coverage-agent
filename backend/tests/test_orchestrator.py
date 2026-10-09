@@ -224,6 +224,17 @@ async def test_fixer_llm_error_rejects_and_rolls_back(ws):
     assert ws.read("a_test.go") is None
 
 
+async def test_writer_llm_error_records_its_cause_before_rejection(ws):
+    msg = "model output does not match TestSnippet (3 errors)"
+    agents = FakeAgents([LLMError(msg)])
+    orch, events = run(ws, FakeValidator(ws, []), agents, targets_per_iteration=1, max_iterations=1)
+    await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    cause = ("validation_result", {"index": 1, "file": "a.go", "kind": "llm_error", "output": msg, "failed_tests": []})
+    rejected = ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "llm_error"})
+    assert cause in events
+    assert events.index(cause) < events.index(rejected)
+
+
 async def test_job_token_budget_stops_run(ws):
     bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
     agents = FakeAgents([GOOD], usage=20_000)

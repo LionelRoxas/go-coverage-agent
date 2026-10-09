@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from app.workspace import Workspace, test_path_for
 
 
 MAX_MECHANICAL_REPAIRS = 3
+log = logging.getLogger(__name__)
 
 
 class Cancelled(Exception):
@@ -191,6 +193,8 @@ class Orchestrator:
                 raise
             too_large = False
             result = ValidationResult(ValidationKind.LLM_ERROR, str(e))
+            log.warning("LLM error for %s: %s", item.file, e)
+            await self.emit("validation_result", {**base, **result.event()})
         except BaseException:  # incl. Cancelled, OSError, asyncio.CancelledError: never leave a candidate behind
             ws.restore(snap)
             raise
