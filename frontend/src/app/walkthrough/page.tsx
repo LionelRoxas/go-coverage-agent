@@ -392,7 +392,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
                   <th scope="col" className="py-2 pr-4 text-right font-medium">Rounds</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">Time</th>
                   <th scope="col" className="py-2 pr-4 text-right font-medium">Tokens</th>
-                  <th scope="col" className="py-2 text-right font-medium">Kept / rejected</th>
+                  <th scope="col" className="py-2 text-right font-medium">Targets kept / rejected</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
