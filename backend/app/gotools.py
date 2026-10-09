@@ -48,6 +48,15 @@ class GoPackage:
     name: str
 
 
+@dataclass(frozen=True)
+class Symbol:
+    name: str
+    kind: str
+    file: str
+    start_line: int
+    end_line: int
+
+
 _MARKER = "\n…[output truncated]"
 _CHUNK = 64 * 1024
 _REAP_TIMEOUT = 5.0
@@ -213,6 +222,12 @@ class GoTools:
         if r.exit_code != 0:
             raise GoToolError("gohelper decls failed", r)
         return json.loads(r.stdout)
+
+    async def symbols(self) -> list[Symbol]:
+        r = await self._run(["gohelper", "symbols", "."], max_chars=JSON_MAX_CHARS)
+        if r.exit_code != 0:
+            raise GoToolError("gohelper symbols failed", r)
+        return [Symbol(**o) for o in json.loads(r.stdout)]
 
     async def merge(self, test_file: str, snippet: Path) -> CommandResult:
         return await self._run(["gohelper", "merge", test_file, str(snippet)])
