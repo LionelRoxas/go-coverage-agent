@@ -13,16 +13,27 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 )
 
 type importSpec struct{ Name, Path string }
 
+var majorVersionElem = regexp.MustCompile(`^v[0-9]+$`)
+
+// localName is the identifier the package is referenced by. For major-version
+// paths such as "math/rand/v2" that is the preceding element ("rand").
 func (s importSpec) localName() string {
 	if s.Name != "" {
 		return s.Name
 	}
-	return path.Base(s.Path)
+	dir, base := path.Split(s.Path)
+	if majorVersionElem.MatchString(base) {
+		if parent := path.Base(path.Clean(dir)); parent != "." && parent != "/" {
+			return parent
+		}
+	}
+	return base
 }
 
 // Merge appends the snippet's declarations and imports to testFile (creating it if needed).
@@ -39,6 +50,7 @@ func Merge(testFile, snippetFile string) error {
 	}
 
 	var base *ast.File
+	var header []byte
 	baseSrc, err := os.ReadFile(testFile)
 	switch {
 	case err == nil:
@@ -49,6 +61,7 @@ func Merge(testFile, snippetFile string) error {
 		if base.Name.Name != snip.Name.Name {
 			return fmt.Errorf("package mismatch: %s has %q, snippet has %q", filepath.Base(testFile), base.Name.Name, snip.Name.Name)
 		}
+		header = preamble(fset, base, baseSrc)
 	case errors.Is(err, fs.ErrNotExist):
 		baseSrc = nil
 	default:
@@ -78,7 +91,7 @@ func Merge(testFile, snippetFile string) error {
 	imports = append(imports, importsOf(snip)...)
 	writeDecls(&body, fset, snip, snipSrc, nil)
 
-	out, err := tidy(render(snip.Name.Name, imports, body.Bytes()))
+	out, err := tidy(render(header, snip.Name.Name, imports, body.Bytes()))
 	if err != nil {
 		return fmt.Errorf("merged result: %w", err)
 	}
@@ -105,11 +118,16 @@ func Prune(testFile string, names []string) error {
 		fd, ok := d.(*ast.FuncDecl)
 		return ok && fd.Recv == nil && drop[fd.Name.Name]
 	})
-	out, err := tidy(render(f.Name.Name, importsOf(f), body.Bytes()))
+	out, err := tidy(render(preamble(fset, f, src), f.Name.Name, importsOf(f), body.Bytes()))
 	if err != nil {
 		return err
 	}
 	return writeAtomic(testFile, out)
+}
+
+// preamble returns the source bytes before the package clause (build constraints, header comments).
+func preamble(fset *token.FileSet, f *ast.File, src []byte) []byte {
+	return src[:fset.Position(f.Package).Offset]
 }
 
 func importsOf(f *ast.File) []importSpec {
@@ -150,8 +168,9 @@ func writeDecls(buf *bytes.Buffer, fset *token.FileSet, f *ast.File, src []byte,
 	}
 }
 
-func render(pkg string, imports []importSpec, body []byte) []byte {
+func render(header []byte, pkg string, imports []importSpec, body []byte) []byte {
 	var buf bytes.Buffer
+	buf.Write(header)
 	fmt.Fprintf(&buf, "package %s\n\n", pkg)
 	seen := map[importSpec]bool{}
 	var uniq []importSpec
@@ -200,7 +219,7 @@ func tidy(src []byte) ([]byte, error) {
 	}
 	var body bytes.Buffer
 	writeDecls(&body, fset, f, src, nil)
-	return format.Source(render(f.Name.Name, keep, body.Bytes()))
+	return format.Source(render(preamble(fset, f, src), f.Name.Name, keep, body.Bytes()))
 }
 
 func writeAtomic(dst string, data []byte) error {

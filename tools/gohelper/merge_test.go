@@ -133,3 +133,57 @@ func TestPrune_RemovesNamedTestsAndUnusedImports(t *testing.T) {
 		t.Fatalf("unexpected prune result:\n%s", got)
 	}
 }
+
+func TestMerge_KeepsVersionedImportLocalName(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "snip.go", "package p\n\nimport (\n\t\"math/rand/v2\"\n\t\"testing\"\n)\n\nfunc TestRand(t *testing.T) {\n\t_ = rand.IntN(3)\n}\n")
+	target := filepath.Join(dir, "a_test.go")
+
+	if err := Merge(target, filepath.Join(dir, "snip.go")); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, target)
+	mustParse(t, got)
+	if !strings.Contains(got, `"math/rand/v2"`) {
+		t.Fatalf("versioned import dropped:\n%s", got)
+	}
+}
+
+func TestMerge_PreservesPreambleOfExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	header := "//go:build integration\n\n// Header comment\n"
+	writeFile(t, dir, "a_test.go", header+"package p\n\nimport \"testing\"\n\nfunc TestA(t *testing.T) {}\n")
+	writeFile(t, dir, "snip.go", "package p\n\nimport \"testing\"\n\nfunc TestB(t *testing.T) {}\n")
+	target := filepath.Join(dir, "a_test.go")
+
+	if err := Merge(target, filepath.Join(dir, "snip.go")); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, target)
+	mustParse(t, got)
+	if !strings.HasPrefix(got, header+"package p\n") {
+		t.Fatalf("preamble lost:\n%s", got)
+	}
+	if !strings.Contains(got, "func TestA(") || !strings.Contains(got, "func TestB(") {
+		t.Fatalf("missing tests:\n%s", got)
+	}
+}
+
+func TestPrune_PreservesPreambleOfExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	header := "//go:build integration\n\n// Header comment\n"
+	writeFile(t, dir, "a_test.go", header+"package p\n\nimport \"testing\"\n\nfunc TestA(t *testing.T) {}\n\nfunc TestB(t *testing.T) {}\n")
+	target := filepath.Join(dir, "a_test.go")
+
+	if err := Prune(target, []string{"TestA"}); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, target)
+	mustParse(t, got)
+	if !strings.HasPrefix(got, header+"package p\n") {
+		t.Fatalf("preamble lost:\n%s", got)
+	}
+	if strings.Contains(got, "TestA") || !strings.Contains(got, "func TestB(") {
+		t.Fatalf("unexpected prune result:\n%s", got)
+	}
+}
