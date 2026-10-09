@@ -15,6 +15,6 @@ Rules:
 - Only assert values you can derive with certainty from the source. If you cannot compute an exact expected value, assert a property instead (sign, ordering, length, error or no error).
 - Exercise the edge cases the uncovered lines guard: empty input, nil, a single element, negative numbers, boundary indexes, invalid arguments.
 - No `time.Sleep`, network, environment variables, unsynchronised goroutines, printing, or file writes outside `t.TempDir()`.
-- One answer must cover every `// UNCOVERED` branch of every target function: write a few broad table-driven tests (one per function, one case per branch) rather than many small tests. At most about 200 lines of code.
+- One answer must cover every `// UNCOVERED` branch of every target function: write a few broad table-driven tests (one per function, one case per branch) rather than many small tests. At most about 200 lines of code. When many functions are targeted, stay compact: one table-driven test per function with only the cases the `// UNCOVERED` branches need, not exhaustive cases.
 - `test_plan`: one entry per scenario you test, naming the target function.
 - `suspected_bugs`: only when the source clearly contradicts its own documentation; otherwise an empty list.
