@@ -148,7 +148,7 @@ Each unit has one purpose and a narrow interface, and it can be tested on its ow
 Pydantic `BaseSettings` from env:
 
 - `GROQ_API_KEY` (required to start jobs), `GROQ_MODEL`, `GROQ_WRITER_REASONING_EFFORT` (default `medium`) and `GROQ_FIXER_REASONING_EFFORT` (default `medium`): the `reasoning_effort` sent for each role (`low`, `medium` or `high`; `medium` and `low` are the practical choices). Both roles default to `medium`: `high` was measured as too slow (job `86b6d88b558c`: a `high` Fixer call was still waiting after about 114 s, against 9 s for the `medium` Writer call), and remains accepted. The former single `GROQ_REASONING_EFFORT` was removed; if it is still in a `.env`, it is ignored.
-- `GROQ_TIMEOUT_S` (default 240): how long one Groq request may take. A request that takes longer fails the item as `llm_timeout` ("Groq did not answer within 240 s"), without retrying the wait (§5.7).
+- `GROQ_TIMEOUT_S` (default 240): how long one Groq request may take. A timed-out request is retried once at reasoning effort `low`; if that also times out, the item fails as `llm_timeout` ("Groq did not answer within 240 s, twice") (§5.7).
 - `GROQ_MAX_COMPLETION_TOKENS` (default 65536, sent as `max_completion_tokens`; set it empty to send no cap), `CALL_TOKEN_RESERVATION` (default 16,000: tokens reserved per call for daily-ledger checks and TPM pacing, never sent to Groq; for accurate pacing it should be at least `MAX_PROMPT_TOKENS` plus the expected answer, so free-trial keys set 8,000), `DAILY_TOKEN_BUDGET` (default 2,000,000 for a paid plan; free-tier keys should set `DAILY_TOKEN_BUDGET=190000`)
 - `MAX_PROMPT_TOKENS` (default 12,000: the estimated prompt cap per call; free-trial keys with 8K tokens/min should set 4,500 so prompt plus completion fit in one minute's allowance)
 - `REPOS_DIR=/repos`, `OUTPUT_DIR=/output`, `WORK_DIR=/work`
@@ -223,7 +223,7 @@ Formatting needs no separate step: `gohelper merge` writes `go/format` output, a
   - **Cancellation:** the client receives the job's cancel event, so a cancel interrupts a rate-limit pause or an in-flight request immediately.
   - 400 schema errors → fail the item, log, continue the loop.
   - 5xx/network → exponential backoff, max 3.
-  - **Timeout:** each request may take `GROQ_TIMEOUT_S` (default 240 s). A timeout raises `LLMTimeout` at once (retrying would repeat the whole wait); the orchestrator records it as `validation_result.kind = llm_timeout` with the output "Groq did not answer within 240 s", and the UI labels it "Groq timed out".
+  - **Timeout:** each request may take `GROQ_TIMEOUT_S` (default 240 s). After a timeout the request is retried **once at reasoning effort `low`**, whatever the role's configured effort, since the lowest effort answers fastest; the retry emits its own `llm_request` (effort `low`), so the UI's wait restarts, and it is not a fix attempt (it happens inside one `complete` call). A second timeout raises `LLMTimeout`; the orchestrator records it as `validation_result.kind = llm_timeout` with the output "Groq did not answer within 240 s, twice", and the UI labels it "Groq timed out". The worst case per call is therefore about 2 × `GROQ_TIMEOUT_S`. Two side effects: `APITimeoutError` also covers connection (connect-phase) timeouts, which were formerly retried as network errors and now follow this rule; and the SDK's float timeout is a per-phase httpx limit (the read limit is the time between bytes), which for these non-streaming calls behaves as roughly the total time.
   - **Visible waits:** `complete` takes an `on_request(effort)` hook, called right before each request to Groq (also after a retry or an effort step-down); the orchestrator uses it to emit `llm_request` (§5.8).
 - **Rate limiting:**
   - Before each call, if `x-ratelimit-remaining-tokens` (from the previous response) is less than the call's token reservation, sleep until `x-ratelimit-reset-tokens`, emitting a `rate_limited{seconds, reason:"tpm"}` event.
@@ -542,7 +542,7 @@ volumes: { gocache: {} }
 
 ### 10.4 `.env.example`
 
-`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_WRITER_REASONING_EFFORT=medium`, `GROQ_FIXER_REASONING_EFFORT=high`, `HOST_REPOS_DIR=./repos`, and a commented `MAX_PROMPT_TOKENS=4500` for free-trial keys.
+`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_WRITER_REASONING_EFFORT=medium`, `GROQ_FIXER_REASONING_EFFORT=medium`, `HOST_REPOS_DIR=./repos`, a commented `MAX_PROMPT_TOKENS=4500` for free-trial keys, and under Advanced the commented `GROQ_MAX_COMPLETION_TOKENS=65536` and `GROQ_TIMEOUT_S=240`.
 
 ---
 

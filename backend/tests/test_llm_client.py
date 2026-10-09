@@ -349,13 +349,27 @@ async def test_truncation_at_every_effort_is_output_too_large(tmp_path):
     assert [c["reasoning_effort"] for c in fake.calls] == ["high", "medium", "low"]
 
 
-async def test_timeout_fails_at_once_with_the_configured_seconds(tmp_path):
-    req = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
-    llm, fake, slept = make(tmp_path, [groq.APITimeoutError(request=req)],
-                            settings=Settings(groq_api_key="k", groq_timeout_s=240))
-    with pytest.raises(LLMTimeout, match=r"^Groq did not answer within 240 s$"):
+def _timeout():
+    return groq.APITimeoutError(request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions"))
+
+
+async def test_timeout_is_retried_once_at_low_effort(tmp_path):
+    seen = []
+    llm, fake, slept = make(tmp_path, [_timeout(), Raw(Completion('{"answer": "ok"}', "stop"))],
+                            settings=Settings(groq_api_key="k", groq_fixer_reasoning_effort="high"))
+
+    async def on_request(effort):
+        seen.append(effort)
+    out, _ = await llm.complete(role="fixer", system="s", user="u", schema=Out, on_request=on_request)
+    assert out.answer == "ok" and llm.last_effort == "low" and slept == []
+    assert [c["reasoning_effort"] for c in fake.calls] == ["high", "low"] and seen == ["high", "low"]
+
+
+async def test_second_timeout_fails_with_the_configured_seconds(tmp_path):
+    llm, fake, slept = make(tmp_path, [_timeout(), _timeout()], settings=Settings(groq_api_key="k", groq_timeout_s=240))
+    with pytest.raises(LLMTimeout, match=r"^Groq did not answer within 240 s, twice$"):
         await call(llm)
-    assert len(fake.calls) == 1 and slept == []  # waiting the full timeout again would only double the wait
+    assert [c["reasoning_effort"] for c in fake.calls] == ["medium", "low"] and slept == []
 
 
 def test_sdk_client_uses_the_configured_timeout(tmp_path):

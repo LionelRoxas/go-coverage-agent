@@ -477,10 +477,33 @@ async def test_llm_request_is_emitted_before_each_call(ws):
 
 
 async def test_a_groq_timeout_is_recorded_as_llm_timeout(ws):
-    msg = "Groq did not answer within 240 s"
+    msg = "Groq did not answer within 240 s, twice"
     orch, events = run(ws, FakeValidator(ws, []), FakeAgents([LLMTimeout(msg)]), targets_per_iteration=1,
                        max_iterations=1)
     await orch.run(report(set(), funcs=(("a.go", "A"),)))
     assert ("validation_result", {"index": 1, "file": "a.go", "kind": "llm_timeout", "output": msg,
                                   "failed_tests": []}) in events
     assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "llm_timeout"}) in events
+
+
+async def test_a_timeout_retried_at_low_effort_is_not_a_fix_attempt(ws, tmp_path):
+    from app.agents.llm_agents import Agents
+    from app.config import Settings
+    from app.llm.client import GroqLLM
+    from app.llm.limits import RateLimiter, UsageLedger
+    from tests.test_llm_agents import INPUTS
+    from tests.test_llm_client import Completion, FakeGroq, Raw, _timeout
+
+    class Contexts:
+        async def inputs_for(self, item, rep):
+            return INPUTS
+
+    fake = FakeGroq([_timeout(), Raw(Completion(GOOD.model_dump_json(), "stop"))])
+    llm = GroqLLM(Settings(groq_api_key="k"), UsageLedger(tmp_path / "u.json", 1_000_000), RateLimiter(), client=fake)
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"})])
+    orch, events = run(ws, v, Agents(llm, 12000), target=50, max_fix_attempts=1, contexts=Contexts())
+    summary = await orch.run(report(set()))
+    assert summary.tests_added == ["TestA"]
+    assert [d["reasoning_effort"] for t, d in events if t == "llm_request"] == ["medium", "low"]
+    assert [d["reasoning_effort"] for t, d in events if t == "llm_call"] == ["low"]
+    assert not any(t == "fix_attempt" for t, _ in events)

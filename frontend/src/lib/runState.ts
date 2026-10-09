@@ -83,7 +83,9 @@ function clearPending(s: RunState): RunState {
 
 // The item whose Groq request is still waiting, if any (requests are made one at a time).
 export function waitingOn(s: RunState): (PendingRequest & { file: string }) | undefined {
-  for (const it of s.iterations) for (const i of it.items) if (i.pending) return { file: i.file, ...i.pending };
+  for (const it of s.iterations) for (const i of it.items) {
+    if (i.pending && i.status !== "accepted" && i.status !== "rejected") return { file: i.file, ...i.pending };
+  }
   return undefined;
 }
 
@@ -184,12 +186,13 @@ export function reduce(state: RunState, ev: RunAction): RunState {
                activity: `Fixing ${String(d.kind).replace("_", " ")} in ${d.file} (attempt ${d.attempt})…` };
     case "candidate_accepted": {
       const next = withItem(s, d.index, d.file, (i) => ({
-        ...i, status: "accepted", tests: d.tests ?? [], gain: d.gain, percentAfter: d.percent,
+        ...i, status: "accepted", pending: undefined, tests: d.tests ?? [], gain: d.gain, percentAfter: d.percent,
         percentBefore: d.percent != null && d.gain != null ? d.percent - d.gain : undefined }));
       return { ...next, percent: d.percent, activity: nextWriting(next, d.index) };
     }
     case "candidate_rejected": {
-      const next = withItem(s, d.index, d.file, (i) => ({ ...i, status: "rejected", rejectReason: d.reason }));
+      const next = withItem(s, d.index, d.file, (i) => ({ ...i, status: "rejected", pending: undefined,
+                                                         rejectReason: d.reason })); // e.g. too_large: no llm_call came
       return { ...next, activity: nextWriting(next, d.index) };
     }
     case "iteration_completed":

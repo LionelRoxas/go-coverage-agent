@@ -240,7 +240,7 @@ Environment variables (`.env`, same layout as `.env.example`). Only the key is r
 | `CALL_TOKEN_RESERVATION` | 16000 | Tokens reserved per call for rate pacing. Free trial: `8000` |
 | **Advanced** | | |
 | `GROQ_MAX_COMPLETION_TOKENS` | 65536 | Output-token cap per call (the model maximum). Empty does not mean unlimited: Groq then applies a smaller default |
-| `GROQ_TIMEOUT_S` | 240 | Seconds one Groq request may take; a slower request fails the item as "Groq timed out" |
+| `GROQ_TIMEOUT_S` | 240 | Seconds one Groq request may take. A timed-out request is retried once at `low` reasoning effort; a second timeout fails the item as "Groq timed out" |
 
 ## Running the tests
 

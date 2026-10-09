@@ -29,7 +29,7 @@ class LLMOutputTooLarge(LLMError):
 
 
 class LLMTimeout(LLMError):
-    """Groq did not answer within GROQ_TIMEOUT_S; the item fails without retrying the wait."""
+    """Groq did not answer within GROQ_TIMEOUT_S, and again on the one retry at low effort. The item fails."""
 
 
 class LLMBudgetExhausted(LLMError):
@@ -142,7 +142,7 @@ class GroqLLM:
         effort: str = (self.s.groq_fixer_reasoning_effort if role == "fixer"
                        else self.s.groq_writer_reasoning_effort)
         rate_retries = net_retries = 0
-        json_retried = False
+        json_retried = timeout_retried = False
         spent = TokenUsage()
         response_format = {"type": "json_schema", "json_schema": {
             "name": schema.__name__, "strict": True, "schema": to_strict_schema(schema)}}
@@ -200,8 +200,11 @@ class GroqLLM:
                 rate_retries += 1
                 await self._wait(retry_after, "429")
                 continue
-            except groq.APITimeoutError as e:  # before APIConnectionError, its base class
-                raise LLMTimeout(f"Groq did not answer within {self.s.groq_timeout_s:g} s") from e
+            except groq.APITimeoutError as e:  # before APIConnectionError, its base class (also covers connect timeouts)
+                if not timeout_retried:  # one retry at the lowest effort, whatever the role's setting: it answers fastest
+                    timeout_retried, effort = True, "low"
+                    continue
+                raise LLMTimeout(f"Groq did not answer within {self.s.groq_timeout_s:g} s, twice") from e
             except (groq.APIConnectionError, groq.InternalServerError) as e:
                 if net_retries >= self.MAX_NET_RETRIES:
                     raise LLMError(f"Groq is unreachable: {e}") from e

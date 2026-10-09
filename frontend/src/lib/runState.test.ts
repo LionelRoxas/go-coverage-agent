@@ -280,12 +280,22 @@ describe("waiting on Groq (llm_request)", () => {
   it("clears the pending fixer request on validation_result (a failed request), a rate-limit wait and cancel", () => {
     const { e, base } = start();
     const req = () => e("llm_request", { ...at, role: "fixer", reasoning_effort: "medium", attempt: 1 });
-    expect(itemIn([...base, req(), e("validation_result", { ...at, kind: "llm_timeout", output: "Groq did not answer within 240 s" })]).pending).toBeUndefined();
+    expect(itemIn([...base, req(), e("validation_result", { ...at, kind: "llm_timeout", output: "Groq did not answer within 240 s, twice" })]).pending).toBeUndefined();
     const limited = run([...base, req(), e("rate_limited", { seconds: 12, reason: "429" })]);
     expect(limited.iterations[0].items[0].pending).toBeUndefined();
     expect(limited.activity).toMatch(/^Waiting 12s for the Groq rate limit/);
     expect(itemIn([...base, req(), e("job_cancelled", { message: "Cancelled.", final_percent: 0 })]).pending).toBeUndefined();
     expect(itemIn([...base, req(), e("job_failed", { reason: "cancelled" })]).pending).toBeUndefined();
+  });
+
+  it("clears the pending request when the item ends without an answer (too large) or is accepted", () => {
+    const { e, base } = start();
+    const req = e("llm_request", { ...at, role: "writer", reasoning_effort: "medium" });
+    const tooLarge = run([...base, req, e("candidate_rejected", { ...at, reason: "too_large" })]);
+    expect(tooLarge.iterations[0].items[0].pending).toBeUndefined();
+    expect(waitingOn(tooLarge)).toBeUndefined();
+    expect(itemIn([...base, e("llm_request", { ...at, role: "writer" }), e("candidate_accepted", { ...at, percent: 5, gain: 5 })]).pending)
+      .toBeUndefined();
   });
 
   it("old runs without llm_request have nothing pending", () => {

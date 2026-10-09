@@ -1,4 +1,7 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+import pytest
+from pydantic import ValidationError
+
 from app.config import Settings
 
 
@@ -61,3 +64,10 @@ def test_groq_timeout_default_and_env(monkeypatch):
     assert Settings(_env_file=None).groq_timeout_s == 240
     monkeypatch.setenv("GROQ_TIMEOUT_S", "90")
     assert Settings(_env_file=None).groq_timeout_s == 90
+
+
+@pytest.mark.parametrize("value", ["0", "-5"])
+def test_groq_timeout_must_be_positive(monkeypatch, value):
+    monkeypatch.setenv("GROQ_TIMEOUT_S", value)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
