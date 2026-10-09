@@ -5,7 +5,7 @@ import pytest
 
 from app.config import Settings
 from app.gotools import CommandResult
-from app.repos import clone_sample, list_repos
+from app.repos import SAMPLES, clone_sample, list_repos, list_samples
 
 
 def test_list_repos_finds_modules_two_levels_deep(tmp_path):
@@ -99,3 +99,79 @@ async def test_concurrent_clones_run_git_once(tmp_path, monkeypatch):
     monkeypatch.setattr("app.repos.run", slow)
     a, b = await asyncio.gather(clone_sample(settings), clone_sample(settings))
     assert len(calls) == 1 and a.path == b.path == "stats"
+
+
+def test_allowlist_shape():
+    assert list(SAMPLES) == ["stats", "semver", "xstrings", "humanize", "btree", "decimal"]
+    for sid, s in SAMPLES.items():
+        assert s.id == sid and s.url == f"https://github.com/{s.name}" and s.description and s.license
+        assert s.ref is None or s.ref.startswith("v")
+    assert SAMPLES["btree"].license == "Apache-2.0"
+
+
+def test_list_samples_downloaded_flag(tmp_path):
+    (tmp_path / "semver").mkdir()
+    (tmp_path / "semver" / "go.mod").write_text("module x\n")
+    (tmp_path / "btree").mkdir()  # exists but is not a module
+    flags = {s["id"]: s["downloaded"] for s in list_samples(tmp_path)}
+    assert flags["semver"] is True and flags["btree"] is False and flags["stats"] is False
+    assert list_samples(tmp_path)[1]["path"] == "semver"
+
+
+async def test_clone_command_arguments(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    seen = {}
+
+    async def fake(argv, cwd, timeout, env):
+        seen.update(argv=argv, timeout=timeout, env=env)
+        (settings.repos_dir / "semver").mkdir()
+        (settings.repos_dir / "semver" / "go.mod").write_text("module x\n\ngo 1.21\n")
+        return _result(0)
+
+    monkeypatch.setattr("app.repos.run", fake)
+    info = await clone_sample(settings, "semver")
+    assert info.path == "semver"
+    assert seen["argv"] == ["git", "clone", "--depth", "1", "--branch", SAMPLES["semver"].ref, "--no-recurse-submodules",
+                            "https://github.com/Masterminds/semver", str(settings.repos_dir / "semver")]
+    assert seen["env"]["GIT_TERMINAL_PROMPT"] == "0" and set(seen["env"]) == {"PATH", "HOME", "GIT_TERMINAL_PROMPT"}
+
+
+async def test_stats_clones_default_branch(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+    seen = {}
+
+    async def fake(argv, cwd, **k):
+        seen["argv"] = argv
+        (settings.repos_dir / "stats").mkdir()
+        (settings.repos_dir / "stats" / "go.mod").write_text("module x\n")
+        return _result(0)
+
+    monkeypatch.setattr("app.repos.run", fake)
+    await clone_sample(settings)
+    assert "--branch" not in seen["argv"] and "--no-recurse-submodules" in seen["argv"]
+
+
+async def test_clone_rejects_go_mod_with_require_and_removes_it(tmp_path, monkeypatch):
+    settings = _settings(tmp_path)
+
+    async def fake(argv, cwd, **k):
+        (settings.repos_dir / "decimal").mkdir()
+        (settings.repos_dir / "decimal" / "go.mod").write_text("// header\nmodule x\n\nrequire (\n	github.com/a/b v1.0.0\n)\n")
+        return _result(0)
+
+    monkeypatch.setattr("app.repos.run", fake)
+    with pytest.raises(RuntimeError, match="dependencies"):
+        await clone_sample(settings, "decimal")
+    assert not (settings.repos_dir / "decimal").exists()
+
+
+async def test_clone_unknown_sample_is_key_error(tmp_path):
+    with pytest.raises(KeyError):
+        await clone_sample(_settings(tmp_path), "nope")
+
+
+async def test_existing_non_module_error_names_the_sample(tmp_path):
+    settings = _settings(tmp_path)
+    (settings.repos_dir / "btree").mkdir()
+    with pytest.raises(RuntimeError, match=r"repos/btree exists but is not a Go module"):
+        await clone_sample(settings, "btree")

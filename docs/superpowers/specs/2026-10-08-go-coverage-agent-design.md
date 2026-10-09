@@ -430,9 +430,11 @@ All under `/api`, JSON, Pydantic-validated. Errors: `{"error": {"code", "message
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/health` | `{status, go_version, model, llm_configured, tokens_left_today}` |
+| `GET /api/health` | `{status, go_version, model, llm_configured, tokens_left_today, storage_writable, host_repos_dir}` (`host_repos_dir` is display only, from `HOST_REPOS_DIR_DISPLAY`) |
 | `GET /api/repos` | Directories under `/repos` (depth ≤2) containing `go.mod`: `[{path, module, go_files, test_files}]` |
-| `POST /api/repos/sample` | Clones `https://github.com/montanaflynn/stats` into `/repos/stats` if absent. Returns the entry |
+| `GET /api/repos/samples` | The curated sample allowlist: `[{id, name, description, license, ref, path, downloaded}]` |
+| `POST /api/repos/samples/{id}` | Shallow-clones that sample (pinned release tag, no submodules) into `/repos/<id>` if absent and returns the entry. Unknown id: 404 `unknown_sample`. Refuses a `go.mod` that has `require` lines |
+| `POST /api/repos/sample` | Alias for `POST /api/repos/samples/stats` |
 | `POST /api/jobs` | `{repo_path, target_coverage, options?}` → `201 {job_id}`. 400 for invalid input or missing key, 409 if a job is running, 429 if the daily budget is too low |
 | `GET /api/jobs` | Jobs in the current process |
 | `GET /api/jobs/{id}` | Snapshot: status, inputs, report, iterations, summary |
@@ -440,7 +442,7 @@ All under `/api`, JSON, Pydantic-validated. Errors: `{"error": {"code", "message
 | `POST /api/jobs/{id}/cancel` | Cooperative cancel + process-group kill |
 | `GET /api/jobs/{id}/files/{path}` | Content of one generated test file. The path must be in the job's generated-file list (no traversal) |
 
-**Repo path input:** containers can only see mounted paths. The user puts (or clones) repos into the host `./repos` folder, or sets `HOST_REPOS_DIR` to an **absolute** host path. Compose doesn't expand `~`, so the README shows `/Users/you/code`. The UI repo picker lists them. If someone types an absolute host path like `/Users/...`, the UI explains the mount instead of failing obscurely.
+**Repo path input:** containers can only see mounted paths. The user puts (or clones) repos into the host `./repos` folder, or sets `HOST_REPOS_DIR` to an **absolute** host path. Compose doesn't expand `~`, so the README shows `/Users/you/code`. The UI repo picker has two tabs: **Sample repos** (the six allowlisted libraries: stats, semver, xstrings, humanize, btree, decimal; click to download and select) and **Your folders** (modules found under the mount, with instructions for adding your own). There is no free-text path field.
 
 **Data notice:** the UI and README state that the target repo's source code is sent to Groq.
 

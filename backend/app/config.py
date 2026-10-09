@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     test_timeout: str = "60s"
     max_output_chars: int = 20_000
     cors_origins: list[str] = ["http://localhost:3000"]
-    sample_repo_url: str = "https://github.com/montanaflynn/stats"
+    host_repos_dir_display: str | None = None  # display only (HOST_REPOS_DIR_DISPLAY); never used as a path
 
     @property
     def llm_configured(self) -> bool:

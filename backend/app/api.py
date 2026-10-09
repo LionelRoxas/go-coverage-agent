@@ -10,7 +10,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.jobs import Job, JobConflict, JobManager, JobRejected
 from app.models import JobRequest
-from app.repos import clone_sample, list_repos
+from app.repos import clone_sample, list_repos, list_samples
 from app.workspace import WorkspaceError, resolve_repo
 
 router = APIRouter(prefix="/api")
@@ -38,7 +38,8 @@ async def health(request: Request) -> dict:
     s, m = request.app.state.settings, _manager(request)
     return {"status": "ok", "go_version": request.app.state.go_version, "model": s.groq_model,
             "llm_configured": s.llm_configured, "tokens_left_today": m.ledger.remaining(),
-            "storage_writable": os.access(s.output_dir, os.W_OK) and os.access(s.repos_dir, os.W_OK)}
+            "storage_writable": os.access(s.output_dir, os.W_OK) and os.access(s.repos_dir, os.W_OK),
+            "host_repos_dir": s.host_repos_dir_display or None}
 
 
 @router.get("/repos")
@@ -47,12 +48,29 @@ async def repos(request: Request) -> list[dict]:
     return [r.model_dump() for r in found]
 
 
-@router.post("/repos/sample")
-async def sample(request: Request) -> dict:
+@router.get("/repos/samples")
+async def samples(request: Request) -> list[dict]:
+    return await asyncio.to_thread(list_samples, request.app.state.settings.repos_dir)
+
+
+async def _download(request: Request, sample_id: str) -> dict:
     try:
-        return (await clone_sample(request.app.state.settings)).model_dump()
+        return (await clone_sample(request.app.state.settings, sample_id)).model_dump()
+    except KeyError:
+        raise ApiError(404, "unknown_sample", f"No sample repository {sample_id!r}.") from None
     except RuntimeError as e:
         raise ApiError(502, "clone_failed", str(e)) from e
+
+
+@router.post("/repos/samples/{sample_id}")
+async def download_sample(sample_id: str, request: Request) -> dict:
+    return await _download(request, sample_id)
+
+
+@router.post("/repos/sample")
+async def sample(request: Request) -> dict:
+    """Alias for the sample with id "stats"."""
+    return await _download(request, "stats")
 
 
 @router.post("/jobs", status_code=201)

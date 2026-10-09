@@ -133,7 +133,7 @@ async def test_llm_not_configured_is_400(tmp_path):
 async def test_sample_clone_failure_is_502(env, monkeypatch):
     client, _ = env
 
-    async def boom(settings):
+    async def boom(settings, sample_id="stats"):
         raise RuntimeError("git clone failed: nope")
 
     monkeypatch.setattr("app.api.clone_sample", boom)
@@ -178,12 +178,47 @@ async def test_cross_origin_post_is_blocked(env, monkeypatch):
     client, _ = env
     calls = []
 
-    async def fake_clone(settings):
-        calls.append(1)
+    async def fake_clone(settings, sample_id="stats"):
+        calls.append(sample_id)
         return RepoInfo(path="stats", module="m", go_files=0, test_files=0)
 
     monkeypatch.setattr("app.api.clone_sample", fake_clone)
     r = await client.post("/api/repos/sample", headers={"Origin": "https://evil.example"})
     assert r.status_code == 403 and r.json()["error"]["code"] == "forbidden_origin" and not calls
     r = await client.post("/api/repos/sample", headers={"Origin": "http://localhost:3000"})
-    assert r.status_code == 200 and calls == [1]
+    assert r.status_code == 200 and calls == ["stats"]
+    r = await client.post("/api/repos/samples/semver", headers={"Origin": "https://evil.example"})
+    assert r.status_code == 403 and calls == ["stats"]
+
+
+async def test_health_exposes_host_repos_dir_display(env):
+    client, _ = env
+    assert (await client.get("/api/health")).json()["host_repos_dir"] is None
+
+
+async def test_samples_listing_flags_downloaded(env):
+    client, _ = env
+    body = (await client.get("/api/repos/samples")).json()
+    assert [s["id"] for s in body] == ["stats", "semver", "xstrings", "humanize", "btree", "decimal"]
+    assert {s["id"]: s["downloaded"] for s in body}["stats"] is True
+    assert {s["id"]: s["downloaded"] for s in body}["semver"] is False
+
+
+async def test_unknown_sample_is_404(env):
+    client, _ = env
+    r = await client.post("/api/repos/samples/nope")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "unknown_sample"
+
+
+async def test_sample_by_id_and_alias(env, monkeypatch):
+    client, _ = env
+    calls = []
+
+    async def fake_clone(settings, sample_id="stats"):
+        calls.append(sample_id)
+        return RepoInfo(path=sample_id, module="m", go_files=0, test_files=0)
+
+    monkeypatch.setattr("app.api.clone_sample", fake_clone)
+    assert (await client.post("/api/repos/samples/semver")).json()["path"] == "semver"
+    assert (await client.post("/api/repos/sample")).json()["path"] == "stats"
+    assert calls == ["semver", "stats"]
