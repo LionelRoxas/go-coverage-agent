@@ -1,11 +1,12 @@
 # AI-assisted: drafted with Claude Code from the implementation plan; reviewed by <author>.
 import asyncio
+import shutil
 
 import pytest
 
 from app.config import Settings
 from app.engine.run import JobFailed, run_job
-from app.models import JobRequest, StopReason
+from app.models import JobOptions, JobRequest, StopReason
 from tests.fakes import FakeLLM, snippet
 from tests.integration.conftest import FIXTURES
 
@@ -43,7 +44,6 @@ func TestSqrt(t *testing.T) {
 def settings_for(tmp_path, fixture: str) -> Settings:
     repos = tmp_path / "repos"
     repos.mkdir()
-    import shutil
     shutil.copytree(FIXTURES / fixture, repos / fixture)
     return Settings(repos_dir=repos, work_dir=tmp_path / "work", output_dir=tmp_path / "output")
 
@@ -73,3 +73,29 @@ async def test_broken_repo_fails_fast(tmp_path):
         await run_job("j2", JobRequest(repo_path="broken"), settings, FakeLLM([]), emit, asyncio.Event(), lambda: [])
     assert exc.value.reason == "repo_does_not_build"
     assert "broken.go" in exc.value.output
+    assert (settings.output_dir / "j2" / "events.jsonl").exists()
+
+
+async def _fail_reason(tmp_path, fixture, **request):
+    settings = settings_for(tmp_path, fixture)
+
+    async def emit(t, d): pass
+
+    with pytest.raises(JobFailed) as exc:
+        await run_job("j3", JobRequest(repo_path=fixture, **request), settings, FakeLLM([]), emit, asyncio.Event(),
+                      lambda: [])
+    return exc.value
+
+
+async def test_vet_failing_repo_is_rejected(tmp_path):
+    assert (await _fail_reason(tmp_path, "vetfail")).reason == "repo_vet_fails"
+
+
+async def test_existing_failing_tests_are_reported(tmp_path):
+    failed = await _fail_reason(tmp_path, "failingtests", options=JobOptions(delete_existing_tests=False))
+    assert failed.reason == "existing_tests_fail"
+
+
+async def test_everything_excluded_means_no_packages(tmp_path):
+    failed = await _fail_reason(tmp_path, "gomod", options=JobOptions(exclude_patterns=["*"]))
+    assert failed.reason == "no_packages"
