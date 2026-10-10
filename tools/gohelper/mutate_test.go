@@ -57,7 +57,7 @@ func TestMutate_SkipsStringConcatenation(t *testing.T) {
 	}
 }
 
-func TestMutate_SourceOrderAndNested(t *testing.T) {
+func TestMutate_NestedOrder(t *testing.T) {
 	got, _ := mutate(t, "f.go", "package p\n\nfunc f(a, b int) bool {\n\treturn a+1 < b*2 && a != b\n}\n")
 	var ops []string
 	for _, s := range got {

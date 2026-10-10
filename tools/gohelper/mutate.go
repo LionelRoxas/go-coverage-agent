@@ -45,7 +45,7 @@ func isString(e ast.Expr) bool {
 	return false
 }
 
-// Mutate lists the mutation sites of a non-test Go file, in source order (none for a _test.go file).
+// Mutate lists the mutation sites of a non-test Go file, in AST pre-order (none for a _test.go file).
 func Mutate(file string) ([]Site, error) {
 	out := []Site{}
 	if strings.HasSuffix(file, "_test.go") {

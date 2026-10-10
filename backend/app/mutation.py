@@ -173,8 +173,9 @@ async def _run(name: str, request: JobRequest, settings: Settings, emit: Emit, c
             package_of[rel] = pkg
             try:
                 sites += await tools.mutate(rel)
-            except GoToolError:  # a file Go does not build (another build target): none of its lines is covered
-                continue
+            except GoToolError as e:  # a file Go does not build (another build target): none of its lines is covered
+                if cancel.is_set():
+                    raise cancelled from e
     picked = sample(sites, blocks, settings.mutation_sample)
 
     await emit("mutation_started", {"total": len(picked)})

@@ -11,7 +11,7 @@ export const MUTATION_NOTE = "Plant small bugs in the code and check whether the
 
 const caught = (m: Mutant) => m.status === "killed" || m.status === "timeout";
 const OUTCOME: Record<Mutant["status"], string> = {
-  killed: "caught", timeout: "caught (timed out)", survived: "missed", invalid: "skipped (does not build)",
+  killed: "caught", timeout: "caught (timed out)", survived: "missed", invalid: "skipped (does not build or fails go vet)",
 };
 
 /** `file:line  before → after`, e.g. `percentile.go:41  i < n → i <= n` (just the operators on older results). */

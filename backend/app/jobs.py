@@ -396,17 +396,14 @@ class JobManager:
         job = self.jobs[job_id]
         if not job.on_disk or job.summary is None:
             return None
-        assert job.log_path is not None
-        unreadable = JobRejected(409, "run_files_unreadable", f"This run's saved files in ./output/{job.id} can't be "
-                                 "read any more, so its summary can't be written again.")
         try:
-            events = [*read_events(job.log_path), *job.saved_tail]
+            events = self.saved_log(job_id)
+            assert events is not None
             build_facts(job.summary, events, repo=job.request.repo_path, model="", job_id=job.id)
-        except Exception as e:  # noqa: BLE001 — a missing file, or events older code can't use
+        except Exception as e:  # noqa: BLE001 — a missing or empty file, or events older code can't use
             log.info("cannot write the summary of saved run %s again", job.id, exc_info=True)
-            raise unreadable from e
-        if not events:
-            raise unreadable
+            raise JobRejected(409, "run_files_unreadable", f"This run's saved files in ./output/{job.id} can't be "
+                              "read any more, so its summary can't be written again.") from e
         return events
 
     @staticmethod

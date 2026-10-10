@@ -8,7 +8,7 @@ import pytest
 
 from app import mutation
 from app.config import Settings
-from app.gotools import CommandResult, GoPackage
+from app.gotools import CommandResult, GoPackage, GoToolError
 from app.jobs import JobConflict, JobManager, JobRejected
 from app.main import create_app
 from app.models import Block, JobRequest, JobStatus, StopReason, Summary, TokenUsage
@@ -210,6 +210,24 @@ async def test_cancel_restores_the_file_and_stops(tmp_path, monkeypatch):
     with pytest.raises(MutationFailed) as exc:
         await run_mutation("j", JobRequest(repo_path="stats"), s, emit, asyncio.Event())
     assert exc.value.reason == "cancelled" and not (s.work_dir / "j-mutation").exists()
+
+
+async def test_cancel_while_collecting_sites_is_not_swallowed(tmp_path, monkeypatch):
+    s = setup_run(tmp_path, monkeypatch)
+
+    async def cancelled_mutate(self, rel):  # Cancel arrives while gohelper mutate runs
+        self.cancel.set()
+        raise GoToolError("gohelper mutate failed", result(-1, cancelled=True))
+
+    monkeypatch.setattr(FakeGoTools, "mutate", cancelled_mutate)
+    events = []
+
+    async def emit(t, d):
+        events.append(t)
+
+    with pytest.raises(MutationFailed) as exc:
+        await run_mutation("j", JobRequest(repo_path="stats"), s, emit, asyncio.Event())
+    assert exc.value.reason == "cancelled" and events == []
 
 
 async def test_missing_repo_or_tests_fail_clearly(tmp_path, monkeypatch):
