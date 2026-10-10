@@ -6,7 +6,7 @@ export function FileTable({ rows }: { rows: Summary["per_file"] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="text-left text-xs uppercase tracking-wide text-muted">
+        <thead className="text-left text-xs text-muted">
           <tr><th className="py-2 pr-4 font-medium">File</th><th className="pr-4 font-medium">Before</th><th className="pr-4 font-medium">After</th><th className="font-medium">Change</th></tr>
         </thead>
         <tbody className="font-mono tabular-nums">

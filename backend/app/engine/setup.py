@@ -13,6 +13,7 @@ from app.engine.orchestrator import RunDeps
 from app.gotools import GoToolError, GoTools, read_module_info
 from app.llm.client import Emit, LLMClient
 from app.models import CoverageReport, JobRequest
+from app import repos
 from app.validator import Validator
 from app.workspace import Workspace, WorkspaceError, resolve_repo
 
@@ -41,7 +42,8 @@ async def prepare(job_id: str, request: JobRequest, settings: Settings, llm: LLM
             raise JobFailed("cancelled", "Cancelled before the baseline finished.")
 
     try:
-        ws = Workspace.create(settings.work_dir, job_id, source)
+        async with repos.repo_lock:  # an upload must not swap the folder while it is being copied
+            ws = await asyncio.to_thread(Workspace.create, settings.work_dir, job_id, source)
         removed = ws.delete_existing_tests() if request.options.delete_existing_tests else []
     except (WorkspaceError, OSError) as e:
         raise JobFailed("invalid_repo", str(e)) from e

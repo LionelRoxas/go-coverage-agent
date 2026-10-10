@@ -13,6 +13,7 @@ Rules:
 - Check errors with `errors.Is` or by comparing with the package's exported error values. Check both the result and the error.
 - Compare float64 results with a tolerance (for example `math.Abs(got-want) > 1e-9`). Handle NaN and Inf explicitly with `math.IsNaN` / `math.IsInf`.
 - Only assert values you can derive with certainty from the source. If you cannot compute an exact expected value, assert a property instead (sign, ordering, length, error or no error).
+- Before writing an expected value, trace the code path for that exact input step by step, especially regexes, parsing and flag logic. When unsure about internal fields, assert the observable return values and errors instead.
 - Exercise the edge cases the uncovered lines guard: empty input, nil, a single element, negative numbers, boundary indexes, invalid arguments.
 - No `time.Sleep`, network, environment variables, unsynchronised goroutines, printing, or file writes outside `t.TempDir()`.
 - One answer must cover every `// UNCOVERED` branch of every target function: write a few broad table-driven tests (one per function, one case per branch) rather than many small tests. At most about 200 lines of code. When many functions are targeted, stay compact: one table-driven test per function with only the cases the `// UNCOVERED` branches need, not exhaustive cases.

@@ -8,7 +8,7 @@ from app.models import CoverageReport, FuncKey, PlanItem
 
 
 def plan(report: CoverageReport, failed: Mapping[FuncKey, int], skipped: set[FuncKey], *,
-         max_items: int = 3, max_statements: int = 100, max_functions: int = 8, max_failures: int = 2) -> list[PlanItem]:
+         max_items: int = 3, max_statements: int = 100, max_functions: int = 5, max_failures: int = 2) -> list[PlanItem]:
     """Pack each file's biggest uncovered functions up to `max_statements` and `max_functions`, then take the `max_items` fullest files.
 
     Ranking files by what one prompt can cover (not by their single biggest function) spends the fixed

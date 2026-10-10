@@ -1,0 +1,154 @@
+{
+  "stop_reason": "target_reached",
+  "message": "Reached the 80% coverage target.",
+  "target": 80.0,
+  "baseline_percent": 1.43,
+  "final_percent": 83.33,
+  "iterations": [
+    {
+      "index": 1,
+      "start_percent": 1.43,
+      "end_percent": 33.87,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 2,
+      "start_percent": 33.87,
+      "end_percent": 63.08,
+      "accepted": 2,
+      "rejected": 0
+    },
+    {
+      "index": 3,
+      "start_percent": 63.08,
+      "end_percent": 79.93,
+      "accepted": 2,
+      "rejected": 0
+    },
+    {
+      "index": 4,
+      "start_percent": 79.93,
+      "end_percent": 83.33,
+      "accepted": 1,
+      "rejected": 0
+    }
+  ],
+  "test_files": [
+    "collection_test.go",
+    "constraints_test.go",
+    "version_test.go"
+  ],
+  "tests_added": [
+    "TestNewConstraint_Uncovered",
+    "TestConstraintCaret_Uncovered",
+    "TestConstraintsMarshalText_Uncovered",
+    "TestNewVersion_Uncovered",
+    "TestStrictNewVersion_Uncovered",
+    "TestCoerceNewVersion_Uncovered",
+    "TestContainsOnly_Uncovered",
+    "TestCollection_Len",
+    "TestCollection_Less",
+    "TestCollection_Swap",
+    "TestValidateVersion_Errors",
+    "TestNewVersion_DetailedErrors",
+    "TestNewVersion_Success",
+    "TestComparePrePart",
+    "TestComparePrerelease",
+    "TestMustParse",
+    "TestConstraintGreaterThan_Uncovered",
+    "TestConstraintNotEqual_Uncovered",
+    "TestConstraintsValidate_Uncovered",
+    "TestConstraintLessThanEqual_Uncovered",
+    "TestVersion_Scan",
+    "TestVersion_UnmarshalJSON",
+    "TestVersion_IncPatch",
+    "TestVersion_IncMajor",
+    "TestParseConstraint_Uncovered",
+    "TestConstraintsCheck_Uncovered",
+    "TestConstraintTildeOrEqual_Uncovered",
+    "TestRewriteRange_Uncovered",
+    "TestVersion_IncMinor_Uncovered",
+    "TestVersion_SetPrerelease_Uncovered",
+    "TestStrictNewVersion_UncoveredLines"
+  ],
+  "suspected_bugs": [],
+  "per_file": [
+    {
+      "file": "collection.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "constraints.go",
+      "before": 2.58,
+      "after": 90.99
+    },
+    {
+      "file": "version.go",
+      "before": 0.62,
+      "after": 77.64
+    }
+  ],
+  "tokens": {
+    "prompt_tokens": 29314,
+    "completion_tokens": 31293
+  },
+  "duration_s": 85.6,
+  "ai_summary": {
+    "business": {
+      "headline": "Coverage rose from 1.43\u202f% to 83.33\u202f%, exceeding the 80\u202f% goal.",
+      "outcome": "The run added 31 new tests across three files, raising the share of the code tested to 83.33\u202f%. The target of 80\u202f% was reached, so the process stopped after four rounds.",
+      "efficiency": "The whole effort took about 1.4\u202fminutes and consumed 60,607 tokens. At a cost of $0.0232 the run spent roughly 740 tokens for each percentage point gained.",
+      "risks": [
+        "Version file still has 72 statements not covered.",
+        "Constraints file still has 21 statements not covered.",
+        "Generated tests capture existing behavior, so a review is needed to ensure they do not lock in any bugs."
+      ],
+      "recommendation": "Review the new tests to confirm they reflect the intended behavior and add further tests to cover the remaining statements in version.go and constraints.go."
+    },
+    "technical": {
+      "headline": "Coverage increased from 1.43\u202f% to 83.33\u202f% with 31 new tests in three test files.",
+      "what_was_tested": "The generated tests exercise collection.go (now fully covered), constraints.go (raised to 90.99\u202f%) and version.go (raised to 77.64\u202f%).",
+      "where_tests_live": "",
+      "gaps": [
+        {
+          "file": "version.go",
+          "detail": "72 statements remain uncovered."
+        },
+        {
+          "file": "constraints.go",
+          "detail": "21 statements remain uncovered."
+        }
+      ],
+      "suspected_bugs": [],
+      "rejected_or_failed": "No targets were rejected. One mechanical repair was applied. Seven tests were pruned. No LLM fixes, timeouts or rate\u2011limit waits occurred.",
+      "how_to_run": "Copy the contents of output/fc080d7fc500/tests into the module root (keeping sub\u2011folders), then run go test ./... and go test -cover ./... in the repository.",
+      "next_steps": [
+        "Review the generated tests for correctness.",
+        "Add tests to cover the remaining uncovered statements in version.go and constraints.go.",
+        "Include the new tests in the continuous integration pipeline."
+      ]
+    },
+    "dropped_sentences": 1,
+    "tokens": {
+      "prompt_tokens": 2072,
+      "completion_tokens": 1443,
+      "total_tokens": 3515
+    },
+    "cost_usd": {
+      "run": 0.0232,
+      "summary": 0.0012,
+      "input": 0.0047,
+      "output": 0.0196,
+      "total": 0.0243
+    },
+    "model": "openai/gpt-oss-120b",
+    "generated_at": 1791587537.146431
+  },
+  "summary_tokens": {
+    "prompt_tokens": 2072,
+    "completion_tokens": 1443,
+    "total_tokens": 3515
+  }
+}

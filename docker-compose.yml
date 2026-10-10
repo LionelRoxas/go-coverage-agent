@@ -10,6 +10,7 @@ services:
       - path: .env
         required: false
     environment:
+      HOST_REPOS_DIR_DISPLAY: "${HOST_REPOS_DIR:-./repos}"   # shown in the UI only; never used as a path
       CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}", "http://127.0.0.1:${FRONTEND_PORT:-3000}"]'
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"

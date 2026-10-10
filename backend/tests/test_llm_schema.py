@@ -2,7 +2,9 @@
 from pydantic import BaseModel, Field
 
 from app.llm.schema import to_strict_schema
-from app.models import TestSnippet
+import pytest
+
+from app.models import RunSummary, TestSnippet
 
 
 def walk(node):
@@ -15,8 +17,9 @@ def walk(node):
             yield from walk(v)
 
 
-def test_every_object_is_strict():
-    schema = to_strict_schema(TestSnippet)
+@pytest.mark.parametrize("model", [TestSnippet, RunSummary])
+def test_every_object_is_strict(model):
+    schema = to_strict_schema(model)
     objects = [n for n in walk(schema) if n.get("type") == "object"]
     assert objects, "expected object nodes"
     for obj in objects:

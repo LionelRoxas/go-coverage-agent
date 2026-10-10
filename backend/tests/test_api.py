@@ -7,6 +7,7 @@ from app.jobs import JobManager
 from app.main import create_app
 from app.repos import RepoInfo
 from app.models import StopReason, Summary, TokenUsage
+from tests.fakes import fake_llm
 
 
 def summary():
@@ -31,7 +32,7 @@ async def env(tmp_path):
                                           "tests": ["TestMean"], "percent": 80.0, "gain": 80.0})
         return summary()
 
-    manager = JobManager(settings, runner=runner)
+    manager = JobManager(settings, runner=runner, llm_factory=fake_llm)
     app = create_app(settings, manager)
     client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
     yield client, manager
@@ -45,7 +46,7 @@ def make_env(tmp_path, runner, **overrides):
     kw = dict(groq_api_key="k", repos_dir=repos, work_dir=tmp_path / "work", output_dir=tmp_path / "out")
     kw.update(overrides)
     settings = Settings(**kw)
-    manager = JobManager(settings, runner=runner)
+    manager = JobManager(settings, runner=runner, llm_factory=fake_llm)
     app = create_app(settings, manager)
     return app, manager
 
@@ -59,6 +60,8 @@ async def test_health(env):
     body = (await client.get("/api/health")).json()
     assert body["llm_configured"] is True and body["model"] == "openai/gpt-oss-120b"
     assert "tokens_left_today" in body
+    assert body["min_daily_tokens_to_start"] == 20_000
+    assert body["upload_limits"] == {"max_files": 3000, "max_bytes": 25 * 1024 * 1024, "max_file_bytes": 1024 * 1024}
 
 
 async def test_repos_listing(env):
@@ -77,7 +80,7 @@ async def test_job_lifecycle_events_and_files(env):
     assert snap["status"] == "completed" and snap["summary"]["final_percent"] == 80
 
     events = (await client.get(f"/api/jobs/{job_id}/events")).text
-    assert events.count("data: ") == 3 and '"type":"job_completed"' in events.replace(" ", "")
+    assert events.count("data: ") == 5 and '"type":"job_completed"' in events.replace(" ", "")
 
     f = await client.get(f"/api/jobs/{job_id}/files/mean_test.go")
     assert f.status_code == 200 and f.text == "package stats\n"
@@ -133,7 +136,7 @@ async def test_llm_not_configured_is_400(tmp_path):
 async def test_sample_clone_failure_is_502(env, monkeypatch):
     client, _ = env
 
-    async def boom(settings):
+    async def boom(settings, sample_id="stats"):
         raise RuntimeError("git clone failed: nope")
 
     monkeypatch.setattr("app.api.clone_sample", boom)
@@ -178,12 +181,47 @@ async def test_cross_origin_post_is_blocked(env, monkeypatch):
     client, _ = env
     calls = []
 
-    async def fake_clone(settings):
-        calls.append(1)
+    async def fake_clone(settings, sample_id="stats"):
+        calls.append(sample_id)
         return RepoInfo(path="stats", module="m", go_files=0, test_files=0)
 
     monkeypatch.setattr("app.api.clone_sample", fake_clone)
     r = await client.post("/api/repos/sample", headers={"Origin": "https://evil.example"})
     assert r.status_code == 403 and r.json()["error"]["code"] == "forbidden_origin" and not calls
     r = await client.post("/api/repos/sample", headers={"Origin": "http://localhost:3000"})
-    assert r.status_code == 200 and calls == [1]
+    assert r.status_code == 200 and calls == ["stats"]
+    r = await client.post("/api/repos/samples/semver", headers={"Origin": "https://evil.example"})
+    assert r.status_code == 403 and calls == ["stats"]
+
+
+async def test_health_exposes_host_repos_dir_display(env):
+    client, _ = env
+    assert (await client.get("/api/health")).json()["host_repos_dir"] is None
+
+
+async def test_samples_listing_flags_downloaded(env):
+    client, _ = env
+    body = (await client.get("/api/repos/samples")).json()
+    assert [s["id"] for s in body] == ["stats", "semver", "xstrings", "humanize", "btree", "decimal"]
+    assert {s["id"]: s["downloaded"] for s in body}["stats"] is True
+    assert {s["id"]: s["downloaded"] for s in body}["semver"] is False
+
+
+async def test_unknown_sample_is_404(env):
+    client, _ = env
+    r = await client.post("/api/repos/samples/nope")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "unknown_sample"
+
+
+async def test_sample_by_id_and_alias(env, monkeypatch):
+    client, _ = env
+    calls = []
+
+    async def fake_clone(settings, sample_id="stats"):
+        calls.append(sample_id)
+        return RepoInfo(path=sample_id, module="m", go_files=0, test_files=0)
+
+    monkeypatch.setattr("app.api.clone_sample", fake_clone)
+    assert (await client.post("/api/repos/samples/semver")).json()["path"] == "semver"
+    assert (await client.post("/api/repos/sample")).json()["path"] == "stats"
+    assert calls == ["semver", "stats"]

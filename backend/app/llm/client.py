@@ -17,14 +17,22 @@ from app.models import TokenUsage
 
 T = TypeVar("T", bound=BaseModel)
 Emit = Callable[[str, dict[str, Any]], Awaitable[None]]
+OnRequest = Callable[[str], Awaitable[None]]  # called with the reasoning effort right before each request to Groq
 
 
 class LLMError(Exception):
-    """The current item failed; the loop can continue."""
+    """The current item failed; the loop can continue. `spent`: tokens Groq billed for this call before it failed
+    (e.g. truncated answers retried at a lower effort); they are already in the daily ledger."""
+
+    spent: TokenUsage = TokenUsage()
 
 
 class LLMOutputTooLarge(LLMError):
     """The answer did not fit in the output limit (truncated, or Groq could not finish the JSON): ask for less."""
+
+
+class LLMTimeout(LLMError):
+    """Groq did not answer within GROQ_TIMEOUT_S, and again on the one retry at low effort. The item fails."""
 
 
 class LLMBudgetExhausted(LLMError):
@@ -56,8 +64,10 @@ def _retry_after(headers: Any) -> float:
 
 _SIZE_HINT = re.compile(r"limit\D{0,3}(\d+)\D+requested\D{0,3}(\d+)", re.IGNORECASE)
 _MIN_COMPLETION = 1024
+_LOWER_EFFORT = {"high": "medium", "medium": "low"}  # step-down after a truncated answer
 _SIZE_GUIDANCE = ("Groq rejected the request size for this key's tokens-per-minute limit; "
-                  "set GROQ_MAX_COMPLETION_TOKENS lower (e.g. 4000).")
+                  "set GROQ_MAX_COMPLETION_TOKENS lower (e.g. 4000), and on a free-trial key (8K tokens/min) "
+                  "also set MAX_PROMPT_TOKENS=4500.")
 
 
 def _size_rejection(e: groq.APIStatusError) -> tuple[bool, int | None]:
@@ -71,7 +81,10 @@ def _size_rejection(e: groq.APIStatusError) -> tuple[bool, int | None]:
 
 
 class LLMClient(Protocol):
-    async def complete(self, *, role: str, system: str, user: str, schema: type[T]) -> tuple[T, TokenUsage]: ...
+    last_effort: str | None  # reasoning effort of the last successful call
+
+    async def complete(self, *, role: str, system: str, user: str, schema: type[T],
+                       on_request: OnRequest | None = None) -> tuple[T, TokenUsage]: ...
 
 
 class GroqLLM:
@@ -85,7 +98,9 @@ class GroqLLM:
                  cancel: asyncio.Event | None = None):
         self.s, self.ledger, self.limiter = settings, ledger, limiter
         self._emit, self._sleep, self._cancel = emit, sleep, cancel
-        self._client = client or groq.AsyncGroq(api_key=settings.groq_api_key, max_retries=0, timeout=120.0)
+        self._client = client or groq.AsyncGroq(api_key=settings.groq_api_key, max_retries=0,
+                                                       timeout=settings.groq_timeout_s)
+        self.last_effort: str | None = None
 
     async def _wait(self, seconds: float, reason: str) -> None:
         if self._emit:
@@ -119,17 +134,18 @@ class GroqLLM:
             if pending:  # let the cancelled tasks finish so none are left orphaned
                 await asyncio.wait(pending)
 
-    async def complete(self, *, role: str, system: str, user: str, schema: type[T]) -> tuple[T, TokenUsage]:
+    async def complete(self, *, role: str, system: str, user: str, schema: type[T],
+                       on_request: OnRequest | None = None) -> tuple[T, TokenUsage]:
         prompt_tokens = estimate_tokens(system) + estimate_tokens(user)
         if prompt_tokens > self.s.max_prompt_tokens:
             raise LLMError(f"prompt is ~{prompt_tokens} tokens, over the {self.s.max_prompt_tokens} limit")
         if self.ledger.remaining() < self.s.call_token_reservation:
             raise LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
 
-        effort = self.s.groq_reasoning_effort
-        truncated = False
+        effort: str = (self.s.groq_fixer_reasoning_effort if role == "fixer"
+                       else self.s.groq_writer_reasoning_effort)
         rate_retries = net_retries = 0
-        json_retried = False
+        json_retried = timeout_retried = False
         spent = TokenUsage()
         response_format = {"type": "json_schema", "json_schema": {
             "name": schema.__name__, "strict": True, "schema": to_strict_schema(schema)}}
@@ -158,67 +174,81 @@ class GroqLLM:
             size_retried = True
             return True
 
-        while True:
-            wait = self.limiter.wait_needed(self.s.call_token_reservation)
-            if wait > 0:
-                await self._wait(wait, "tpm")
-                self.limiter.reset()
-            try:
-                raw = await self._request(
-                    model=self.s.groq_model,
-                    messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-                    response_format=response_format,
-                    reasoning_effort=effort,
-                    temperature=0.2,
-                    **completion_allowance(),
-                )
-            except groq.AuthenticationError as e:
-                raise LLMFatal("Groq rejected the API key (401). Check GROQ_API_KEY in .env.") from e
-            except groq.RateLimitError as e:
-                if size_rejected(e):
+        try:
+            while True:
+                wait = self.limiter.wait_needed(self.s.call_token_reservation)
+                if wait > 0:
+                    await self._wait(wait, "tpm")
+                    self.limiter.reset()
+                if on_request is not None:
+                    await on_request(effort)
+                try:
+                    raw = await self._request(
+                        model=self.s.groq_model,
+                        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                        response_format=response_format,
+                        reasoning_effort=effort,
+                        temperature=0.2,
+                        **completion_allowance(),
+                    )
+                except groq.AuthenticationError as e:
+                    raise LLMFatal("Groq rejected the API key (401). Check GROQ_API_KEY in .env.") from e
+                except groq.RateLimitError as e:
+                    if size_rejected(e):
+                        continue
+                    retry_after = _retry_after(e.response.headers)
+                    if retry_after > self.MAX_RETRY_AFTER_S or rate_retries >= self.MAX_RATE_RETRIES:
+                        raise LLMBudgetExhausted(
+                            f"Groq asked us to wait {retry_after:.0f}s, which usually means the daily token cap was hit."
+                        ) from e
+                    rate_retries += 1
+                    await self._wait(retry_after, "429")
                     continue
-                retry_after = _retry_after(e.response.headers)
-                if retry_after > self.MAX_RETRY_AFTER_S or rate_retries >= self.MAX_RATE_RETRIES:
-                    raise LLMBudgetExhausted(
-                        f"Groq asked us to wait {retry_after:.0f}s, which usually means the daily token cap was hit."
-                    ) from e
-                rate_retries += 1
-                await self._wait(retry_after, "429")
-                continue
-            except (groq.APIConnectionError, groq.InternalServerError) as e:
-                if net_retries >= self.MAX_NET_RETRIES:
-                    raise LLMError(f"Groq is unreachable: {e}") from e
-                net_retries += 1
-                await self._sleep_cancellable(2.0 ** net_retries)
-                continue
-            except groq.APIStatusError as e:
-                if size_rejected(e):
+                except groq.APITimeoutError as e:  # before APIConnectionError, its base class (also covers connect timeouts)
+                    if not timeout_retried:  # one retry at the lowest effort, whatever the role's setting: it answers fastest
+                        timeout_retried, effort = True, "low"
+                        continue
+                    raise LLMTimeout(f"Groq did not answer within {self.s.groq_timeout_s:g} s, twice") from e
+                except (groq.APIConnectionError, groq.InternalServerError) as e:
+                    if net_retries >= self.MAX_NET_RETRIES:
+                        raise LLMError(f"Groq is unreachable: {e}") from e
+                    net_retries += 1
+                    await self._sleep_cancellable(2.0 ** net_retries)
                     continue
-                if e.status_code == 400 and not json_retried and "json_validate_failed" in f"{e.body} {e.message}":
-                    json_retried = True  # strict-mode flake: the model skipped required fields; sample once more
-                    continue
-                if e.status_code == 400 and "json_validate_failed" in f"{e.body} {e.message}":
-                    raise LLMOutputTooLarge(f"Groq returned {e.status_code}: {e.message}") from e
-                raise LLMError(f"Groq returned {e.status_code}: {e.message}") from e
+                except groq.APIStatusError as e:
+                    if size_rejected(e):
+                        continue
+                    if e.status_code == 400 and not json_retried and "json_validate_failed" in f"{e.body} {e.message}":
+                        json_retried = True  # strict-mode flake: the model skipped required fields; sample once more
+                        continue
+                    if e.status_code == 400 and "json_validate_failed" in f"{e.body} {e.message}":
+                        raise LLMOutputTooLarge(f"Groq returned {e.status_code}: {e.message}") from e
+                    raise LLMError(f"Groq returned {e.status_code}: {e.message}") from e
 
-            self.limiter.update(raw.headers)
-            completion = await raw.parse()
-            if not completion.choices:
-                raise LLMError("Groq returned no choices")
-            if completion.usage is None:
-                raise LLMError("Groq response carried no usage data")
-            usage = TokenUsage(prompt_tokens=completion.usage.prompt_tokens,
-                               completion_tokens=completion.usage.completion_tokens)
-            spent = spent.add(usage)
-            self.ledger.add(usage.total)
-            choice = completion.choices[0]
-            if choice.finish_reason == "length":
-                # Retrying only helps if we can lower the reasoning effort; otherwise it re-spends the same tokens.
-                if truncated or effort == "low":
-                    raise LLMOutputTooLarge("the model's answer was truncated; skipping this target")
-                truncated, effort = True, "low"
-                continue
-            try:
-                return schema.model_validate_json(choice.message.content or ""), spent
-            except ValidationError as e:
-                raise LLMError(f"model output does not match {schema.__name__} ({e.error_count()} errors)") from e
+                self.limiter.update(raw.headers)
+                completion = await raw.parse()
+                if not completion.choices:
+                    raise LLMError("Groq returned no choices")
+                if completion.usage is None:
+                    raise LLMError("Groq response carried no usage data")
+                usage = TokenUsage(prompt_tokens=completion.usage.prompt_tokens,
+                                   completion_tokens=completion.usage.completion_tokens)
+                spent = spent.add(usage)
+                self.ledger.add(usage.total)
+                choice = completion.choices[0]
+                if choice.finish_reason == "length":
+                    # Retrying only helps at a lower reasoning effort (high -> medium -> low); otherwise it re-spends
+                    # the same tokens.
+                    if effort not in _LOWER_EFFORT:
+                        raise LLMOutputTooLarge("the model's answer was truncated; skipping this target")
+                    effort = _LOWER_EFFORT[effort]
+                    continue
+                try:
+                    parsed = schema.model_validate_json(choice.message.content or "")
+                except ValidationError as e:
+                    raise LLMError(f"model output does not match {schema.__name__} ({e.error_count()} errors)") from e
+                self.last_effort = effort
+                return parsed, spent
+        except LLMError as e:
+            e.spent = spent
+            raise

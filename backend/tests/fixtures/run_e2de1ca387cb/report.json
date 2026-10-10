@@ -1,0 +1,506 @@
+{
+  "stop_reason": "target_reached",
+  "message": "Reached the 80% coverage target.",
+  "target": 80.0,
+  "baseline_percent": 0.0,
+  "final_percent": 81.07,
+  "iterations": [
+    {
+      "index": 1,
+      "start_percent": 0.0,
+      "end_percent": 19.89,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 2,
+      "start_percent": 19.89,
+      "end_percent": 31.19,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 3,
+      "start_percent": 31.19,
+      "end_percent": 40.98,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 4,
+      "start_percent": 40.98,
+      "end_percent": 48.04,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 5,
+      "start_percent": 48.04,
+      "end_percent": 54.93,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 6,
+      "start_percent": 54.93,
+      "end_percent": 61.03,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 7,
+      "start_percent": 61.03,
+      "end_percent": 66.56,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 8,
+      "start_percent": 66.56,
+      "end_percent": 71.53,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 9,
+      "start_percent": 71.53,
+      "end_percent": 75.86,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 10,
+      "start_percent": 75.86,
+      "end_percent": 79.95,
+      "accepted": 3,
+      "rejected": 0
+    },
+    {
+      "index": 11,
+      "start_percent": 79.95,
+      "end_percent": 81.07,
+      "accepted": 1,
+      "rejected": 0
+    }
+  ],
+  "test_files": [
+    "correlation_test.go",
+    "cumulative_test.go",
+    "describe_test.go",
+    "diff_test.go",
+    "distances_test.go",
+    "entropy_test.go",
+    "extremes_test.go",
+    "histogram_test.go",
+    "interp_test.go",
+    "kendall_test.go",
+    "kurtosis_test.go",
+    "load_test.go",
+    "mean_test.go",
+    "mode_test.go",
+    "moving_test.go",
+    "norm_test.go",
+    "outlier_test.go",
+    "percentile_test.go",
+    "percentile_weighted_test.go",
+    "quartile_test.go",
+    "regression_test.go",
+    "rolling_test.go",
+    "sample_test.go",
+    "skewness_test.go",
+    "ttest_test.go",
+    "variance_test.go",
+    "weighted_mean_test.go",
+    "winsorize_test.go",
+    "ztest_test.go"
+  ],
+  "tests_added": [
+    "TestLoadRawData",
+    "TestNormPpf",
+    "TestNormMoment",
+    "TestNcr",
+    "TestNormBoxMullerRvs",
+    "TestNormStats",
+    "TestLogarithmicRegression",
+    "TestExponentialRegression",
+    "TestLinearRegression",
+    "TestRegIncBeta_EdgeAndProperty",
+    "TestLgammaBeta",
+    "TestClampTiny",
+    "TestTSf",
+    "TestRankData",
+    "TestAutoCorrelation_Errors",
+    "TestAutoCorrelation_Normal",
+    "TestCorrelation_Errors",
+    "TestCorrelation_Normal",
+    "TestSpearman_Ties",
+    "TestPearson_Forward",
+    "TestCovariance_Errors",
+    "TestCovariance_Normal",
+    "TestCovariancePopulation_Errors",
+    "TestCovariancePopulation_Normal",
+    "TestVariance_Errors",
+    "TestVariance_Values",
+    "TestValidateData_Errors",
+    "TestChebyshevDistance_NormalAndError",
+    "TestEuclideanDistance_NormalAndError",
+    "TestManhattanDistance_NormalAndError",
+    "TestMovingMax_Errors",
+    "TestMovingMax_Normal",
+    "TestMovingMedian_Errors",
+    "TestMovingMedian_Normal",
+    "TestMovingMin_Errors",
+    "TestMovingMin_Normal",
+    "TestMovingSum_Errors",
+    "TestMovingSum_Normal",
+    "TestFloat64Data_MovingMax",
+    "TestSample_EmptyInput",
+    "TestSample_Replacement",
+    "TestSample_NoReplacement",
+    "TestSample_BoundsError",
+    "TestStableSample_EmptyInput",
+    "TestStableSample_OrderPreserved",
+    "TestStableSample_BoundsError",
+    "TestPercentile_EdgeCases",
+    "TestPercentileNearestRank_EdgeCases",
+    "TestQuartile_Errors",
+    "TestInterQuartileRange",
+    "TestMidhinge",
+    "TestTrimean",
+    "TestPercentileWeighted_Errors",
+    "TestPercentileWeighted_Normal",
+    "TestTTest",
+    "TestDescribePercentileFunc_EdgeCases",
+    "TestDescriptionString",
+    "TestDescribe",
+    "TestPopulationSkewness_EdgeCases",
+    "TestSampleSkewness_EdgeCases",
+    "TestSkewness_Forwards",
+    "TestCumulativeMax",
+    "TestCumulativeMin",
+    "TestCumulativeProduct",
+    "TestFloat64Data_CumulativeMax",
+    "TestFloat64Data_CumulativeMin",
+    "TestPopulationKurtosis_Errors",
+    "TestPopulationKurtosis_Normal",
+    "TestSampleKurtosis_Errors",
+    "TestSampleKurtosis_Normal",
+    "TestKurtosis_Wrapper",
+    "TestFloat64Data_Kurtosis_Wrappers",
+    "TestNormFit",
+    "TestNormPpfRvs",
+    "TestNormLogCdf",
+    "TestNormLogSf",
+    "TestNormLogTail",
+    "TestHistogram",
+    "TestFloat64Data_Histogram",
+    "TestGeometricMean_ErrorsAndNormal",
+    "TestHarmonicMean_ErrorsAndNormal",
+    "TestMean_EmptyInput",
+    "TestMode_Coverage",
+    "TestInterp",
+    "TestKendallTau",
+    "TestFloat64Data_KendallTau",
+    "TestMovingAverage_ErrorsAndNormal",
+    "TestMovingStdDev_ErrorsAndNormal",
+    "TestFloat64Data_MovingAverageWrapper",
+    "TestFloat64Data_MovingStdDevWrapper",
+    "TestQuartileOutliers_EmptyInput",
+    "TestQuartileOutliers_NoOutliers",
+    "TestQuartileOutliers_MildOutlier",
+    "TestQuartileOutliers_ExtremeOutlierAndCopy",
+    "TestNormalize_ErrorsAndNormal",
+    "TestEntropy_ErrorsAndNormal",
+    "TestArgMax_ErrorsAndNormal",
+    "TestArgMin_ErrorsAndNormal",
+    "TestFloat64Data_ArgMaxAndArgMin_Wrappers",
+    "TestRange_ErrorsAndNormal",
+    "TestWinsorize_ErrorsAndNormal",
+    "TestFloat64Data_Winsorize_Wrapper",
+    "TestZTest",
+    "TestWeightedMean_ErrorsAndNormal",
+    "TestFloat64Data_WeightedMean_Wrapper",
+    "TestDiff",
+    "TestPercentChange",
+    "TestFloat64Data_Diff",
+    "TestFloat64Data_PercentChange"
+  ],
+  "suspected_bugs": [],
+  "per_file": [
+    {
+      "file": "describe.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "diff.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "entropy.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "histogram.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "interp.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "load.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "max.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "mean.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "percentile.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "percentile_weighted.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "quartile.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "rolling.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "sample.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "skewness.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "sum.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "weighted_mean.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "winsorize.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "ztest.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "regression.go",
+      "before": 0.0,
+      "after": 98.53
+    },
+    {
+      "file": "variance.go",
+      "before": 0.0,
+      "after": 97.67
+    },
+    {
+      "file": "correlation.go",
+      "before": 0.0,
+      "after": 96.3
+    },
+    {
+      "file": "cumulative.go",
+      "before": 0.0,
+      "after": 96.3
+    },
+    {
+      "file": "kurtosis.go",
+      "before": 0.0,
+      "after": 96.15
+    },
+    {
+      "file": "extremes.go",
+      "before": 0.0,
+      "after": 95.45
+    },
+    {
+      "file": "kendall.go",
+      "before": 0.0,
+      "after": 95.24
+    },
+    {
+      "file": "outlier.go",
+      "before": 0.0,
+      "after": 94.74
+    },
+    {
+      "file": "ttest.go",
+      "before": 0.0,
+      "after": 93.55
+    },
+    {
+      "file": "moving.go",
+      "before": 0.0,
+      "after": 92.5
+    },
+    {
+      "file": "mode.go",
+      "before": 0.0,
+      "after": 91.3
+    },
+    {
+      "file": "norm.go",
+      "before": 0.0,
+      "after": 88.5
+    },
+    {
+      "file": "median.go",
+      "before": 0.0,
+      "after": 87.5
+    },
+    {
+      "file": "min.go",
+      "before": 0.0,
+      "after": 87.5
+    },
+    {
+      "file": "distances.go",
+      "before": 0.0,
+      "after": 75.68
+    },
+    {
+      "file": "util.go",
+      "before": 0.0,
+      "after": 64.29
+    },
+    {
+      "file": "deviation.go",
+      "before": 0.0,
+      "after": 41.18
+    },
+    {
+      "file": "data.go",
+      "before": 0.0,
+      "after": 7.69
+    },
+    {
+      "file": "clip.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "coefficient_of_variation.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "cumulative_sum.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "errors.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "ewma.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "geometric_distribution.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "legacy.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "percentile_of_score.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "product.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "rank.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "rescale.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "rms.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "round.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "sem.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "sigmoid.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "softmax.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "trimmed_mean.go",
+      "before": 0.0,
+      "after": 0.0
+    },
+    {
+      "file": "zscore.go",
+      "before": 0.0,
+      "after": 0.0
+    }
+  ],
+  "tokens": {
+    "prompt_tokens": 83562,
+    "completion_tokens": 91461
+  },
+  "duration_s": 310.1
+}

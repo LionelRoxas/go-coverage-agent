@@ -39,6 +39,7 @@ def create_app(settings: Settings | None = None, manager: JobManager | None = No
             if not os.access(d, os.W_OK):
                 log.warning("%s is not writable by this container user; on Linux run "
                             "`sudo chown -R 1000:1000 repos output` on the host.", d)
+        await asyncio.to_thread(manager.load_history)  # runs saved in OUTPUT_DIR stay viewable after a restart
         yield
 
     app = FastAPI(title="Go Coverage Agent", lifespan=lifespan)
