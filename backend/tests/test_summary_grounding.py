@@ -319,3 +319,15 @@ def test_the_live_summarys_empty_where_tests_live_is_filled():
     out, filled = fill_empty(ground(written, live_facts())[0], live_facts())
     assert filled == ["technical.where_tests_live"]
     assert out.technical.where_tests_live.startswith("The generated tests are saved in output/fc080d7fc500/tests.")
+
+
+def test_fallback_note_names_both_reasons_a_field_is_filled():
+    """The note covers a field the model left empty and one the fact check emptied, in the same exact words."""
+    assert FALLBACK_NOTE == ("(Written from the run's data, because the AI text for this part was empty or could "
+                             "not be verified.)")
+    left_empty, filled_a = fill_empty(summary(technical={"how_to_run": ""}), facts())
+    grounded, _ = ground(summary(technical={"how_to_run": "It saved 40 hours of work."}), facts())
+    emptied, filled_b = fill_empty(grounded, facts())
+    assert filled_a == filled_b == ["technical.how_to_run"]
+    assert left_empty.technical.how_to_run == emptied.technical.how_to_run
+    assert left_empty.technical.how_to_run.endswith(FALLBACK_NOTE)

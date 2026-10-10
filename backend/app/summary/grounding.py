@@ -248,7 +248,7 @@ def ground(summary: RunSummary, facts: RunFacts) -> tuple[RunSummary, int]:
 
 
 # Deterministic text for a required paragraph the model left empty or grounding emptied; built only from the facts.
-FALLBACK_NOTE = "(Written from the run's data: the AI's text for this part could not be checked.)"
+FALLBACK_NOTE = "(Written from the run's data, because the AI text for this part was empty or could not be verified.)"
 
 
 def _pct(value: float) -> str:

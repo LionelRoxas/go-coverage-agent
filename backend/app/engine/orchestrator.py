@@ -450,7 +450,10 @@ class Orchestrator:
             if snip is not None:
                 self.bugs.extend(snip.suspected_bugs)
             for d in mine:  # a test of that name in the accepted code was rewritten after it failed (it may now
-                d.outcome = "kept" if d.test in result.new_tests else "dropped"  # expect the code's value)
+                if d.test in result.new_tests:  # expect the code's value). Only upgrades: once a test is kept, a
+                    d.outcome = "kept"  # later attempt that prunes the same failure does not remove it from the suite
+                elif d.outcome == "not_accepted":
+                    d.outcome = "dropped"
             accepted: dict[str, Any] = {**base, "test_file": test_file, "tests": result.new_tests,
                                         "percent": self.report.percent, "gain": gain}
             if snip is not None and snip.suspected_bugs:  # where each claim came from, to drop any Go refuted later
@@ -475,8 +478,8 @@ class Orchestrator:
         """Each failing new test about to be pruned (or, when no prune applies, sent to the Fixer), with its observed
         got/want lines: the model's prediction and the code disagree, and nobody has decided which is wrong.
         Recorded once per (file, test, lines) for the report; a new record starts as `not_accepted`. The record (new,
-        or the one an earlier attempt made of the same observation) joins `mine`, whose outcome the attempt sets when
-        its candidate is accepted."""
+        or the one an earlier attempt made of the same observation) joins `mine`, whose outcome the attempt upgrades when
+        its candidate is accepted (not_accepted -> kept/dropped, dropped -> kept; kept stays kept)."""
         functions = [k.label() for k in item.functions]
         found = [Disagreement(file=item.file, functions=functions, test=t, lines=observed_lines(output, t),
                               pruned=pruned, outcome="not_accepted") for t in tests]
