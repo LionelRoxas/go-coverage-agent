@@ -128,7 +128,8 @@ export default function JobPage() {
         {/* While running this says what is happening now; afterwards the summary or failure below says it. */}
         {running && (
           <p className="text-sm text-muted" aria-live="polite">
-            {waiting ? <><GroqWait pending={waiting} others={alsoWaiting} detailed />{!alsoWaiting.length && ` (${waiting.file})`}</>
+            {waiting ? <><GroqWait pending={waiting} others={alsoWaiting} detailed />{!alsoWaiting.length && ` (${waiting.file})`}
+              {state.rateLimited && ` · ${state.rateLimited.file} paused ${Math.round(state.rateLimited.seconds)}s for the rate limit`}</>
               : state.activity}
           </p>
         )}

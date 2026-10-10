@@ -147,6 +147,8 @@ I had the system run end to end (Claude ran the live runs I approved), read the 
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-howitworks-mobile.png"><img src="docs/screenshots/gallery-howitworks-mobile.png" width="100%" alt="How it works page on a 390 pixel wide phone screen"></a><br><b>How it works</b> on a phone.</td><td></td></tr>
 </table>
 
+The chart, AI summary and dark run-page shots of run f910d155f3cd still show its refuted `Mode` suspected bug; they will be retaken.
+
 ## Configuration
 
 Job options (`POST /api/jobs`). The UI's advanced step exposes max iterations, min gain, files per iteration, fix attempts and the AI summary; the rest are API-only.
@@ -171,7 +173,7 @@ Environment (`.env`; only the key is required). [`.env.example`](.env.example) d
 | `GROQ_API_KEY` | (empty) | Needed to start a job |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | `openai/gpt-oss-20b` is cheaper and weaker |
 | `GROQ_WRITER_REASONING_EFFORT` / `GROQ_FIXER_REASONING_EFFORT` | `medium` / `medium` | `low` also works; `high` is accepted but too slow. An answer cut off for length is retried one level lower |
-| `PARALLEL_WRITERS` | false | Send each round's writer requests at once; validation stays one at a time, in plan order. Faster on paid keys, no gain on free-trial keys (8K tokens/min) |
+| `PARALLEL_WRITERS` | false | Send each round's writer requests at once; validation stays one at a time, in plan order. Faster on paid keys, no gain on free-trial keys (8K tokens/min). A round can spend tokens on answers that are never checked once the goal is reached mid-round |
 | `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only) |
 | `HOST_REPOS_DIR` | `./my-repos` | Your Go projects, mounted read-only at `/host-repos` |
 | `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily cap (not a Groq limit), counted in `output/.usage.json`, reset at midnight UTC |
@@ -209,7 +211,7 @@ The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` i
 - **Append-only test generation** through a small Go AST helper: accepted tests can't be lost, and failing tests are pruned one by one.
 - **Strict acceptance:** vet clean, tests pass twice, covered blocks strictly grow. Coverage never regresses.
 - **Token economy:** mechanical errors (forgotten imports, reused names) are repaired without an LLM call, and the planner packs up to 5 functions / 100 uncovered statements of one file into each call.
-- **The model predicts expected values; the Go runtime decides.** I considered a "record mode" where the LLM only chooses inputs and the system runs the function to capture the outputs as expected values. It would remove wrong-prediction failures and fixer calls, but every test would then agree with the code by construction and could never catch a bug. I kept the prediction as a weak, independent oracle: when it disagrees with the code, the observed value wins unless it contradicts the function's documentation, in which case the case is dropped and reported as a suspected bug (that is how the `Mode` bug in stats was flagged).
+- **The model predicts expected values; the Go runtime decides.** I considered a "record mode" where the LLM only chooses inputs and the system runs the function to capture the outputs as expected values. It would remove wrong-prediction failures and fixer calls, but every test would then agree with the code by construction and could never catch a bug. I kept the prediction as a weak, independent oracle: when it disagrees with the code, the Fixer adopts the observed value unless it contradicts the function's documentation, in which case the case is dropped and reported as a suspected bug. Suspected bugs are leads, not verdicts: a refuted one (stats `Mode`, run f910d155f3cd) once reached the report, so claims the runtime disproves are now dropped.
 - **Defense in depth, not a sandbox:** non-root user, env allowlist (the key is not passed to test processes), a best-effort import guard, timeouts with process-group kill, loopback-only ports, no Docker socket mount.
 
 ## What I would do differently in production

@@ -68,6 +68,8 @@ export type RunState = {
   writeSummary?: boolean; // job_started options.write_summary; older logs lack it
   aiSummary?: AiSummaryView;
   failure?: { reason: string; message: string; output: string };
+  // A rate-limit wait of one of several requests sent together (PARALLEL_WRITERS), until that item's next request
+  rateLimited?: { file: string; seconds: number; reason: string };
 };
 
 export const initialState: RunState = {
@@ -204,10 +206,11 @@ export function reduce(state: RunState, ev: RunAction): RunState {
       if (d.role === "summarizer")
         return { ...s, aiSummary: { ...s.aiSummary, status: "waiting",
                                     pending: { since: ev.ts, role: d.role, effort: d.reasoning_effort ?? undefined } } };
-      return withItem(s, d.index, d.file, (i) => ({
+      return withItem({ ...s, rateLimited: s.rateLimited?.file === d.file ? undefined : s.rateLimited }, d.index, d.file, (i) => ({
         ...i, pending: { since: ev.ts, role: d.role, effort: d.reasoning_effort ?? undefined } }));
     case "llm_call": {
-      const next = withItem({ ...s, tokens: d.total_tokens }, d.index, d.file, (i) => ({ ...i, pending: undefined }));
+      const next = withItem({ ...s, tokens: d.total_tokens, rateLimited: s.rateLimited?.file === d.file ? undefined : s.rateLimited },
+                            d.index, d.file, (i) => ({ ...i, pending: undefined }));
       if (d.role === "writer") return withItem(next, d.index, d.file, (i) => ({ ...i, writerTokens: d.completion_tokens }));
       if (d.role !== "fixer") return next;
       return withItem(next, d.index, d.file, (i) => {
@@ -220,6 +223,11 @@ export function reduce(state: RunState, ev: RunAction): RunState {
     case "llm_unreachable": // a Groq outage: the item is planned again in a later round
       return { ...clearPending(s), activity: `Groq is unreachable; trying again in ${Math.round(d.seconds)}s (the item is retried later)…` };
     case "rate_limited":
+      // Named item (requests sent together): only that one pauses; the others are still waiting for Groq.
+      if (d.file)
+        return { ...withItem(s, d.index, d.file, (i) => ({ ...i, pending: undefined })),
+                 rateLimited: { file: d.file, seconds: d.seconds, reason: d.reason },
+                 activity: `Waiting ${Math.round(d.seconds)}s for the Groq rate limit (${d.reason === "tpm" ? "tokens per minute" : "HTTP 429"})…` };
       return { ...clearPending(s), aiSummary: s.aiSummary && { ...s.aiSummary, pending: undefined }, activity: `Waiting ${Math.round(d.seconds)}s for the Groq rate limit (${d.reason === "tpm" ? "tokens per minute" : "HTTP 429"})…` };
     case "candidate_generated":
       return { ...withItem(s, d.index, d.file, (i) => ({ ...addCode(i, d.code ?? ""), status: "validating",
