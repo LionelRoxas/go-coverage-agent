@@ -144,3 +144,41 @@ def test_counts_for_comparing_parallel_and_sequential_writers():
     f = build_facts(summary, [started, *run[1:], *extra, *rest], repo="stats", model="m", job_id="x")
     assert (f.parallel_writers, f.duplicate_test_renames, f.helper_collision_fixes, f.no_gain_rejections) == (
         True, 1, 1, 1)
+
+
+REFUTED_RUN = Path(__file__).parent / "fixtures" / "run_f910d155f3cd" / "events.jsonl"
+
+
+def load_refuted_run():
+    """output/f910d155f3cd (stats), trimmed to the run-level events and mode.go's items (code omitted). Its report
+    listed a Writer's suspected bug for `Mode` that Go's run refuted twice ([5] for {5,5,5}, as mode.go returns)."""
+    events = [Event.model_validate_json(line) for line in REFUTED_RUN.read_text(encoding="utf-8").splitlines() if line]
+    summary = Summary.model_validate(next(e.data for e in events if e.type == "job_completed"))
+    return summary, events
+
+
+def test_a_suspected_bug_the_runtime_refuted_is_dropped_from_the_facts():
+    from app.summary.facts import refuted_functions
+    summary, events = load_refuted_run()
+    assert [b.function for b in summary.suspected_bugs] == ["Mode"]  # as the old run recorded it
+    assert refuted_functions(events) == {"Mode"}
+    f = build_facts(summary, events, repo="stats", model="m", job_id="f910d155f3cd")
+    assert f.suspected_bugs == []
+
+
+def test_suspected_bugs_without_a_refuted_assertion_are_kept():
+    from app.models import SuspectedBug
+    from app.summary.facts import drop_refuted_bugs
+    summary, events = load_refuted_run()
+    bugs = [SuspectedBug(function="Float64Data.Mode", description="refuted (method label)"),
+            SuspectedBug(function="Median", description="never tested against Go's answer")]
+    assert [b.function for b in drop_refuted_bugs(bugs, events)] == ["Median"]
+    # a failure that was neither pruned nor sent to the Fixer refutes nothing
+    at = {"index": 1, "file": "median.go"}
+    only_failed = [Event(seq=0, ts=0, type="plan_created", data={"index": 1, "items": [
+                       {"file": "median.go", "functions": ["Median", "Other"], "uncovered_statements": 1}]}),
+                   Event(seq=1, ts=0, type="validation_result",
+                         data={**at, "kind": "test_failure", "failed_tests": ["TestMedian_Even"]})]
+    assert drop_refuted_bugs(bugs[1:], only_failed) == bugs[1:]
+    pruned = [*only_failed, Event(seq=2, ts=0, type="tests_pruned", data={**at, "tests": ["TestMedian_Even"]})]
+    assert drop_refuted_bugs(bugs[1:], pruned) == []  # named after Median, in an item of two functions

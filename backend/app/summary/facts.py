@@ -107,6 +107,46 @@ def _module(packages: Sequence[str]) -> str | None:
     return root if all(p == root or p.startswith(root + "/") for p in packages) else None
 
 
+def _func_name(label: str) -> str:
+    """`Mode` -> `Mode`, `Float64Data.Histogram` -> `Histogram`, `(*T).Do` -> `Do`."""
+    return label.rsplit(".", 1)[-1].strip("()* ")
+
+
+def refuted_functions(events: Sequence[Event]) -> set[str]:
+    """Functions (bare names) for which Go's own run refuted at least one assertion of the item that targeted them.
+
+    The rule (conservative; a suspected bug cannot be tied to one test case from the events): within one item
+    (`index`, `file`), a `validation_result` of kind `test_failure` that was then resolved by removing the failing
+    tests (`tests_pruned`) or by handing them to the Fixer (`fix_attempt`, which adopts the observed value) refutes
+    the item's planned function F when a failing test is named after F (`TestF`, `TestF_case`, `TestT_F`), or when
+    F is the item's only function. Example: run f910d155f3cd planned `Mode` alone; `TestMode_VariousScenarios`
+    failed on "uniform values (duplicate bug)" and was pruned, so the Writer's `Mode` bug claim was refuted."""
+    planned: dict[tuple[int, str], list[str]] = {}
+    failing: dict[tuple[int, str], list[str]] = {}
+    refuted: set[str] = set()
+    for e in events:
+        if e.type == "plan_created":
+            for item in e.data.get("items", []):
+                planned[(e.data.get("index", 0), item.get("file", ""))] = [_func_name(f) for f in item.get("functions", [])]
+            continue
+        key = (e.data.get("index", 0), e.data.get("file", ""))
+        if e.type == "validation_result":
+            failing[key] = list(e.data.get("failed_tests") or []) if e.data.get("kind") == "test_failure" else []
+        elif e.type in ("tests_pruned", "fix_attempt") and failing.get(key):
+            funcs = planned.get(key, [])
+            for f in funcs:
+                named = re.compile(rf"(?:^Test_?|_){re.escape(f)}(?![a-z0-9])")
+                if len(funcs) == 1 or any(named.search(t) for t in failing[key]):
+                    refuted.add(f)
+    return refuted
+
+
+def drop_refuted_bugs(bugs: Sequence[SuspectedBug], events: Sequence[Event]) -> list[SuspectedBug]:
+    """Suspected bugs are leads, not verdicts: keep only those about functions whose assertions Go never refuted."""
+    refuted = refuted_functions(events)
+    return [b for b in bugs if _func_name(b.function) not in refuted]
+
+
 def _run_events(events: Sequence[Event]) -> list[Event]:
     """Events of the run itself: up to its terminal event (later ones belong to summaries written afterwards)."""
     for i, e in enumerate(events):
@@ -186,5 +226,5 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
         tests_added_count=len(summary.tests_added), tests_added=list(summary.tests_added),
         test_files_count=len(summary.test_files), test_files=list(summary.test_files),
         tests_dir=f"output/{job_id}/tests",
-        per_file=per_file, lowest_files=lows[:LOWEST_FILES], suspected_bugs=list(summary.suspected_bugs),
+        per_file=per_file, lowest_files=lows[:LOWEST_FILES], suspected_bugs=drop_refuted_bugs(summary.suspected_bugs, run),
     )

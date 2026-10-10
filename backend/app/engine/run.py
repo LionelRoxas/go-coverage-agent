@@ -12,6 +12,7 @@ from app.engine.orchestrator import Orchestrator
 from app.engine.setup import JobFailed, Prepared, prepare
 from app.llm.client import Emit, LLMClient, LLMFatal
 from app.models import Event, JobRequest, Summary
+from app.summary.facts import drop_refuted_bugs
 from app.workspace import Workspace
 
 log = logging.getLogger(__name__)
@@ -48,6 +49,8 @@ async def run_job(job_id: str, request: JobRequest, settings: Settings, llm: LLM
         summary = await Orchestrator(prepared.deps, request, emit, cancel,
                                      unavailable_after_s=settings.llm_unavailable_after_s,
                                      call_reservation=settings.call_token_reservation).run(prepared.baseline)
+        # A claim the runtime disproved never reaches the report, the job's events or the AI summary.
+        summary = summary.model_copy(update={"suspected_bugs": drop_refuted_bugs(summary.suspected_bugs, events())})
         return summary
     except LLMFatal as e:
         raise JobFailed("llm_auth", str(e)) from e
