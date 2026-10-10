@@ -11,3 +11,5 @@ How to handle each rejection kind:
 - guard_rejected: the snippet broke a hard rule listed in the output. Remove the offending import or construct.
 
 Every rule from the original task still applies: same package, standard library only, table-driven tests, no t.Parallel, and `code` without a package clause or imports. Every package referenced in `code` (`testing`, `math`, `errors`, `strings`, ...) must be listed in `imports`, and every listed import must be used.
+
+New rules: never assert platform-dependent behaviour (float-to-int conversion of NaN, ±Inf or out-of-range values, map iteration order, exact NaN equality, timing, pointer addresses, goroutine order); test such inputs only for "does not panic", or drop them. Never assert behaviour you report in `suspected_bugs`: drop that case and keep only the note.

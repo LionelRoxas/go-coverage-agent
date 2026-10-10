@@ -12,6 +12,7 @@ _TEST_FUNC = re.compile(r"^func (Test(?!Main\()[A-Z0-9_]\w*)\(", re.M)
 _KEYWORD = re.compile(r"\b(import|package)\b")
 _DIRECTIVE = re.compile(r"^\s*//go:", re.M)
 _START_PROCESS = re.compile(r"\bStartProcess\b")
+_FLOAT_TO_INT = re.compile(r"\b(?:u?int(?:8|16|32|64)?|uintptr)\(\s*math\.(?:Inf|NaN)\(")
 _BUILD_TAG = re.compile(r"^\s*//\s*(go:build|\+build)", re.M)
 
 
@@ -71,6 +72,8 @@ def check_snippet(snippet: TestSnippet, module: str, max_bytes: int = 40_000) ->
     code = snippet.code
     if _KEYWORD.search(_strip_go(code)):
         problems.append("`code` must not contain a package clause or import declarations; list import paths in `imports`")
+    if _FLOAT_TO_INT.search(_strip_go(code)):
+        problems.append("asserts a platform-dependent float->int conversion of NaN/Inf (x86 and ARM give different results); drop that case")
     if _START_PROCESS.search(_strip_go(code)):
         problems.append("`StartProcess` is not allowed in generated tests (tests must not start processes)")
     if any("/proc/" in text for text, blank in go_segments(code) if blank is None or not text.startswith(("//", "/*"))):

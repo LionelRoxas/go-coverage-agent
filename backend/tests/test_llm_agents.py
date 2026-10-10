@@ -80,7 +80,7 @@ async def test_fix_degrades_to_failing_parts_and_first_error_lines_instead_of_fa
     llm = FakeLLM([snippet("func TestFail(t *testing.T) {}")])
     output = "--- FAIL: TestFail (0.00s)\n    mean_test.go:3: got 1 want 2\n" + "noise line\n" * 400
     result = ValidationResult(ValidationKind.TEST_FAILURE, output, failed_tests=["TestFail"])
-    budget = 2180  # fits the full context but not the full task (fixer.md grew ~80 tokens in Task 32)
+    budget = 2270  # fits the full context but not the full task (fixer.md grew ~80 tokens in Task 32, ~90 in Task 53)
     await Agents(llm, max_prompt_tokens=budget).fix(ITEM, BIG_INPUTS, _two_tests(), result)
     call = llm.calls[0]
     user = call["user"]
@@ -132,7 +132,7 @@ async def test_fix_keeps_whole_leading_declarations_when_no_line_points_anywhere
     llm = FakeLLM([snippet("func TestOne(t *testing.T) {}")])
     output = "vet: something odd happened\n" * 100
     result = ValidationResult(ValidationKind.VET_ERROR, output)
-    await Agents(llm, max_prompt_tokens=2000).fix(ITEM, BIG_INPUTS, _three_tests(), result)
+    await Agents(llm, max_prompt_tokens=2090).fix(ITEM, BIG_INPUTS, _three_tests(), result)
     code = _code_block(llm.calls[0]["user"])
     assert code.startswith("func TestOne(t *testing.T) {") and code.endswith("\tt.Log(\"end\")\n}")
     assert "TestTwo" not in code and "…[truncated]…" not in code
@@ -227,3 +227,11 @@ async def test_summarize_compacts_the_facts_to_fit_a_small_prompt_budget():
     call = llm.calls[0]
     assert estimate_tokens(call["system"]) + estimate_tokens(call["user"]) <= budget
     assert '"tests_added_count":109' in call["user"] and '"file":"clip.go"' in call["user"]
+
+
+@pytest.mark.parametrize("name", ["writer", "fixer"])
+def test_writer_and_fixer_prompts_forbid_platform_dependent_and_suspected_bug_assertions(name):
+    sent = load_prompt(name)
+    assert "AI-generated" not in sent and "<!--" not in sent
+    assert "platform-dependent" in sent and "NaN" in sent and "map iteration order" in sent
+    assert "suspected_bugs" in sent and "never assert" in sent.lower()

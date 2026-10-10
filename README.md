@@ -151,6 +151,7 @@ I had the system run end to end (Claude ran the live runs I approved), read the 
 | No theme switch, no way back to the start page, a one-line running banner, no explanation of the loop | UI gaps | Theme toggle, Run history panel, "← All runs", How it works page | Screenshots below |
 | semver stalled at 64.2% (prompt too large for the Fixer, duplicate test names) | A prompt cap from the free-trial era; existing test names crowded out | `MAX_PROMPT_TOKENS` 4,500 → 12,000; Fixer prompts shrink instead of failing; reused names renamed without an LLM call | `acab3e3c7570` 64.2% → `f9f3edcd9bfc` 80.1% |
 | The Fixer kept repeating a wrong assertion (semver `constraints.go`, rejected after 6 attempts) | The Fixer saw only the latest check; effort was at its minimum | Five changes, listed under [AI usage](#decisions-i-made-during-the-build) | `736baa413b5d`: 84.6%, 0 rejected |
+| A generated test asserted NaN/Inf-to-int results that differ between x86 and ARM, so it would fail on Apple Silicon | Go leaves out-of-range float-to-int conversion implementation-defined; the same test also locked in a behaviour the model had flagged as a suspected bug | Writer and Fixer prompt rules (no platform-dependent or suspected-bug assertions) plus a guard check that rejects `int(math.Inf(`, `int64(math.NaN())` and similar | Run `7e5223daa8e2`, `util_test.go`; re-run: pending |
 
 ## Screenshots
 
