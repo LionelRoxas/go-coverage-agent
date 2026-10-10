@@ -14,6 +14,7 @@ from app.engine.setup import JobFailed, Prepared, prepare
 from app.llm.client import Emit, LLMClient, LLMFatal
 from app.models import Event, JobRequest, Summary
 from app.summary.facts import drop_refuted_bugs
+from app.validator import WorkspaceFull
 from app.workspace import Workspace
 
 log = logging.getLogger(__name__)
@@ -77,6 +78,8 @@ async def run_job(job_id: str, request: JobRequest, settings: Settings, llm: LLM
         return summary
     except LLMFatal as e:
         raise JobFailed("llm_auth", str(e)) from e
+    except WorkspaceFull as e:  # the tests accepted so far are still exported (finally)
+        raise JobFailed("workspace_full", str(e), e.output) from e
     finally:
         try:
             accepted = sorted({e.data["test_file"] for e in events() if e.type == "candidate_accepted"})

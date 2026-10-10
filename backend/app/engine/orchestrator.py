@@ -384,7 +384,8 @@ class Orchestrator:
                                                       pruned=free, pruned_reason=ValidationKind.NO_ASSERTIONS.value))
                         if result.accepted:
                             break
-                    if result.kind is ValidationKind.TEST_FAILURE:
+                    # A timed-out or killed run (cut_short) names no reliable failures: no prune, no disagreements.
+                    if result.kind is ValidationKind.TEST_FAILURE and not result.cut_short:
                         doomed = [n for n in result.failed_tests if n in result.new_tests]
                         if doomed and len(doomed) == len(result.failed_tests) and len(doomed) < len(result.new_tests):
                             found = self._disagreements(item, doomed, result.output, mine)
@@ -411,7 +412,7 @@ class Orchestrator:
                     attempts += 1
                     fixing: dict[str, Any] = {**base, "attempt": attempts, "kind": result.kind.value}
                     failing = [n for n in result.failed_tests if n in result.new_tests]
-                    if result.kind is ValidationKind.TEST_FAILURE and failing:  # e.g. every new test failed: no prune
+                    if result.kind is ValidationKind.TEST_FAILURE and failing and not result.cut_short:  # no prune
                         found = self._disagreements(item, failing, result.output, mine, pruned=False)
                         fixing["disagreements"] = [_event(d) for d in found]
                     await self.emit("fix_attempt", fixing)
@@ -475,7 +476,8 @@ class Orchestrator:
 
     def _disagreements(self, item: PlanItem, tests: list[str], output: str, mine: list[Disagreement],
                        pruned: bool = True) -> list[Disagreement]:
-        """Each failing new test about to be pruned (or, when no prune applies, sent to the Fixer), with its observed
+        """Each failing new test that Go named as failing (never a guess after a timeout or kill: see cut_short) about
+        to be pruned (or, when no prune applies, sent to the Fixer), with its observed
         got/want lines: the model's prediction and the code disagree, and nobody has decided which is wrong.
         Recorded once per (file, test, lines) for the report; a new record starts as `not_accepted`. The record (new,
         or the one an earlier attempt made of the same observation) joins `mine`, whose outcome the attempt upgrades when

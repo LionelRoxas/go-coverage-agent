@@ -255,6 +255,43 @@ async def test_a_dropped_disagreement_becomes_kept_when_a_later_attempt_keeps_th
     assert (d.test, d.outcome) == ("TestTTest_ErrorsAndEdgeCases", "kept")
 
 
+TIMEOUT_OUTPUT = ("--- FAIL: TestBad (0.00s)\n    a_test.go:3: got 1, want 2\npanic: test timed out after 30s\n"
+                  "running tests:\n\tTestHang (30s)\nFAIL\texample.com/m\t30.012s\n")
+KILLED_OUTPUT = "--- FAIL: TestBad (0.00s)\n    a_test.go:3: got 1, want 2\nsignal: killed\nFAIL\texample.com/m\t3.104s\n"
+
+
+@pytest.mark.parametrize("output", [TIMEOUT_OUTPUT, KILLED_OUTPUT], ids=["timeout", "killed"])
+async def test_a_cut_short_run_is_neither_pruned_nor_a_disagreement(ws, output):
+    """Prune branch: Go named one failing test, but the run then hung or was killed, so the failures are incomplete:
+    the result goes to the Fixer whole and nothing is recorded as a prediction disagreement."""
+    cut = ValidationResult(ValidationKind.TEST_FAILURE, output, failed_tests=["TestBad"],
+                           new_tests=["TestGood", "TestBad", "TestHang"], cut_short=True)
+    v = FakeValidator(ws, [cut, accepted({"A:1"}, tests=["TestGood"])])
+    agents = FakeAgents([GOOD], fixes=[GOOD])
+    orch, events = run(ws, v, agents, target=25)
+    summary = await orch.run(report(set()))
+    assert v.pruned == [] and agents.fix_kinds == [ValidationKind.TEST_FAILURE]
+    assert summary.disagreements == []
+    assert "tests_pruned" not in [t for t, _ in events]
+    assert all("disagreements" not in x for t, x in events if t == "fix_attempt")
+
+
+@pytest.mark.parametrize("output", ["panic: test timed out after 30s\nrunning tests:\n\tTestA (30s)\nFAIL\n",
+                                    "signal: killed\nFAIL\texample.com/m\t3.1s\n"], ids=["timeout", "killed"])
+async def test_a_cut_short_run_sent_to_the_fixer_records_no_disagreements(ws, output):
+    """Fixer-handoff branch: no test was named as failing, so failed_tests falls back to every new test; none of
+    them disagreed with the code."""
+    cut = ValidationResult(ValidationKind.TEST_FAILURE, output, failed_tests=["TestA", "TestB"],
+                           new_tests=["TestA", "TestB"], cut_short=True)
+    v = FakeValidator(ws, [cut, cut])
+    agents = FakeAgents([GOOD], fixes=[GOOD])
+    orch, events = run(ws, v, agents, max_iterations=1, targets_per_iteration=1, max_fix_attempts=1)
+    summary = await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert agents.fix_kinds == [ValidationKind.TEST_FAILURE] and v.pruned == []
+    assert summary.disagreements == []
+    assert [x.get("disagreements") for t, x in events if t == "fix_attempt"] == [None]
+
+
 async def test_a_compile_error_sent_to_the_fixer_is_no_disagreement(ws):
     bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
     v = FakeValidator(ws, [bad, accepted({"A:1"})])

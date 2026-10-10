@@ -86,6 +86,9 @@ class Job:
         # The events.jsonl each event is appended to as it is emitted (None: kept in memory only).
         self.persist_path: Path | None = None
         self._persist_failed = False  # an append failed: the file misses events until it is rewritten whole
+        # A rewrite after a failed append failed too (e.g. ./output not writable): the folder is unlikely to heal
+        # mid-run, so stop retrying on every event (a whole-file rewrite and a traceback each) until the job ends.
+        self._repair_deferred = False
 
     @property
     def on_disk(self) -> bool:
@@ -108,7 +111,7 @@ class Job:
     def persist_to(self, path: Path) -> None:
         """Append every event emitted from now on to `path` (one JSON line each). A file whose last line was cut by a
         kill gets a line break first, so the next event starts a line of its own."""
-        self.persist_path, self._persist_failed = path, False
+        self.persist_path, self._persist_failed, self._repair_deferred = path, False, False
         try:
             with path.open("rb") as f:
                 f.seek(-1, os.SEEK_END)
@@ -122,7 +125,8 @@ class Job:
         if self.persist_path is None:
             return
         if self._persist_failed:  # an earlier append was lost: write every event again rather than leave a gap
-            self.repair_log()
+            if not self._repair_deferred:  # after a failed rewrite, only the end of the job tries again
+                self.repair_log()
         else:
             self._write_line(event.model_dump_json().encode("utf-8") + b"\n")
 
@@ -141,7 +145,9 @@ class Job:
 
     def repair_log(self) -> None:
         """After a failed append: replace the file with every event in memory (temp file + rename, so a kill meanwhile
-        keeps the earlier file). Nothing to do when every append succeeded. Never raises."""
+        keeps the earlier file). Nothing to do when every append succeeded. Never raises. The next event calls it
+        once; if that rewrite fails too, it is logged (with its traceback) once and tried again only at the end of
+        the job, which calls it directly."""
         if self.persist_path is None or not self._persist_failed:
             return
         tmp = self.persist_path.with_name(self.persist_path.name + ".tmp")
@@ -150,10 +156,20 @@ class Job:
             with tmp.open("wb") as f:
                 f.write(b"".join(e.model_dump_json().encode("utf-8") + b"\n" for e in self.events))
             os.replace(tmp, self.persist_path)
-        except Exception:  # noqa: BLE001 — tried again on the next event and at the end of the job
-            log.warning("could not rewrite %s", self.persist_path, exc_info=True)
+        except Exception:  # noqa: BLE001 — tried again at the end of the job
+            if self._repair_deferred:
+                log.warning("could not rewrite %s at the end of the job either; the saved run misses events",
+                            self.persist_path)
+            else:
+                log.warning("could not rewrite %s; events stay in memory and on the stream, and saving is tried "
+                            "again when the job ends", self.persist_path, exc_info=True)
+            self._repair_deferred = True
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
         else:
-            self._persist_failed = False
+            self._persist_failed = self._repair_deferred = False
             log.info("rewrote %s with all %d events after a failed append", self.persist_path, len(self.events))
 
     def close(self) -> None:

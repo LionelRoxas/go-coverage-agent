@@ -2,9 +2,12 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from app.config import Settings
 from app.gotools import CommandResult, GoPackage
 from app.models import CoverageReport, FuncInfo, FuncKey, TestSnippet
-from app.validator import ValidationKind, ValidationResult, Validator, parse_failed_tests
+from app.validator import ValidationKind, ValidationResult, Validator, WorkspaceFull, parse_failed_tests
 from app.workspace import Workspace
 
 MOD = "example.com/m"
@@ -162,3 +165,47 @@ async def test_pruning_the_assertion_free_tests_checks_the_rest(tmp_path):
     first = await v.validate("a_test.go", "m", SNIP, prev())
     r = await v.prune_and_check("a_test.go", first.no_assertions, prev(), first.new_tests)
     assert tools.pruned == ["TestB"] and r.accepted and r.new_tests == ["TestA"]
+
+
+async def test_a_genuine_test_failure_is_not_cut_short(tmp_path):
+    tools = FakeTools(test_r=fail("--- FAIL: TestB (0.00s)\n    a_test.go:3: got 1, want 2\nFAIL"))
+    r = await make(tmp_path, tools).validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.TEST_FAILURE and r.failed_tests == ["TestB"] and not r.cut_short
+
+
+@pytest.mark.parametrize("out,timed_out", [
+    ("--- FAIL: TestB (0.00s)\npanic: test timed out after 30s\nrunning tests:\n\tTestA (30s)\nFAIL\n", False),
+    ("--- FAIL: TestB (0.00s)\nsignal: killed\nFAIL\n", False),  # the OOM killer under mem_limit
+    ("ok so far\n", True),  # TEST_TIMEOUT_S ended `go test` itself
+    ("exit status 2\nFAIL\n", False),  # no test named as failing
+], ids=["go-timeout", "killed", "stage-timeout", "unnamed"])
+async def test_a_timed_out_or_killed_test_run_is_cut_short(tmp_path, out, timed_out):
+    test_r = CommandResult(argv=[], exit_code=1, stdout=out, stderr="", duration_ms=1, timed_out=timed_out)
+    tools = FakeTools(test_r=test_r)
+    tools.settings = Settings(test_timeout_s=30)  # names the stage's timeout in the output
+    r = await make(tmp_path, tools).validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.TEST_FAILURE and r.cut_short
+
+
+@pytest.mark.parametrize("stdout", ["", '["TestA"', "warning: something\n[]"], ids=["empty", "cut", "mixed"])
+async def test_unreadable_asserts_output_rejects_only_the_candidate(tmp_path, stdout):
+    tools = FakeTools()
+    tools.asserts_r = ok(stdout)
+    r = await make(tmp_path, tools).validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.COMPILE_ERROR and "gohelper asserts: unreadable output" in r.output
+    assert not tools.ran_tests
+
+
+@pytest.mark.parametrize("stage", ["compile", "vet", "test"])
+async def test_no_space_left_on_device_ends_the_job_instead_of_going_to_the_fixer(tmp_path, stage):
+    full = fail("go: writing output: write /work/abc/scratch/go-build1/b001/x.a: no space left on device")
+    tools = FakeTools(**{f"{stage}_r": full})
+    with pytest.raises(WorkspaceFull) as e:
+        await make(tmp_path, tools).validate("a_test.go", "m", SNIP, prev())
+    assert "/work tmpfs is full" in str(e.value) and "no space left" in e.value.output
+
+
+async def test_a_test_that_only_prints_the_enospc_text_is_an_ordinary_failure(tmp_path):
+    out = "--- FAIL: TestB (0.00s)\n    a_test.go:3: got \"write x: no space left on device\", want nil\nFAIL\n"
+    r = await make(tmp_path, FakeTools(test_r=fail(out))).validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.TEST_FAILURE and r.failed_tests == ["TestB"]

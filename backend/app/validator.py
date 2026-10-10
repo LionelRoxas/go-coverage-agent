@@ -17,7 +17,27 @@ from app.models import CoverageReport, FuncInfo, TestSnippet
 from app.workspace import Workspace
 
 _FAIL = re.compile(r"^\s*--- FAIL: (\S+)", re.M)
+# The test binary was cut short: `go test -timeout` ended it, or the kernel killed it (the OOM killer under mem_limit).
+_CUT_SHORT = re.compile(r"^panic: test timed out|signal: killed", re.M)
+# A write under /work (the repo copy, scratch, Go's $WORK) that hit the tmpfs size cap. The path keeps a test
+# that merely prints this error text (e.g. one about ENOSPC handling) from ending the job.
+_NO_SPACE = re.compile(r"(?:/work/|\$WORK/)\S*: no space left on device")
 _TOP_DECL = re.compile(r"^(?:func\s+(?:\([^)]*\)\s*)?|type\s+|var\s+|const\s+)(\w+)")
+
+
+class WorkspaceFull(Exception):
+    """Go ran out of disk space in /work (a tmpfs shared by the repo copy, the scratch and Go's temp dirs). Every later
+    check would fail the same way and the Fixer cannot repair it, so it ends the job (run_job: `workspace_full`)."""
+
+    def __init__(self, stage: str, output: str):
+        super().__init__(f"Go ran out of disk space during {stage}: the /work tmpfs is full. Raise its size (tmpfs /work "
+                         "in docker-compose.yml, with mem_limit, whose memory it uses) or run a smaller module.")
+        self.output = output
+
+
+def check_space(r: CommandResult, stage: str) -> None:
+    if _NO_SPACE.search(r.combined):
+        raise WorkspaceFull(stage, r.combined)
 
 
 class ValidationKind(StrEnum):
@@ -43,6 +63,10 @@ class ValidationResult:
     new_tests: list[str] = field(default_factory=list)
     error_decls: list[str] = field(default_factory=list)  # top-level declarations that compile/vet error lines point at
     no_assertions: list[str] = field(default_factory=list)  # new Test functions that check nothing (NO_ASSERTIONS)
+    # TEST_FAILURE only: the run was cut short (a timeout or a killed process) or Go named no failing test, so
+    # `failed_tests` is a guess (every new test), not the tests Go reported as failing. Nothing is pruned and no
+    # prediction disagreement is recorded for such a result.
+    cut_short: bool = False
 
     @property
     def accepted(self) -> bool:
@@ -122,12 +146,18 @@ class Validator:
         snippet_path.write_text(rendered, encoding="utf-8")
         r = await self.tools.merge(test_file, snippet_path)
         if r.exit_code != 0:
+            check_space(r, "merge")
             return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests,
                                     error_decls=decls_at(rendered, error_lines(r.combined, "snippet.go")))
         r = await self.tools.asserts(snippet_path)
         if r.exit_code != 0:
             return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests)
-        free = set(json.loads(r.stdout))
+        try:
+            free = set(json.loads(r.stdout))
+        except ValueError:  # cut, empty or mixed with a warning: reject this candidate, never the job
+            return ValidationResult(ValidationKind.COMPILE_ERROR,
+                                    f"gohelper asserts: unreadable output (expected a JSON list of test names): "
+                                    f"{r.combined[:500]!r}", new_tests=new_tests)
         result = await self.check(prev, new_tests, [n for n in new_tests if n in free])
         if result.kind in (ValidationKind.COMPILE_ERROR, ValidationKind.VET_ERROR):
             merged = self.ws.read(test_file) or ""
@@ -138,11 +168,14 @@ class Validator:
                               new_tests: list[str]) -> ValidationResult:
         r = await self.tools.prune(test_file, names)
         if r.exit_code != 0:
+            check_space(r, "prune")
             return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests)
         return await self.check(prev, [n for n in new_tests if n not in names])
 
     def _output(self, r: CommandResult, stage: str) -> str:
-        """The command's output, after a line naming the stage when it was killed at its timeout."""
+        """The command's output, after a line naming the stage when it was killed at its timeout. Raises WorkspaceFull
+        when the command ran out of disk space."""
+        check_space(r, stage)
         return f"{timeout_message(self.tools.settings, stage)}\n{r.combined}" if r.timed_out else r.combined
 
     async def check(self, prev: CoverageReport, new_tests: list[str],
@@ -161,8 +194,10 @@ class Validator:
         m = await self.measure()
         if m.report is None:
             output = self._output(m.result, "test")
-            failed = parse_failed_tests(m.result.combined) or list(new_tests)
-            return ValidationResult(ValidationKind.TEST_FAILURE, output, failed_tests=failed, new_tests=new_tests)
+            named = parse_failed_tests(m.result.combined)
+            cut_short = m.result.timed_out or not named or bool(_CUT_SHORT.search(m.result.combined))
+            return ValidationResult(ValidationKind.TEST_FAILURE, output, failed_tests=named or list(new_tests),
+                                    new_tests=new_tests, cut_short=cut_short)
         before, after = prev.covered_set(), m.report.covered_set()
         if not before <= after:
             return ValidationResult(ValidationKind.NO_GAIN, "the new tests made previously covered statements uncovered",

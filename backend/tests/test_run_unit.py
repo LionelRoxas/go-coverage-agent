@@ -9,6 +9,7 @@ from app.engine import run as run_module
 from app.engine.run import JobFailed, prepare, run_job, write_artifacts
 from app.llm.client import LLMFatal
 from app.models import Event, JobRequest, StopReason, Summary, TokenUsage
+from app.validator import WorkspaceFull
 from app.workspace import SEED_FILE, Workspace
 
 
@@ -94,6 +95,17 @@ async def test_llm_fatal_becomes_llm_auth(monkeypatch, tmp_path):
     with pytest.raises(JobFailed) as exc:
         await run_job("j1", JobRequest(repo_path="x"), settings, None, emit, asyncio.Event(), lambda: [])
     assert exc.value.reason == "llm_auth"
+
+
+async def test_a_full_workspace_becomes_workspace_full(monkeypatch, tmp_path):
+    settings = _patch(monkeypatch, tmp_path, orchestrator_error=WorkspaceFull("test", "x: no space left on device"))
+
+    async def emit(t, d): pass
+
+    with pytest.raises(JobFailed) as exc:
+        await run_job("j1", JobRequest(repo_path="x"), settings, None, emit, asyncio.Event(), lambda: [])
+    assert exc.value.reason == "workspace_full" and "/work tmpfs is full" in exc.value.message
+    assert "no space left" in exc.value.output
 
 
 async def test_artifact_failure_does_not_mask_job_failure(monkeypatch, tmp_path):

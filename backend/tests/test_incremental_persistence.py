@@ -238,6 +238,35 @@ async def test_a_failed_last_append_is_repaired_when_the_job_ends(tmp_path, monk
     assert_complete(settings, job)
 
 
+async def test_an_unwritable_output_folder_is_logged_once_and_not_rewritten_on_every_event(tmp_path, monkeypatch,
+                                                                                            caplog):
+    """./output not writable (e.g. a Linux host folder not owned by uid 1000): the run goes on; the file is rewritten
+    once after the first failed append and once more when the job ends, not on every event."""
+    settings = settings_for(tmp_path)
+    real, rewrites = Path.open, {"n": 0}
+
+    def open_(self, mode="r", *a, **k):
+        if mode == "ab":
+            raise PermissionError("read-only")
+        if mode == "wb" and self.name.endswith(".tmp"):
+            rewrites["n"] += 1
+            raise PermissionError("read-only")
+        return real(self, mode, *a, **k)
+
+    async def runner(job, emit, cancel):
+        for i in range(50):
+            await emit("iteration_started", {"index": i, "percent": 0})
+        return summary()
+
+    monkeypatch.setattr(Path, "open", open_)
+    caplog.set_level("WARNING", logger="app.jobs")
+    job = JobManager(settings, runner=runner, llm_factory=fake_llm).start(JobRequest(repo_path="stats"))
+    await job.task
+    assert job.status is JobStatus.COMPLETED and len(job.events) > 50
+    assert rewrites["n"] == 2  # after the first failed append, and when the job ends
+    assert sum(1 for r in caplog.records if r.exc_info) == 2  # the failed append and the first failed rewrite
+
+
 def test_export_replaces_an_earlier_copy_in_one_step(tmp_path, monkeypatch):
     """A copy that dies midway leaves the earlier accepted file, never a truncated one."""
     (tmp_path / "repo").mkdir()
