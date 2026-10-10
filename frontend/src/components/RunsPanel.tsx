@@ -184,7 +184,7 @@ export function RunsPanel({ onJobs }: { onJobs?: (jobs: JobSnapshot[]) => void }
           {past.map((j) => <PastRow key={j.id} job={j} now={now} />)}
         </ul>
       )}
-      <p className="text-xs leading-relaxed text-muted">Runs are kept while the backend is running; files stay in ./output.</p>
+      <p className="text-xs leading-relaxed text-muted">Runs are saved in ./output and reload when the app restarts.</p>
     </aside>
   );
 }

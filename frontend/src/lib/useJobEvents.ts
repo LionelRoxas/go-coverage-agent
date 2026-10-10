@@ -4,7 +4,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { initialState, reduce, summaryWaiting } from "./runState";
 
-const TERMINAL = new Set(["completed", "failed", "cancelled"]);
+const TERMINAL = new Set(["completed", "failed", "cancelled", "interrupted"]);
 
 export type Connection = "open" | "reconnecting" | "closed";
 
@@ -27,12 +27,19 @@ export function useJobEvents(jobId: string) {
     if (opened.current !== jobId) dispatch({ type: "reset" }); // a reopened stream keeps the state it extends
     opened.current = jobId;
     api.job(jobId).then(
-      () => {
+      (job) => {
         if (cancelled) return;
+        // Not running and not writing its summary (e.g. reloaded from ./output): the stream replays and then ends.
+        const ended = !!job && TERMINAL.has(job.status) && !job.writing_summary;
         const es = new EventSource(api.eventsUrl(jobId));
         source.current = es;
         es.onopen = () => patch({ connection: "open", error: null });
         es.onerror = () => {
+          if (ended) {
+            es.close(); // the replay is complete; EventSource would otherwise replay it again and again
+            dispatch({ type: "stream_ended" });
+            return;
+          }
           patch({ connection: "reconnecting" });
           if (es.readyState !== EventSource.CLOSED) return; // the browser is retrying by itself
           // The browser gave up (e.g. the backend restarted and forgot the job): find out whether it still exists.

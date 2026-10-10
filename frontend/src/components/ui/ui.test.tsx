@@ -122,6 +122,7 @@ describe("Badge and StatusChip", () => {
     ["completed", "Completed", "text-accent"],
     ["cancelled", "Cancelled", "text-muted"],
     ["failed", "Failed", "text-danger"],
+    ["interrupted", "Interrupted", "text-warn"],
   ] as const)("draws %s the same everywhere", (status, label, cls) => {
     render(<StatusChip status={status} />);
     expect(screen.getByText(label)).toHaveClass("rounded-full", "text-xs", "font-medium", cls);

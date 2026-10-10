@@ -60,7 +60,7 @@ export default function JobPage() {
         <AllRuns />
         <StatusPanel title="This run no longer exists"
                      actions={<Link href="/" className={buttonClass({ variant: "primary" })}>Start a new one</Link>}>
-          <p>The backend was restarted, and runs are kept only while it is running. Its files are still in ./output.</p>
+          <p>There is no run with this id in ./output. It may have been deleted, or it is older than the runs the app reloads on startup.</p>
         </StatusPanel>
       </div>
     );
@@ -130,6 +130,9 @@ export default function JobPage() {
           <p className="text-sm text-muted" aria-live="polite">
             {waiting ? <><GroqWait pending={waiting} detailed /> ({waiting.file})</> : state.activity}
           </p>
+        )}
+        {job === "interrupted" && (
+          <p role="status" className="text-sm text-muted">The app stopped before this run finished; the results up to that point are shown.</p>
         )}
         {state.removedTests.length > 0 && (
           <p className="text-xs text-muted">Removed {state.removedTests.length} existing test files from the working copy before starting.</p>

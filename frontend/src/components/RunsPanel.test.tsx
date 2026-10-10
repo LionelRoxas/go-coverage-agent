@@ -58,7 +58,15 @@ describe("RunsPanel", () => {
     vi.mocked(api.jobs).mockResolvedValue([]);
     render(<RunsPanel />);
     expect(await screen.findByText("Pick a repository and press Start — your runs appear here.")).toBeInTheDocument();
-    expect(screen.getByText(/files stay in \.\/output/)).toBeInTheDocument();
+    expect(screen.getByText("Runs are saved in ./output and reload when the app restarts.")).toBeInTheDocument();
+  });
+
+  it("lists an interrupted run as a past run with its chip", async () => {
+    vi.mocked(api.jobs).mockResolvedValue([job({ id: "i1", status: "interrupted", percent: 40 })]);
+    render(<RunsPanel />);
+    expect(await screen.findByText("Interrupted")).toHaveClass("text-warn");
+    expect(screen.getByRole("list", { name: "Past runs" })).toHaveTextContent("stats");
+    expect(screen.queryByRole("list", { name: "Running" })).not.toBeInTheDocument();
   });
 
   it("renders a running card with bar, target, Open and Cancel", async () => {
@@ -173,7 +181,7 @@ describe("RunsPanel", () => {
     vi.mocked(api.jobs).mockRejectedValue(new Error("backend down"));
     render(<RunsPanel />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load runs: backend down");
-    expect(screen.getByText(/files stay in/)).toBeInTheDocument();
+    expect(screen.getByText(/reload when the app restarts/)).toBeInTheDocument();
   });
 
   it("keeps a run that is writing its summary in the busy list, with Stop summary", async () => {

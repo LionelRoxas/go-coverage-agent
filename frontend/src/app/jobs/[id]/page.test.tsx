@@ -51,6 +51,21 @@ describe("JobPage", () => {
     expect(screen.getByText("Any accepted tests were saved to ./output/gone/tests.")).toBeInTheDocument();
   });
 
+  it("shows the Interrupted chip and note when a saved run's stream ends without a result", async () => {
+    vi.mocked(api.job).mockResolvedValue({ status: "interrupted", writing_summary: false } as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    act(() => {
+      FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq: 0, ts: 1, type: "job_started",
+                                                                data: { repo_path: "stats", target_coverage: 80, options: {}, model: "m" } }) });
+      FakeEventSource.last!.onerror!();
+    });
+    expect(await screen.findByText("Interrupted")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "The app stopped before this run finished; the results up to that point are shown.");
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+  });
+
   it("explains that a run no longer exists when the API returns 404", async () => {
     vi.mocked(api.job).mockRejectedValue(new ApiError(404, "not_found", "no such job"));
     render(<JobPage />);

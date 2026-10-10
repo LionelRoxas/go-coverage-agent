@@ -70,6 +70,39 @@ describe("useJobEvents error handling", () => {
   });
 });
 
+describe("useJobEvents for a run reloaded from ./output", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    FakeEventSource.last = null;
+    vi.stubGlobal("EventSource", FakeEventSource);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("ends an interrupted run when its replay ends, instead of reconnecting", async () => {
+    vi.mocked(api.job).mockResolvedValueOnce({ status: "interrupted", writing_summary: false } as never);
+    const hook = renderHook(() => useJobEvents("j1"));
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const es = FakeEventSource.last!;
+    act(() => es.onmessage!({ data: JSON.stringify({ seq: 0, ts: 1, type: "job_started",
+                                                     data: { repo_path: "stats", target_coverage: 80, options: {}, model: "m" } }) }));
+    expect(hook.result.current.state.status).toBe("running");
+    act(() => es.onerror!());
+    expect(es.readyState).toBe(FakeEventSource.CLOSED);
+    expect(hook.result.current.state.status).toBe("interrupted");
+    expect(hook.result.current.connection).toBe("closed");
+    expect(api.job).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps reconnecting a running job when its stream drops", async () => {
+    vi.mocked(api.job).mockResolvedValueOnce({ status: "running", writing_summary: false } as never);
+    const hook = renderHook(() => useJobEvents("j1"));
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    act(() => FakeEventSource.last!.onerror!());
+    expect(FakeEventSource.last!.readyState).not.toBe(FakeEventSource.CLOSED);
+    expect(hook.result.current.connection).toBe("reconnecting");
+  });
+});
+
 describe("useJobEvents and the AI summary", () => {
   beforeEach(() => {
     vi.clearAllMocks();

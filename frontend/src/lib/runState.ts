@@ -49,7 +49,8 @@ export type AiSummaryView = {
 export type IterationView = { index: number; startPercent: number; endPercent?: number; items: ItemView[] };
 export type RunState = {
   lastSeq: number;
-  status: "connecting" | "running" | "completed" | "failed" | "cancelled";
+  // "interrupted": a saved run whose stream ended without a terminal event (the app stopped mid-run)
+  status: "connecting" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
   repoPath?: string;
   model?: string;
   startedAt?: number;
@@ -142,11 +143,24 @@ function addCheck(i: ItemView, check: Check): ItemView {
 export const summaryWaiting = (s: RunState) => s.aiSummary?.status === "waiting";
 
 // "summary_requested": Write summary / Write again was accepted; its events follow on a reopened stream.
-export type RunAction = JobEvent | { type: "reset" } | { type: "summary_requested" };
+// "stream_ended": the stream of a run that is not running (e.g. reloaded from ./output) replayed everything and ended.
+export type RunAction = JobEvent | { type: "reset" } | { type: "summary_requested" } | { type: "stream_ended" };
+
+// Nothing more will come: a run without its terminal event was interrupted, and a summary still "waiting" never came.
+function streamEnded(s: RunState): RunState {
+  if (s.status === "running")
+    return { ...settleUnfinished(clearPending(s), "stopped"), status: "interrupted",
+             activity: "The app stopped before this run finished." };
+  if (s.aiSummary?.status === "waiting")
+    return { ...s, aiSummary: { ...s.aiSummary, status: "failed", pending: undefined,
+                                error: { reason: "interrupted", message: "The app stopped before the summary was written." } } };
+  return s;
+}
 
 export function reduce(state: RunState, ev: RunAction): RunState {
   if (ev.type === "summary_requested")
     return { ...state, aiSummary: { ...state.aiSummary, status: "waiting", pending: undefined, error: undefined } };
+  if (ev.type === "stream_ended") return streamEnded(state);
   if (!("seq" in ev)) return initialState; // "reset": a different job was opened
   if (ev.seq <= state.lastSeq) return state;
   const s: RunState = { ...state, lastSeq: ev.seq };

@@ -30,6 +30,7 @@ const STATUS: Record<JobSnapshot["status"], { label: string; tone: BadgeTone }> 
   completed: { label: "Completed", tone: "accent" },
   cancelled: { label: "Cancelled", tone: "neutral" },
   failed: { label: "Failed", tone: "danger" },
+  interrupted: { label: "Interrupted", tone: "warn" },
 };
 
 /** A run's status, drawn the same in Run history and on the run page. */

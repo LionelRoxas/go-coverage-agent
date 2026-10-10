@@ -112,7 +112,8 @@ export type Health = {
 
 export type JobSnapshot = {
   id: string;
-  status: "running" | "completed" | "failed" | "cancelled";
+  /** "interrupted": a run reloaded from ./output that never finished (the app stopped mid-run). */
+  status: "running" | "completed" | "failed" | "cancelled" | "interrupted";
   request: { repo_path: string; target_coverage: number; options: JobOptions };
   created_at: number;
   percent: number | null;
@@ -120,4 +121,6 @@ export type JobSnapshot = {
   summary: Summary | null;
   /** The run has ended and its AI summary is being written; the job still counts as busy. Older backends omit it. */
   writing_summary?: boolean;
+  /** The last AI summary event: "generated" or "failed"; null when none. Older backends omit it. */
+  ai_summary?: "generated" | "failed" | null;
 };
