@@ -43,5 +43,5 @@ lint-frontend:
 	cd frontend && { $(FRONTEND_DEPS); } && npm run lint && npx tsc --noEmit
 # Re-measures the committed evidence tests (docs/evidence) on a fresh clone of montanaflynn/stats; needs network.
 verify-evidence:
-	bash scripts/verify-evidence.sh docs/evidence/stats-e2de1ca387cb
-	bash scripts/verify-evidence.sh docs/evidence/stats-73d630a6dd05
+	bash scripts/verify-evidence.sh docs/evidence/stats-8c38d392ecaf
+	bash scripts/verify-evidence.sh docs/evidence/stats-befcbd2b6ada

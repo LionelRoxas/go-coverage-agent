@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 # Re-measures an evidence folder's committed tests on a fresh clone of montanaflynn/stats, in a plain Go container:
-# no app code, no LLM. Usage: scripts/verify-evidence.sh docs/evidence/stats-e2de1ca387cb
+# no app code, no LLM. Usage: scripts/verify-evidence.sh docs/evidence/stats-8c38d392ecaf
 # Works from Git Bash on Windows (MSYS_NO_PATHCONV, host path as C:/...) and on macOS / Linux. Needs Docker.
 set -euo pipefail
 

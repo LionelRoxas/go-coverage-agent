@@ -5,20 +5,27 @@ The brief's evaluation repo is [montanaflynn/stats](https://github.com/montanafl
 test files one real run generated (exactly as exported to `output/<run>/tests`, unedited) and that run's
 `report.json`, so anyone can inspect the tests and re-measure them without running the app or calling an LLM.
 
+Both runs were produced by the submitted code (commit `28f9c5f`), with every check described in the README in place:
+the guard, the assertion check, `go vet`, tests passing twice and strictly growing coverage.
+
 | Folder | Run | Setting | Tests / test files | Reported by the app | Re-measured by `scripts/verify-evidence.sh` |
 |---|---|---|---|---|---|
-| [`stats-e2de1ca387cb`](stats-e2de1ca387cb) | `e2de1ca387cb` | sequential writers, goal 80%, default options (20 rounds, min gain 1.0, 3 targets per round, 2 fix attempts) | 109 / 29 | 0% → 81.07% (`target_reached`, 11 rounds, 310 s, 175,023 tokens) | **81.07%** (1,011 of 1,247 statements) |
-| [`stats-73d630a6dd05`](stats-73d630a6dd05) | `73d630a6dd05` | `PARALLEL_WRITERS` on, goal 100%, 30 rounds max, min gain 0.5, 5 targets per round, 3 fix attempts | 224 / 50 | 0% → 99.68% (`marginal_gains`, 17 rounds, 377 s, 505,848 tokens) | **99.68%** (1,243 of 1,247 statements) |
+| [`stats-8c38d392ecaf`](stats-8c38d392ecaf) | `8c38d392ecaf` | `PARALLEL_WRITERS` on, goal 80%, default options (20 rounds, min gain 1.0, 3 targets per round, 2 fix attempts) | 134 / 28 | 0% → 81.15% (`target_reached`, 10 rounds, 146 s, 205,424 tokens; 30 targets accepted, 0 rejected) | **81.15%** (1,012 of 1,247 statements) |
+| [`stats-befcbd2b6ada`](stats-befcbd2b6ada) | `befcbd2b6ada` | `PARALLEL_WRITERS` on, goal 100%, 30 rounds max, min gain 0.5, 5 targets per round, 3 fix attempts | 229 / 50 | 0% → 100.0% (`target_reached`, 17 rounds, 332 s, 480,774 tokens; 75 accepted, 1 rejected) | **100.00%** (1,247 of 1,247 statements) |
 
-Both runs used `openai/gpt-oss-120b` on Groq with the repo's own tests deleted first. `e2de1ca387cb` is also the
-committed backend test fixture (`backend/tests/fixtures/run_e2de1ca387cb`). Re-measured on 2026-10-10 with
-`golang:1.27-bookworm`; `go vet ./...` was clean and every test passed in both folders.
+Both runs used `openai/gpt-oss-120b` on Groq (Writer and Fixer at `medium` effort) with the repo's own tests deleted
+first. Re-measured on 2026-10-10 with `golang:1.27-bookworm`; `go vet ./...` was clean and every test passed in both
+folders.
+
+The 100% run reported two suspected bugs, and neither is locked in by a test: `Sigmoid`'s doc comment says the output
+range is -1 to 1 while the code (correctly) returns values in (0, 1), and the tests assert the mathematical values;
+`NormSample` is tested only for properties (length, and a constant output when the scale is 0).
 
 ## Re-running the check
 
 ```sh
 make verify-evidence                                         # both folders
-scripts/verify-evidence.sh docs/evidence/stats-73d630a6dd05  # one folder
+scripts/verify-evidence.sh docs/evidence/stats-befcbd2b6ada  # one folder
 ```
 
 Needs Docker and network access; works from Git Bash on Windows and on macOS / Linux. In a plain
@@ -32,6 +39,5 @@ tests.
 ## What `report.json` contains
 
 The app's final report of the run: per-file coverage before and after, each round, the tests and test files added,
-suspected bugs, token counts and duration (`73d630a6dd05` also has its AI summary). Both files were checked before
-they were committed: they hold no API keys or other secrets and no absolute host paths (files are named relative to the
-module root, and the AI summary names the tests folder as `output/<run>/tests`), so nothing was changed in them.
+suspected bugs, prediction disagreements, token counts and duration. Both files were checked before they were
+committed: they hold no API keys or other secrets and no absolute host paths, so nothing was changed in them.
