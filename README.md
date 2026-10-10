@@ -171,6 +171,7 @@ Environment (`.env`; only the key is required). [`.env.example`](.env.example) d
 | `GROQ_API_KEY` | (empty) | Needed to start a job |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | `openai/gpt-oss-20b` is cheaper and weaker |
 | `GROQ_WRITER_REASONING_EFFORT` / `GROQ_FIXER_REASONING_EFFORT` | `medium` / `medium` | `low` also works; `high` is accepted but too slow. An answer cut off for length is retried one level lower |
+| `PARALLEL_WRITERS` | false | Send each round's writer requests at once; validation stays one at a time, in plan order. Faster on paid keys, no gain on free-trial keys (8K tokens/min) |
 | `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only) |
 | `HOST_REPOS_DIR` | `./my-repos` | Your Go projects, mounted read-only at `/host-repos` |
 | `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily cap (not a Groq limit), counted in `output/.usage.json`, reset at midnight UTC |
@@ -208,6 +209,7 @@ The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` i
 - **Append-only test generation** through a small Go AST helper: accepted tests can't be lost, and failing tests are pruned one by one.
 - **Strict acceptance:** vet clean, tests pass twice, covered blocks strictly grow. Coverage never regresses.
 - **Token economy:** mechanical errors (forgotten imports, reused names) are repaired without an LLM call, and the planner packs up to 5 functions / 100 uncovered statements of one file into each call.
+- **The model predicts expected values; the Go runtime decides.** I considered a "record mode" where the LLM only chooses inputs and the system runs the function to capture the outputs as expected values. It would remove wrong-prediction failures and fixer calls, but every test would then agree with the code by construction and could never catch a bug. I kept the prediction as a weak, independent oracle: when it disagrees with the code, the observed value wins unless it contradicts the function's documentation, in which case the case is dropped and reported as a suspected bug (that is how the `Mode` bug in stats was flagged).
 - **Defense in depth, not a sandbox:** non-root user, env allowlist (the key is not passed to test processes), a best-effort import guard, timeouts with process-group kill, loopback-only ports, no Docker socket mount.
 
 ## What I would do differently in production
@@ -220,6 +222,7 @@ The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` i
 - **Supply chain:** pinned image digests and dependency hashes, plus an SBOM.
 - **Per-user rate limits and token budgets** instead of one app-wide daily budget.
 - **LLM endpoint:** a configurable OpenAI-compatible base URL, so a local model or a private deployment can replace Groq.
+- **Cheaper corrections:** patch simple mismatches (numbers, strings, booleans, error vs nil) from Go's own "got X, want Y" output without an LLM call, and keep the LLM fixer for suspicious cases (doc contradictions, NaN, panics).
 
 ## Limitations
 
@@ -250,6 +253,7 @@ I used Claude Code as a pair programmer and implementation team. I set the direc
 - **Proof that failing tests are not counted.** I asked for evidence, not an assurance: a fresh-clone re-run passed with 80.1%.
 - **Fixing `make` for PowerShell**, and the **UI gaps** (theme toggle, Run history, "← All runs", How it works page).
 - **LLM quality over token savings.** I traced semver's `constraints.go` item, asked why the Fixer kept failing, and decided five changes: (1) give the Fixer the item's full attempt history; (2) keep the tests that reached new lines and correct their expected values to the observed behaviour; (3) a reasoning effort per role, replacing the single `GROQ_REASONING_EFFORT` (then `low`), with both roles at `medium` because `high` was too slow; (4) a Writer rule to trace parsing logic before asserting; (5) measure it on semver: 64.2% before the earlier fixes, 84.6% after, nothing rejected.
+- **Prediction over record mode.** I weighed letting the runtime record expected values instead of the model predicting them, and kept prediction so the tests keep a chance of catching bugs.
 - **Disk-based run history** over a Redis/multi-user design, given the single-user scope.
 - **Hosted model, README-only privacy notice.** Groq rather than a local model (see [Why Groq](#why-groq-instead-of-a-local-model)), and the "code is sent to Groq" notice kept in this README rather than the UI.
 - **Publishing and disclosure.** The per-file disclosure wording and the pull-request workflow.
