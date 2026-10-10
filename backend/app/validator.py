@@ -1,5 +1,6 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-"""Decides whether a candidate test snippet is kept: guard → merge → compile → vet → assertions → test → coverage."""
+"""Decides whether a candidate test snippet is kept: guard → merge → assertion scan → compile → vet → assertion
+verdict → test (-count=2) → strict coverage gain."""
 from __future__ import annotations
 
 import json
