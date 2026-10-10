@@ -43,8 +43,12 @@ class Settings(BaseSettings):
     gocache: Path = Path("/home/app/.cache/go-build")
     gomodcache: Path = Path("/home/app/.cache/go-mod")
 
-    command_timeout_s: float = 120.0
-    test_timeout: str = "60s"
+    command_timeout_s: float = 120.0  # COMMAND_TIMEOUT_S: go list and gohelper
+    # Per stage, for the whole command (a cold module cache downloads modules during the first compile):
+    compile_timeout_s: float = Field(300.0, gt=0)  # COMPILE_TIMEOUT_S: go test -run=^$ (builds every test binary)
+    vet_timeout_s: float = Field(180.0, gt=0)  # VET_TIMEOUT_S: go vet
+    test_timeout_s: float = Field(300.0, gt=0)  # TEST_TIMEOUT_S: go test -count=2 -cover over every package
+    test_timeout: str = "60s"  # TEST_TIMEOUT: go test's own -timeout, per test binary
     max_output_chars: int = 20_000
     cors_origins: list[str] = ["http://localhost:3000"]
     host_repos_dir_display: str | None = None  # display only (HOST_REPOS_DIR_DISPLAY); never used as a path

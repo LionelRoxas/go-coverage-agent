@@ -198,9 +198,11 @@ It's written in Go because Python can't reliably parse Go, and `go/ast` can. It 
 | Wrapper | Command |
 |---|---|
 | `list_packages()` | `go list -json ./...` → includes import path, dir, name. Excludes `main` packages and packages whose **module-relative path** matches an `exclude_patterns` glob (default `examples/**`, `testdata/**`) |
-| `test(pkgs)` | `go test -count=2 -covermode=set -coverprofile=<tmp> -timeout=60s <pkgs>` (the one test command, used for baseline and validation) |
-| `compile(pkgs)` | `go test -count=1 -run=^$ <pkgs>` |
-| `vet(pkgs)` | `go vet <pkgs>` |
+| `test(pkgs)` | `go test -count=2 -covermode=set -coverprofile=<tmp> -timeout=60s <pkgs>` (the one test command, used for baseline and validation); killed after `TEST_TIMEOUT_S` (300 s) |
+| `compile(pkgs)` | `go test -count=1 -run=^$ <pkgs>`; killed after `COMPILE_TIMEOUT_S` (300 s: a cold module cache downloads modules here) |
+| `vet(pkgs)` | `go vet <pkgs>`; killed after `VET_TIMEOUT_S` (180 s) |
+
+`go list` and `gohelper` keep `COMMAND_TIMEOUT_S` (120 s). A stage killed at its timeout is reported by name: at baseline `job_failed{reason:"baseline_timeout"}` with e.g. "Baseline: the compile step (go test -run=^$) timed out after 300 s (COMPILE_TIMEOUT_S)."; for a candidate the check's output starts with the same "<stage> timed out after N s (ENV)" line.
 | `gohelper(...)` | §5.4 |
 | `go_directive()` | reads `go` version from `go.mod` (parsed in Python) |
 
@@ -424,6 +426,7 @@ stop("max_iterations")
 - **Non-test code doesn't build:** `job_failed{reason:"repo_does_not_build", output}`. Product code is never modified.
 - **Existing tests fail** (only when `delete_existing_tests=false`): `job_failed` with a hint to enable deletion.
 - **No Go packages after exclusions:** `job_failed` with an explanation.
+- **A stage times out** (`go list`, compile, `go test`, `go vet`, each with its own timeout, §5.5): `job_failed{reason:"baseline_timeout"}` whose message names the stage, the limit and its env var.
 - **`go vet` already fails on the unmodified repo:** `job_failed{reason:"repo_vet_fails"}`. Every candidate would otherwise be rejected as `vet_error`, wasting the whole token budget.
 
 ### 7.3 Acceptance rules
@@ -562,7 +565,7 @@ volumes: { gocache: {} }
 - Runs inside the container as non-root, never on the host. Only the workspace copy is executed or modified.
 - **Environment allowlist:** the API key is not passed to test processes. Code running as the same container user could still read it via `/proc`, so the guard also rejects `StartProcess` and `/proc/` in generated code (cheap filters, bypassable via string concatenation or reflection; no further denylist rules will be added). The guard does not make generated code safe; the real control is a per-job sandbox with a separate uid and no network (§11, future work).
 - **Import/content guard (best-effort filter, not a sandbox):** the snippet may import only standard library packages and the module's own packages. These are denied: `os/exec`, `net`, `net/*`, `syscall`, `unsafe`, `plugin`, `runtime/debug`.
-- Timeouts at two levels (`-timeout=60s`, process 120s), with process-group kill and output caps.
+- Timeouts at two levels (`-timeout=60s` per test binary; per process: compile 300 s, vet 180 s, test 300 s, other commands 120 s, §5.5), with process-group kill and output caps.
 - Only fixed commands run; the LLM can't choose commands.
 - Ports bound to loopback only.
 - **Folder uploads** (`POST /api/repos/upload`) write user-supplied files that are later compiled and tested, so: writes are subject to the origin check like every other write; every part's path is checked before anything is written (`\` normalised to `/`; absolute paths, `..`, `.`, empty segments, NUL and control characters, and `:` `<` `>` `"` `|` `?` `*` anywhere rejected, the last group so a segment can never carry a drive or an NTFS stream on a Windows host; at most 64 segments, 1,024 bytes per path and 255 per segment; all parts must share one top folder; a file the host can't create gives 400, never a 500) and each target must resolve inside the temp directory; only regular files are created (exclusive create, no symlinks); `.git`, `vendor`, `node_modules`, hidden paths, files over `UPLOAD_MAX_FILE_BYTES` (1 MB) and files with a NUL byte in their first 8 KB are skipped; at most `UPLOAD_MAX_FILES` (3,000) files and `UPLOAD_MAX_BYTES` (25 MB) are kept, and the raw body is cut off at twice the byte limit plus multipart overhead and at twice the file limit in parts (413 `upload_too_large`). Files go to `/repos/uploads/.tmp-<random>` and replace `/repos/uploads/<name>` with a rename under the clone lock; a destination is replaced only if it holds the `.gca-upload` marker of an earlier upload (otherwise 409 `name_taken`), and the temp directory is removed on any failure; `.tmp-*` folders older than an hour (left by a crash or kill) are removed on the next upload. `repos/uploads` is created with its own `.gca-uploads` marker, and an existing `uploads` folder without it (for example the user's own, under `HOST_REPOS_DIR`) is never written into (409 `uploads_dir_taken`). Jobs copy the repository under the same lock, so a re-upload never swaps a folder while a job is copying it. Error messages carry no server paths. `<name>` is the top folder (or `name`) reduced to lowercase letters, digits, `-`, `_`, `.`, at most 64 characters.

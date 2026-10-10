@@ -10,7 +10,7 @@ from app.agents.context import ContextProvider
 from app.agents.llm_agents import Agents
 from app.config import Settings
 from app.engine.orchestrator import RunDeps
-from app.gotools import GoToolError, GoTools, read_module_info
+from app.gotools import GoToolError, GoTools, read_module_info, timeout_message
 from app.llm.client import Emit, LLMClient
 from app.models import CoverageReport, JobRequest
 from app import repos
@@ -41,6 +41,10 @@ async def prepare(job_id: str, request: JobRequest, settings: Settings, llm: LLM
         if cancel.is_set():
             raise JobFailed("cancelled", "Cancelled before the baseline finished.")
 
+    def timed_out(stage: str, output: str) -> JobFailed:
+        return JobFailed("baseline_timeout", f"Baseline: {timeout_message(settings, stage)}. Raise it in .env for a "
+                         "large module or a cold module cache.", output)
+
     try:
         async with repos.repo_lock:  # an upload must not swap the folder while it is being copied
             # The copy only reads `source`; HOST_REPOS_DIR is read-only and never a write target.
@@ -58,6 +62,8 @@ async def prepare(job_id: str, request: JobRequest, settings: Settings, llm: LLM
         packages = await tools.list_packages(request.options.exclude_patterns)
     except GoToolError as e:
         check_cancelled()
+        if e.result.timed_out:
+            raise timed_out("list", e.result.combined) from e
         raise JobFailed("repo_does_not_build", "Go could not load this module.", e.result.combined) from e
     check_cancelled()
     if not packages:
@@ -77,6 +83,8 @@ async def prepare(job_id: str, request: JobRequest, settings: Settings, llm: LLM
                         e.result.combined) from e
     compiled = await tools.compile(packages)
     check_cancelled()
+    if compiled.timed_out:
+        raise timed_out("compile", compiled.combined)
     if compiled.exit_code != 0:
         raise JobFailed("repo_does_not_build", "The repo does not build with this Go toolchain.", compiled.combined)
     validator = Validator(ws, tools, packages, funcs, module)
@@ -84,7 +92,7 @@ async def prepare(job_id: str, request: JobRequest, settings: Settings, llm: LLM
     check_cancelled()
     if measured.report is None:
         if measured.result.timed_out:
-            raise JobFailed("baseline_timeout", "The existing tests timed out.", measured.result.combined)
+            raise timed_out("test", measured.result.combined)
         if ws.test_files():
             raise JobFailed("existing_tests_fail",
                             "The repo's existing tests fail. Enable 'delete existing tests' or fix them first.",
@@ -93,6 +101,8 @@ async def prepare(job_id: str, request: JobRequest, settings: Settings, llm: LLM
                         measured.result.combined)
     vet = await tools.vet(packages)
     check_cancelled()
+    if vet.timed_out:
+        raise timed_out("vet", vet.combined)
     if vet.exit_code != 0:
         # Every candidate would be rejected as vet_error, so fail now instead of wasting the token budget.
         raise JobFailed("repo_vet_fails", "`go vet` already fails on the unmodified repo.", vet.combined)

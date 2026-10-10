@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import Any
 
 from app.coverage import parse_profile, summarize
-from app.gotools import CommandResult, GoPackage
+from app.gotools import CommandResult, GoPackage, timeout_message
 from app.guard import check_snippet, render_snippet, test_names
 from app.models import CoverageReport, FuncInfo, TestSnippet
 from app.workspace import Workspace
@@ -116,16 +116,20 @@ class Validator:
             return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests)
         return await self.check(prev, [n for n in new_tests if n not in names])
 
+    def _output(self, r: CommandResult, stage: str) -> str:
+        """The command's output, after a line naming the stage when it was killed at its timeout."""
+        return f"{timeout_message(self.tools.settings, stage)}\n{r.combined}" if r.timed_out else r.combined
+
     async def check(self, prev: CoverageReport, new_tests: list[str]) -> ValidationResult:
         r = await self.tools.compile(self.packages)
         if r.exit_code != 0:
-            return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests)
+            return ValidationResult(ValidationKind.COMPILE_ERROR, self._output(r, "compile"), new_tests=new_tests)
         r = await self.tools.vet(self.packages)
         if r.exit_code != 0:
-            return ValidationResult(ValidationKind.VET_ERROR, r.combined, new_tests=new_tests)
+            return ValidationResult(ValidationKind.VET_ERROR, self._output(r, "vet"), new_tests=new_tests)
         m = await self.measure()
         if m.report is None:
-            output = "tests timed out (60s)\n" + m.result.combined if m.result.timed_out else m.result.combined
+            output = self._output(m.result, "test")
             failed = parse_failed_tests(m.result.combined) or list(new_tests)
             return ValidationResult(ValidationKind.TEST_FAILURE, output, failed_tests=failed, new_tests=new_tests)
         before, after = prev.covered_set(), m.report.covered_set()

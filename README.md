@@ -305,6 +305,7 @@ Environment variables (`.env`, same layout as `.env.example`). Only the key is r
 | `UPLOAD_MAX_FILE_BYTES` | 1048576 (1 MB) | Single files larger than this are skipped in an upload |
 | `GROQ_MAX_COMPLETION_TOKENS` | 65536 | Output-token cap per call (the model maximum). Empty does not mean unlimited: Groq then applies a smaller default |
 | `GROQ_TIMEOUT_S` | 240 | Seconds one Groq request may take. A timed-out request is retried once at `low` reasoning effort; a second timeout fails the item as "Groq timed out" |
+| `COMPILE_TIMEOUT_S` / `VET_TIMEOUT_S` / `TEST_TIMEOUT_S` | 300 / 180 / 300 | Seconds the compile step (`go test -run=^$`), `go vet` and `go test -cover` may each take over the whole module before they are stopped. A baseline timeout names the stage; raise the value for a large module or a cold module cache |
 | `LLM_UNAVAILABLE_AFTER_S` | 600 | Seconds Groq may stay unreachable (timeouts, 5xx, connection errors, in a row) before the run stops with `llm_unavailable`; meanwhile affected items are retried later with backoff and never count as failed |
 | `HISTORY_MAX_RUNS` | 500 | How many of the most recent runs in `./output` Run history reloads on startup; older folders stay on disk but are not listed |
 
