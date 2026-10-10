@@ -66,6 +66,15 @@ describe("JobPage", () => {
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
 
+  it("shows the load error instead of the loading page when a saved run replays nothing", async () => {
+    vi.mocked(api.job).mockResolvedValue({ status: "completed", writing_summary: false } as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    act(() => FakeEventSource.last!.onerror!());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't read this run's saved events (./output/gone/events.jsonl).");
+    expect(screen.queryByTestId("job-loading")).not.toBeInTheDocument();
+  });
+
   it("explains that a run no longer exists when the API returns 404", async () => {
     vi.mocked(api.job).mockRejectedValue(new ApiError(404, "not_found", "no such job"));
     render(<JobPage />);

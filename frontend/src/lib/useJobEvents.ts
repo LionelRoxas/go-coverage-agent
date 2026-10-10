@@ -5,6 +5,8 @@ import { api, ApiError } from "./api";
 import { initialState, reduce, summaryWaiting } from "./runState";
 
 const TERMINAL = new Set(["completed", "failed", "cancelled", "interrupted"]);
+const END_EVENTS = new Set(["job_completed", "job_cancelled", "job_failed"]);
+const SUMMARY_EVENTS = new Set(["summary_generated", "summary_failed"]);
 
 export type Connection = "open" | "reconnecting" | "closed";
 
@@ -31,25 +33,46 @@ export function useJobEvents(jobId: string) {
         if (cancelled) return;
         // Not running and not writing its summary (e.g. reloaded from ./output): the stream replays and then ends.
         const ended = !!job && TERMINAL.has(job.status) && !job.writing_summary;
+        // What this stream replayed: whether it reached the run's end (and its summary, when the snapshot says one exists).
+        let received = false, sawEnd = false, sawSummary = false;
         const es = new EventSource(api.eventsUrl(jobId));
         source.current = es;
         es.onopen = () => patch({ connection: "open", error: null });
         es.onerror = () => {
-          if (ended) {
-            es.close(); // the replay is complete; EventSource would otherwise replay it again and again
-            dispatch({ type: "stream_ended" });
+          if (ended && !received) {
+            // Nothing was replayed: the saved events were deleted or can't be read (or the run is gone).
+            es.close();
+            api.job(jobId).then(
+              () => { if (!cancelled) patch({ error: `Couldn't read this run's saved events (./output/${jobId}/events.jsonl).` }); },
+              (e) => {
+                if (cancelled) return;
+                if (e instanceof ApiError && e.status === 404) patch({ notFound: true });
+                else patch({ error: e instanceof Error ? e.message : String(e) });
+              });
             return;
           }
+          if (ended && (job.status === "interrupted" || (sawEnd && (sawSummary || !job.ai_summary)))) {
+            es.close(); // the replay is complete; EventSource would otherwise replay it again and again
+            dispatch({ type: "stream_ended", saved: job.status });
+            return;
+          }
+          // A live job's stream dropped, or a finished run's replay was cut before its end: the browser retries and
+          // replays it again (already-seen events are ignored).
           patch({ connection: "reconnecting" });
           if (es.readyState !== EventSource.CLOSED) return; // the browser is retrying by itself
-          // The browser gave up (e.g. the backend restarted and forgot the job): find out whether it still exists.
+          // The browser gave up (e.g. its folder was deleted from ./output, or it is older than the runs reloaded on
+          // startup): find out whether it still exists.
           api.job(jobId).catch((e) => {
             if (!cancelled && e instanceof ApiError && e.status === 404) patch({ notFound: true });
           });
         };
         es.onmessage = (m) => {
           try {
-            dispatch(JSON.parse(m.data));
+            const ev = JSON.parse(m.data);
+            dispatch(ev);
+            received = true;
+            if (END_EVENTS.has(ev.type)) sawEnd = true;
+            if (SUMMARY_EVENTS.has(ev.type)) sawSummary = true;
           } catch {
             if (!warned) {
               warned = true;

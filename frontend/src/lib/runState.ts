@@ -143,12 +143,15 @@ function addCheck(i: ItemView, check: Check): ItemView {
 export const summaryWaiting = (s: RunState) => s.aiSummary?.status === "waiting";
 
 // "summary_requested": Write summary / Write again was accepted; its events follow on a reopened stream.
-// "stream_ended": the stream of a run that is not running (e.g. reloaded from ./output) replayed everything and ended.
-export type RunAction = JobEvent | { type: "reset" } | { type: "summary_requested" } | { type: "stream_ended" };
+// "stream_ended": the stream of a run that is not running (e.g. reloaded from ./output) replayed everything and ended;
+// `saved` is the status its snapshot reported.
+export type RunAction = JobEvent | { type: "reset" } | { type: "summary_requested" }
+  | { type: "stream_ended"; saved?: string };
 
-// Nothing more will come: a run without its terminal event was interrupted, and a summary still "waiting" never came.
-function streamEnded(s: RunState): RunState {
-  if (s.status === "running")
+// Nothing more will come: a run the backend reports as interrupted is marked so (never one it reports as finished),
+// and a summary still "waiting" never came.
+function streamEnded(s: RunState, saved?: string): RunState {
+  if (s.status === "running" && saved === "interrupted")
     return { ...settleUnfinished(clearPending(s), "stopped"), status: "interrupted",
              activity: "The app stopped before this run finished." };
   if (s.aiSummary?.status === "waiting")
@@ -160,7 +163,7 @@ function streamEnded(s: RunState): RunState {
 export function reduce(state: RunState, ev: RunAction): RunState {
   if (ev.type === "summary_requested")
     return { ...state, aiSummary: { ...state.aiSummary, status: "waiting", pending: undefined, error: undefined } };
-  if (ev.type === "stream_ended") return streamEnded(state);
+  if (ev.type === "stream_ended") return streamEnded(state, (ev as { saved?: string }).saved);
   if (!("seq" in ev)) return initialState; // "reset": a different job was opened
   if (ev.seq <= state.lastSeq) return state;
   const s: RunState = { ...state, lastSeq: ev.seq };

@@ -340,7 +340,7 @@ describe("items the run never finished", () => {
 
   it("marks a run whose stream ended without a terminal event as interrupted, items stopped", () => {
     const writing = ev("llm_request", { index: 11, file: "clip.go", role: "writer", reasoning_effort: "medium" });
-    const s = reduce(run([...planned(), writing]), { type: "stream_ended" });
+    const s = reduce(run([...planned(), writing]), { type: "stream_ended", saved: "interrupted" });
     expect(s.status).toBe("interrupted");
     expect(items(s).map((i) => [i.status, i.notRunReason])).toEqual([
       ["accepted", undefined], ["not_run", "stopped"], ["not_run", "stopped"],
@@ -351,7 +351,12 @@ describe("items the run never finished", () => {
 
   it("leaves a finished run alone when its stream ends", () => {
     const s = run([...planned(), ev("job_completed", { stop_reason: "target_reached", final_percent: 81.07, message: "Reached" })]);
-    expect(reduce(s, { type: "stream_ended" })).toBe(s);
+    expect(reduce(s, { type: "stream_ended", saved: "completed" })).toBe(s);
+  });
+
+  it("never marks a run the backend reports as completed as interrupted", () => {
+    const s = run(planned());
+    expect(reduce(s, { type: "stream_ended", saved: "completed" })).toBe(s);
   });
 
   it("fails a summary that never came when the stream ends", () => {
@@ -359,7 +364,7 @@ describe("items the run never finished", () => {
                    ev("job_completed", { stop_reason: "target_reached", final_percent: 81, message: "Reached" }),
                    ev("llm_request", { role: "summarizer", reasoning_effort: "medium" })]);
     expect(s.aiSummary?.status).toBe("waiting");
-    const ended = reduce(s, { type: "stream_ended" });
+    const ended = reduce(s, { type: "stream_ended", saved: "completed" });
     expect(ended.status).toBe("completed");
     expect(ended.aiSummary).toEqual({ status: "failed", pending: undefined,
                                       error: { reason: "interrupted", message: "The app stopped before the summary was written." } });
