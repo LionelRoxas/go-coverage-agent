@@ -16,7 +16,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { duration, tokens } from "@/lib/format";
-import { waitingOn } from "@/lib/runState";
+import { waitingAll } from "@/lib/runState";
 import { useJobEvents } from "@/lib/useJobEvents";
 
 function AllRuns() {
@@ -41,7 +41,7 @@ export default function JobPage() {
   // "connecting" returns early below, so the clock and Cancel only ever see a known status.
   const running = state.status === "running";
   const elapsed = useElapsed(state.startedAt, running);
-  const waiting = running ? waitingOn(state) : undefined;
+  const [waiting, ...alsoWaiting] = running ? waitingAll(state) : [];
 
   const cancel = async () => {
     setCancelling(true);
@@ -128,7 +128,8 @@ export default function JobPage() {
         {/* While running this says what is happening now; afterwards the summary or failure below says it. */}
         {running && (
           <p className="text-sm text-muted" aria-live="polite">
-            {waiting ? <><GroqWait pending={waiting} detailed /> ({waiting.file})</> : state.activity}
+            {waiting ? <><GroqWait pending={waiting} others={alsoWaiting} detailed />{!alsoWaiting.length && ` (${waiting.file})`}</>
+              : state.activity}
           </p>
         )}
         {job === "interrupted" && (

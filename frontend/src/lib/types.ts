@@ -49,6 +49,7 @@ export type JobOptions = {
   max_llm_tokens: number;
   exclude_patterns: string[];
   write_summary: boolean; // backend default: true
+  parallel_writers?: boolean; // set by the server from PARALLEL_WRITERS; older runs lack it
 };
 
 /** The end-of-run AI summary (summary_generated), written from the run's measured facts. */
