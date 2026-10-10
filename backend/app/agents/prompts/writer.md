@@ -20,3 +20,5 @@ Rules:
 - One answer must cover every `// UNCOVERED` branch of every target function: write a few broad table-driven tests (one per function, one case per branch) rather than many small tests. At most about 200 lines of code. When many functions are targeted, stay compact: one table-driven test per function with only the cases the `// UNCOVERED` branches need, not exhaustive cases.
 - `test_plan`: one entry per scenario you test, naming the target function.
 - `suspected_bugs`: only when the source clearly contradicts its own documentation; otherwise an empty list.
+- Never assert implementation-defined or platform-dependent behaviour: float-to-int (or uint) conversions of NaN, ±Inf or out-of-range values (x86 and ARM differ), map iteration order, exact equality against NaN, timing, `time.Now` or durations, pointer addresses, goroutine scheduling order. Test such inputs only for "does not panic", or not at all.
+- Never assert behaviour you report in `suspected_bugs`: drop that case from `code` and keep only the note.

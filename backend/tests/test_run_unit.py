@@ -163,3 +163,30 @@ async def test_workspace_is_kept_when_the_export_fails(monkeypatch, tmp_path):
 
     await run_job("j1", JobRequest(repo_path="stats"), settings, None, emit, asyncio.Event(), lambda: [])
     assert (settings.work_dir / "j1" / "repo" / "mean_test.go").is_file()
+
+
+async def test_a_refuted_suspected_bug_never_reaches_the_report(monkeypatch, tmp_path):
+    from pathlib import Path
+    from app.models import SuspectedBug
+    settings = _patch_with_workspace(monkeypatch, tmp_path)
+    bugs = [SuspectedBug(function="Mode", description="returns the value twice"),
+            SuspectedBug(function="Median", description="not refuted")]
+
+    class Orch:
+        def __init__(self, *a, **k): pass
+
+        async def run(self, baseline):
+            return _summary(["mean_test.go"]).model_copy(update={"suspected_bugs": bugs})
+
+    monkeypatch.setattr(run_module, "Orchestrator", Orch)
+    fixture = Path(__file__).parent / "fixtures" / "run_f910d155f3cd" / "events.jsonl"
+    events = [Event.model_validate_json(line) for line in fixture.read_text(encoding="utf-8").splitlines() if line]
+    run_events = [e for e in events if e.type != "job_completed"]
+
+    async def emit(t, d): pass
+
+    summary = await run_job("j1", JobRequest(repo_path="stats"), settings, None, emit, asyncio.Event(),
+                            lambda: run_events)
+    assert [b.function for b in summary.suspected_bugs] == ["Median"]
+    report = json.loads((settings.output_dir / "j1" / "report.json").read_text())
+    assert [b["function"] for b in report["suspected_bugs"]] == ["Median"]

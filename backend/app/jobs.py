@@ -232,6 +232,8 @@ class JobManager:
             raise JobConflict(running.id)
         while (job_id := uuid.uuid4().hex[:12]) in self.jobs or (self.settings.output_dir / job_id).exists():
             pass  # never reuse the id of a loaded or saved run
+        request = request.model_copy(update={"options": request.options.model_copy(
+            update={"parallel_writers": self.settings.parallel_writers})})  # a server setting, not a client choice
         job = Job(job_id, request)
         self.jobs[job.id] = job
         job.task = asyncio.create_task(self._run(job))

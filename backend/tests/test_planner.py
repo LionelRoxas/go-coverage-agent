@@ -75,3 +75,21 @@ def test_file_with_seven_uncovered_functions_yields_first_target_of_at_most_five
     r = report(*[fc("a.go", f"F{i}", 1) for i in range(7)])
     items = plan(r, {}, set())
     assert len(items[0].functions) <= 5
+
+
+def test_never_two_items_for_the_same_file_in_one_round():
+    """PARALLEL_WRITERS relies on it: a round's writers never share a test file (one item per source file), for
+    every targets_per_iteration up to 5, including after earlier splits (functions skipped as too large, or failed)
+    send the rest of a file back to the pool."""
+    import random
+    rng = random.Random(51)
+    files = [f"pkg/f{i}.go" for i in range(7)]
+    for _ in range(300):
+        fns = [fc(rng.choice(files), f"F{n}", rng.randint(1, 80), covered=rng.choice([0, 0, 1])) for n in range(25)]
+        keys = [f.key for f in fns]
+        skipped = set(rng.sample(keys, rng.randint(0, 8)))  # single functions skipped after a too-large answer
+        failed = {k: rng.randint(0, 2) for k in rng.sample(keys, rng.randint(0, 8))}
+        for max_items in range(1, 6):
+            items = plan(report(*fns), failed, skipped, max_items=max_items)
+            assert len({i.file for i in items}) == len(items) <= max_items
+            assert all(k.file == i.file for i in items for k in i.functions)

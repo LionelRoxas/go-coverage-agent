@@ -80,3 +80,33 @@ def test_proc_path_rejected_in_string_literals_but_not_comments():
         assert any("/proc/" in p for p in check_snippet(bad, MOD)), lit
     ok = snip(code="// never read /proc/self" + chr(10) + "func TestX(t *testing.T) {}")
     assert not check_snippet(ok, MOD)
+
+
+def test_nan_inf_to_integer_conversion_rejected():
+    for expr in ("int(math.Inf(-1))", "int(math.Inf(1))", "int64(math.NaN())", "uint(math.Inf(1))",
+                 "uint8( math.NaN() )", "int32(math.Inf(1))", "uintptr(math.NaN())"):
+        bad = snip(code=f"func TestX(t *testing.T) {{ _ = {expr} }}", imports=("testing", "math"))
+        assert any("platform-dependent" in p for p in check_snippet(bad, MOD)), expr
+
+
+def test_exact_util_test_lines_rejected():
+    code = (
+        "func TestFloat64ToInt(t *testing.T) {\n\tcases := []struct{ name string; input float64; want int }{\n"
+        '\t\t{"nan", math.NaN(), int(math.Inf(-1))},\n\t\t{"positive inf", math.Inf(1), int(math.Inf(-1))},\n'
+        '\t\t{"negative inf", math.Inf(-1), int(math.Inf(-1))},\n\t}\n\t_ = cases\n}'
+    )
+    problems = check_snippet(snip(code=code, imports=("testing", "math")), MOD)
+    assert sum("platform-dependent" in p for p in problems) == 1
+    assert any("drop that case" in p for p in problems)
+
+
+def test_nan_inf_checks_have_no_false_positives():
+    code = (
+        "// int(math.Inf(1)) would be platform-dependent\n"
+        "func TestX(t *testing.T) {\n"
+        '\t_ = "int(math.NaN())"\n\t_ = `int64(math.Inf(1))`\n'
+        "\t/* uint(math.NaN()) */\n"
+        "\tif !math.IsNaN(math.NaN()) || !math.IsInf(math.Inf(1), 1) {\n\t\tt.Fatal()\n\t}\n"
+        "\t_ = float64(math.Inf(1))\n\t_ = float32(math.NaN())\n\t_ = int(math.Floor(2.5))\n\t_ = myint(math.NaN())\n}"
+    )
+    assert check_snippet(snip(code=code, imports=("testing", "math")), MOD) == []

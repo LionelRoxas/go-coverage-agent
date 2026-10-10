@@ -7,14 +7,14 @@ import logging
 import time
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Coroutine
 
 from app.agents.context import ContextTooLarge
 from app.agents.history import AttemptRecord, attempt_record
 from app.agents.planner import plan
 from app.agents.repair import clean_imports, mechanical_repair
 from app.engine.policy import StopPolicy, stop_message
-from app.llm.client import (Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal,
+from app.llm.client import (LLM_CALL, Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal,
                             LLMOutputTooLarge, LLMTimeout, LLMTransportError, LLMUnavailable, OnRequest)
 from app.models import (CoverageReport, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem, StopReason,
                         Summary, SuspectedBug, TestSnippet, TokenUsage)
@@ -41,6 +41,15 @@ class GroqUnreachable(Exception):
 
 
 @dataclass
+class _Written:
+    """One writer request of a parallel round: its answer, or the error it ended with (raised again, in plan order,
+    when the item is validated, so it takes exactly the path it would have taken in a sequential round)."""
+    snip: TestSnippet | None = None
+    error: BaseException | None = None
+    started: float = 0.0
+
+
+@dataclass
 class RunDeps:
     ws: Workspace
     validator: Any
@@ -52,14 +61,22 @@ class RunDeps:
 class Orchestrator:
     def __init__(self, deps: RunDeps, request: JobRequest, emit: Emit, cancel: asyncio.Event,
                  clock: Callable[[], float] = time.monotonic,
-                 sleep: Callable[[float], Awaitable[None]] | None = None, unavailable_after_s: float = 600.0):
+                 sleep: Callable[[float], Awaitable[None]] | None = None, unavailable_after_s: float = 600.0,
+                 call_reservation: int = 0):
         self.deps, self.request, self.emit, self.cancel, self.clock = deps, request, emit, cancel, clock
         self._sleep, self.unavailable_after_s = sleep, unavailable_after_s
+        # Job budget (max_llm_tokens): every call reserves this many tokens while it is in flight
+        # (CALL_TOKEN_RESERVATION), so calls running at the same time never jointly overshoot the budget by more
+        # than one reservation, as long as each call stays within CALL_TOKEN_RESERVATION (a larger answer adds its
+        # excess, as a single call does in a sequential run).
+        self.call_reservation = call_reservation
+        self._reserved = 0
         # The current run of Groq transport failures: when the first failing call started, and how many in a row.
         self._outage_since: float | None = None
         self._outage_failures = 0
         self.deferred = 0  # items that hit a transport failure (planned again later, never counted as failed)
         self.opts = request.options
+        self.parallel = self.opts.parallel_writers  # PARALLEL_WRITERS: each round's writer requests go out together
         self.policy = StopPolicy(request.target_coverage, self.opts.min_gain, self.opts.patience)
         self.tokens = TokenUsage()
         self.failed: Counter[FuncKey] = Counter()
@@ -103,16 +120,28 @@ class Orchestrator:
                  "uncovered_statements": i.uncovered_statements} for i in items]})
             accepted = rejected = 0
             deferred_before = self.deferred
-            for item in items:
+            written: list[_Written] | list[None] = (await self._write_round(items) if self.parallel
+                                                    else [None] * len(items))
+            refused: LLMBudgetExhausted | None = None
+            for item, answer in zip(items, written):  # validation: one item at a time, in plan order
+                if answer is not None and isinstance(answer.error, LLMBudgetExhausted) and answer.error.local:
+                    # Refused before it was sent (budget reserved by the round's other requests): skip it, check
+                    # the answers already paid for, then stop for the budget.
+                    refused = refused or answer.error
+                    continue
                 before = self.deferred
-                if await self._attempt(item):
+                if await self._attempt(item, answer):
                     accepted += 1
                 elif self.deferred == before:  # a deferred item is not a rejection
                     rejected += 1
                 if self.policy.target_reached(self.report.percent):
                     await self._record(index, start, accepted, rejected, self.deferred - deferred_before)
                     return StopReason.TARGET_REACHED
+            if refused is not None:
+                raise refused
             deferred = self.deferred - deferred_before
+            if self.parallel and deferred and self._outage_since is not None:
+                await self._back_off()  # once per round: the round's requests all went out together
             outage_only = accepted == 0 and rejected == 0 and deferred > 0
             await self._record(index, start, accepted, rejected, deferred, count_gain=not outage_only)
             if not outage_only:
@@ -137,27 +166,98 @@ class Orchestrator:
         if self.tokens.total >= self.opts.max_llm_tokens:
             raise LLMBudgetExhausted("Reached this job's token budget (max_llm_tokens).")
 
-    async def _call(self, role: str, item: PlanItem,
-                    coro: Awaitable[tuple[TestSnippet, TokenUsage]]) -> TestSnippet:
+    def _reserve(self) -> None:
+        """Check the job budget and reserve one call's worth, atomically (no await in between). Calls in flight
+        count with their reservation; with none in flight this is exactly the check `_check` makes."""
+        if self.tokens.total + self._reserved >= self.opts.max_llm_tokens:
+            exhausted = LLMBudgetExhausted("Reached this job's token budget (max_llm_tokens).")
+            exhausted.local = True  # refused before Groq was contacted
+            raise exhausted
+        self._reserved += self.call_reservation
+
+    async def _call(self, role: str, item: PlanItem, coro: Coroutine[Any, Any, tuple[TestSnippet, TokenUsage]],
+                    track_outage: bool = True) -> TestSnippet:
+        """`track_outage=False`: a parallel writer; `_write_round` applies the outage bookkeeping in plan order."""
+        try:
+            self._reserve()
+        except LLMBudgetExhausted:
+            coro.close()  # never started
+            raise
         started = self.clock()
         try:
             snip, usage = await coro
         except LLMError as e:
+            self._reserved -= self.call_reservation  # released; what Groq billed is charged instead
             # Groq billed these before the call failed (truncated answers, a schema retry, a timeout after a billed
             # attempt); they are in the daily ledger already and count toward this job's tokens and budget too.
             if e.spent.total > 0:
                 await self._charge(role, item, e.spent, failed=True)
             if isinstance(e, LLMCancelled):
                 raise Cancelled() from e
-            if isinstance(e, LLMTransportError):
-                if self._outage_since is None:
-                    self._outage_since = started
-            elif not e.local:  # Groq answered (with an error about this request): any outage is over
-                self._outage_since, self._outage_failures = None, 0
+            if track_outage:
+                self._note_outage(e, started)
             raise
-        self._outage_since, self._outage_failures = None, 0
+        except BaseException:
+            self._reserved -= self.call_reservation
+            raise
+        # Reconcile: the reservation is replaced by the actual usage (`_charge` adds it before its first await, and
+        # reads the answering effort from `agents.last_effort` before any other call can resume and change it).
+        self._reserved -= self.call_reservation
+        if track_outage:
+            self._outage_since, self._outage_failures = None, 0
         await self._charge(role, item, usage)
         return snip
+
+    def _note_outage(self, e: BaseException, started: float) -> None:
+        if isinstance(e, LLMTransportError):
+            if self._outage_since is None:
+                self._outage_since = started
+        elif isinstance(e, LLMError) and not e.local:  # Groq answered (with an error about this request): outage over
+            self._outage_since, self._outage_failures = None, 0
+
+    def _write(self, item: PlanItem, inputs: Any) -> Coroutine[Any, Any, tuple[TestSnippet, TokenUsage]]:
+        on_request = self._on_request("writer", item)
+        if self.parallel:  # other writers work on the same package at the same time: ask for distinct names
+            return self.deps.agents.write(item, inputs, on_request=on_request, parallel=True)
+        return self.deps.agents.write(item, inputs, on_request=on_request)
+
+    async def _write_round(self, items: list[PlanItem]) -> list[_Written]:
+        """Send every writer request of the round at once, each built from the round-start state. Each request
+        reserves its share of the job budget, and charges and reports its own tokens when it answers."""
+        self._check()
+
+        async def write(item: PlanItem) -> _Written:
+            out = _Written()
+            # rate_limited events of this request name its item, so the UI pauses only that one (a task's own context)
+            LLM_CALL.set({"index": self.index, "file": item.file, "role": "writer"})
+            try:
+                if self.cancel.is_set():  # Cancel pressed before this request went out: never send it
+                    raise Cancelled()
+                inputs = await self.deps.contexts.inputs_for(item, self.report)
+                if self.cancel.is_set():
+                    raise Cancelled()
+                out.started = self.clock()
+                out.snip = await self._call("writer", item, self._write(item, inputs), track_outage=False)
+            except (LLMError, ContextTooLarge, Cancelled) as e:
+                out.error = e
+            return out
+
+        tasks = [asyncio.ensure_future(write(item)) for item in items]
+        try:
+            written = list(await asyncio.gather(*tasks))
+        except BaseException:  # e.g. the job task itself was cancelled: never leave a request running
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        if self.cancel.is_set() or any(isinstance(w.error, Cancelled) for w in written):
+            raise Cancelled()
+        for w in written:  # the outage bookkeeping `_call` does, in plan order so it never depends on timing
+            if w.error is None:
+                self._outage_since, self._outage_failures = None, 0
+            else:
+                self._note_outage(w.error, w.started)
+        return written
 
     async def _back_off(self) -> None:
         """After a transport failure: stop the run once Groq has been unreachable for the outage window, else wait
@@ -228,8 +328,13 @@ class Orchestrator:
         await self.emit("candidate_rejected", {**base, "reason": "too_large"})
         return False
 
-    async def _attempt(self, item: PlanItem) -> bool:
-        self._check()
+    async def _attempt(self, item: PlanItem, written: _Written | None = None) -> bool:
+        """`written`: the item's writer answer from a parallel round. Its context is built again here from the
+        current workspace, so names accepted earlier in the round count for the mechanical rename and the Fixer."""
+        if written is None:
+            self._check()
+        elif self.cancel.is_set():  # the answer is paid for and checking it costs no tokens: only Cancel stops it
+            raise Cancelled()
         ws, validator = self.deps.ws, self.deps.validator
         test_file, package = test_path_for(item.file), self.deps.package_of(item.file)
         base = {"index": self.index, "file": item.file}
@@ -245,8 +350,12 @@ class Orchestrator:
         try:
             try:
                 # render_context (inside agents.write) is where ContextTooLarge is actually raised
-                snip = await self._call("writer", item, self.deps.agents.write(
-                    item, inputs, on_request=self._on_request("writer", item)))
+                if written is None:
+                    snip = await self._call("writer", item, self._write(item, inputs))
+                elif written.error is not None:
+                    raise written.error
+                else:
+                    snip = written.snip
             except ContextTooLarge:
                 too_large = True
             except LLMOutputTooLarge:  # only the writer's answer is split; the fixer's falls through as LLM_ERROR
@@ -317,15 +426,19 @@ class Orchestrator:
                 self.test_files.append(test_file)
             if snip is not None:
                 self.bugs.extend(snip.suspected_bugs)
-            await self.emit("candidate_accepted", {**base, "test_file": test_file, "tests": result.new_tests,
-                                                   "percent": self.report.percent, "gain": gain})
+            accepted: dict[str, Any] = {**base, "test_file": test_file, "tests": result.new_tests,
+                                        "percent": self.report.percent, "gain": gain}
+            if snip is not None and snip.suspected_bugs:  # where each claim came from, to drop any Go refuted later
+                accepted["suspected_bugs"] = [b.model_dump() for b in snip.suspected_bugs]
+            await self.emit("candidate_accepted", accepted)
             return True
 
         ws.restore(snap)
         if transport:  # Groq was unreachable: not this item's fault, so it is planned again in a later round
             self.deferred += 1
             await self.emit("candidate_deferred", {**base, "reason": result.kind.value})
-            await self._back_off()
+            if not self.parallel:  # a parallel round backs off once, after all its items (see _loop)
+                await self._back_off()
             return False
         for key in item.functions:
             self.failed[key] += 1

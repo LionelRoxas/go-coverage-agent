@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import { describe, expect, it } from "vitest";
-import { initialState, reduce, summaryWaiting, waitingOn } from "./runState";
+import { initialState, reduce, summaryWaiting, waitingAll, waitingOn } from "./runState";
 import type { JobEvent } from "./types";
 import { statsSummary } from "./fixtures/aiSummary";
 import { constraintsFixTooLarge, constraintsNoGain, constraintsRenamed, loadFirstTry, movingFixed, normPruned } from "./fixtures/traceEvents";
@@ -316,6 +316,38 @@ describe("waiting on Groq (llm_request)", () => {
     expect(waitingOn(tooLarge)).toBeUndefined();
     expect(itemIn([...base, e("llm_request", { ...at, role: "writer" }), e("candidate_accepted", { ...at, percent: 5, gain: 5 })]).pending)
       .toBeUndefined();
+  });
+
+  it("keeps every writer request of a parallel round pending until its own llm_call", () => {
+    const { e } = start();
+    const items = ["a.go", "b.go", "c.go"].map((file) => ({ file, functions: ["F"], uncovered_statements: 1 }));
+    const events = [e("job_started", { repo_path: "r", target_coverage: 100, model: "m" }),
+      e("iteration_started", { index: 1, percent: 0 }), e("plan_created", { index: 1, items }),
+      ...items.map((i, n) => e("llm_request", { index: 1, file: i.file, role: "writer", reasoning_effort: "medium" }, 500 + n))];
+    expect(waitingAll(run(events)).map((w) => [w.file, w.since])).toEqual([["a.go", 500], ["b.go", 501], ["c.go", 502]]);
+    expect(waitingOn(run(events))?.file).toBe("a.go"); // the oldest
+    // b.go answers first: only its request stops waiting
+    const answered = run([...events, e("llm_call", { index: 1, file: "b.go", role: "writer", completion_tokens: 5, total_tokens: 15 })]);
+    expect(waitingAll(answered).map((w) => w.file)).toEqual(["a.go", "c.go"]);
+    expect(answered.iterations[0].items.map((i) => i.writerTokens)).toEqual([undefined, 5, undefined]);
+  });
+
+  it("a rate-limit wait of one parallel writer pauses only that item", () => {
+    const { e } = start();
+    const items = ["a.go", "b.go", "c.go"].map((file) => ({ file, functions: ["F"], uncovered_statements: 1 }));
+    const req = (file: string, ts: number) => e("llm_request", { index: 1, file, role: "writer", reasoning_effort: "medium" }, ts);
+    const events = [e("job_started", { repo_path: "r", target_coverage: 100, model: "m" }),
+      e("iteration_started", { index: 1, percent: 0 }), e("plan_created", { index: 1, items }),
+      req("a.go", 500), req("b.go", 501), req("c.go", 502)];
+    const limited = run([...events, e("rate_limited", { seconds: 12, reason: "429", index: 1, file: "b.go", role: "writer" })]);
+    expect(waitingAll(limited).map((w) => w.file)).toEqual(["a.go", "c.go"]);
+    expect(limited.rateLimited).toEqual({ file: "b.go", seconds: 12, reason: "429" });
+    expect(limited.activity).toMatch(/^Waiting 12s for the Groq rate limit/);
+    const retried = run([...events, e("rate_limited", { seconds: 12, reason: "429", index: 1, file: "b.go", role: "writer" }), req("b.go", 515)]);
+    expect(waitingAll(retried).map((w) => w.file)).toEqual(["a.go", "c.go", "b.go"]);
+    expect(retried.rateLimited).toBeUndefined();
+    // without a file (a sequential run, or the summary): every pending request is cleared, as before
+    expect(waitingAll(run([...events, e("rate_limited", { seconds: 12, reason: "tpm" })]))).toEqual([]);
   });
 
   it("old runs without llm_request have nothing pending", () => {

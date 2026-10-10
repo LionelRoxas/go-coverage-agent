@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import math
 import re
+from contextvars import ContextVar
 from typing import Any, Awaitable, Callable, Protocol, TypeVar
 
 import groq
@@ -18,6 +19,9 @@ from app.models import TokenUsage
 T = TypeVar("T", bound=BaseModel)
 Emit = Callable[[str, dict[str, Any]], Awaitable[None]]
 OnRequest = Callable[[str], Awaitable[None]]  # called with the reasoning effort right before each request to Groq
+# Set by a caller running concurrently with others (PARALLEL_WRITERS): `rate_limited` then names its item
+# ({index, file, role}). Unset (sequential runs, the summary): the event is unchanged.
+LLM_CALL: ContextVar[dict[str, Any] | None] = ContextVar("LLM_CALL", default=None)
 
 
 class LLMError(Exception):
@@ -114,8 +118,30 @@ class GroqLLM:
 
     async def _wait(self, seconds: float, reason: str) -> None:
         if self._emit:
-            await self._emit("rate_limited", {"seconds": round(seconds, 1), "reason": reason})
+            await self._emit("rate_limited", {"seconds": round(seconds, 1), "reason": reason, **(LLM_CALL.get() or {})})
         await self._sleep_cancellable(seconds)
+
+    async def _wait_for_inflight(self, seconds: float) -> None:
+        """Wait for the requests in flight (PARALLEL_WRITERS) to free the headroom: until one ends or new headers
+        arrive, or at most `seconds` (the window). Cancel wakes it at once."""
+        until = self.limiter.now() + seconds
+        if self._emit:
+            await self._emit("rate_limited", {"seconds": round(seconds, 1), "reason": "tpm", **(LLM_CALL.get() or {})})
+        changed = asyncio.ensure_future(self.limiter.changed().wait())
+        timer = asyncio.ensure_future(self._sleep(seconds))
+        stop = asyncio.ensure_future(self._cancel.wait()) if self._cancel is not None else None
+        waits = {t for t in (changed, timer, stop) if t is not None}
+        try:
+            await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in waits:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*waits, return_exceptions=True)
+        if stop is not None and stop.done() and not stop.cancelled():
+            raise LLMCancelled("cancelled while waiting")
+        if timer.done() and not timer.cancelled():  # the whole window passed
+            self.limiter.waited(until)
 
     async def _sleep_cancellable(self, seconds: float) -> None:
         if self._cancel is None:
@@ -151,10 +177,6 @@ class GroqLLM:
             error = LLMError(f"prompt is ~{prompt_tokens} tokens, over the {self.s.max_prompt_tokens} limit")
             error.local = True
             raise error
-        if self.ledger.remaining() < self.s.call_token_reservation:
-            exhausted = LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
-            exhausted.local = True
-            raise exhausted
 
         effort: str = (self.s.groq_fixer_reasoning_effort if role == "fixer"
                        else self.s.groq_writer_reasoning_effort)
@@ -188,23 +210,23 @@ class GroqLLM:
             size_retried = True
             return True
 
+        # The daily ledger: checked and reserved in one step, so calls running at the same time cannot all pass the
+        # same headroom; released when this call ends (what Groq billed is added to the ledger as it comes).
+        if not self.ledger.try_reserve(self.s.call_token_reservation):
+            exhausted = LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
+            exhausted.local = True
+            raise exhausted
         try:
             while True:
-                wait = self.limiter.wait_needed(self.s.call_token_reservation)
-                if wait > 0:
-                    await self._wait(wait, "tpm")
-                    self.limiter.reset()
-                if on_request is not None:
-                    await on_request(effort)
                 try:
-                    raw = await self._request(
+                    raw = await self._send(on_request, effort, lambda: dict(
                         model=self.s.groq_model,
                         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                         response_format=response_format,
                         reasoning_effort=effort,
                         temperature=0.2,
                         **completion_allowance(),
-                    )
+                    ))
                 except groq.AuthenticationError as e:
                     raise LLMFatal("Groq rejected the API key (401). Check GROQ_API_KEY in .env.") from e
                 except groq.RateLimitError as e:
@@ -216,7 +238,9 @@ class GroqLLM:
                             f"Groq asked us to wait {retry_after:.0f}s, which usually means the daily token cap was hit."
                         ) from e
                     rate_retries += 1
+                    until = self.limiter.pause(retry_after)  # every other call waits it out too
                     await self._wait(retry_after, "429")
+                    self.limiter.resume(until)
                     continue
                 except groq.APITimeoutError as e:  # before APIConnectionError, its base class (also covers connect timeouts)
                     if not timeout_retried:  # one retry at the lowest effort, whatever the role's setting: it answers fastest
@@ -240,6 +264,7 @@ class GroqLLM:
                     raise LLMError(f"Groq returned {e.status_code}: {e.message}") from e
 
                 self.limiter.update(raw.headers)
+                self.limiter.recovered()
                 completion = await raw.parse()
                 if not completion.choices:
                     raise LLMError("Groq returned no choices")
@@ -266,3 +291,43 @@ class GroqLLM:
         except LLMError as e:
             e.spent = spent
             raise
+        finally:
+            self.ledger.release(self.s.call_token_reservation)
+
+    async def _send(self, on_request: OnRequest | None, effort: str, request: Callable[[], dict[str, Any]]) -> Any:
+        """Pace, then send one request. Its reservation counts against the TPM headroom until it is answered. After
+        a 429, until a request succeeds again, one request is sent at a time (the probe)."""
+        reservation = self.s.call_token_reservation
+        probe: asyncio.Lock | None = None
+        try:
+            while True:  # every pass re-reads the pause, the probe and the headroom: others may have changed them
+                if probe is None and self.limiter.probing:
+                    await self.limiter.probe.acquire()
+                    probe = self.limiter.probe
+                if probe is not None and not self.limiter.probing:  # the probe ahead succeeded: go together again
+                    probe.release()
+                    probe = None
+                if probe is not None and self._cancel is not None and self._cancel.is_set():
+                    raise LLMCancelled("cancelled while waiting")
+                wait = self.limiter.wait_needed(reservation)
+                if wait <= 0:
+                    break
+                if probe is not None:  # never hold the probe while sleeping
+                    probe.release()
+                    probe = None
+                if self.limiter.held_by_inflight(reservation):  # wake as soon as one of them answers
+                    await self._wait_for_inflight(wait)
+                    continue
+                until = self.limiter.now() + wait
+                await self._wait(wait, "429" if self.limiter.paused() else "tpm")
+                self.limiter.waited(until)
+            self.limiter.begin(reservation)  # no await since wait_needed: the check and the reservation are one step
+            try:
+                if on_request is not None:
+                    await on_request(effort)
+                return await self._request(**request())
+            finally:
+                self.limiter.end(reservation)
+        finally:
+            if probe is not None:
+                probe.release()

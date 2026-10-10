@@ -143,6 +143,9 @@ class JobOptions(BaseModel):
     max_llm_tokens: int = Field(1_000_000, ge=10_000, le=2_000_000)
     exclude_patterns: list[str] = Field(default_factory=lambda: ["examples/**", "testdata/**"])
     write_summary: bool = True  # an LLM-written business + technical summary after the run
+    # PARALLEL_WRITERS, set by the server from its settings (any value sent by a client is replaced); recorded here so
+    # each run says whether its writer requests went out together.
+    parallel_writers: bool = False
 
 
 class JobRequest(BaseModel):

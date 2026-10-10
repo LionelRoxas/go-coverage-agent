@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     groq_timeout_s: float = Field(240.0, gt=0)  # GROQ_TIMEOUT_S: per request; retried once at low effort, then the item fails
     # LLM_UNAVAILABLE_AFTER_S: stop the run (llm_unavailable) once Groq has been unreachable this long in a row
     llm_unavailable_after_s: float = Field(600.0, gt=0)
+    # PARALLEL_WRITERS: send each round's writer requests at once (validation stays one at a time, in plan order)
+    parallel_writers: bool = False
     call_token_reservation: int = 16000  # pacing/ledger reserve per call (>= MAX_PROMPT_TOKENS + expected output); never sent to Groq
     max_prompt_tokens: int = 12000  # MAX_PROMPT_TOKENS; free-trial keys (8K tokens/min) should set 4500
     # USD per 1M tokens, for the cost estimate in the end-of-run summary; unset -> no cost is shown

@@ -119,3 +119,119 @@ def test_deferred_items_and_failed_calls_are_not_rejections_or_calls():
                                                                             ("fixer", "medium", 1)]
     assert (f.failed_llm_calls, f.targets_deferred) == (1, 1)
     assert (f.targets_rejected, f.rejected_reasons) == (0, {})
+
+
+def test_counts_for_comparing_parallel_and_sequential_writers():
+    summary, events = load()
+    f = facts()
+    assert (f.parallel_writers, f.duplicate_test_renames, f.helper_collision_fixes, f.no_gain_rejections) == (
+        False, 0, 0, 0)  # an older log: no parallel_writers option, so it was sequential
+    run, rest = events[:-1], events[-1:]
+    started = events[0].model_copy(update={"data": {**events[0].data, "options": {
+        **events[0].data["options"], "parallel_writers": True}}})
+    at = {"index": 1, "file": "x.go"}
+    more = [("validation_result", {**at, "kind": "compile_error", "output": "gohelper: duplicate declaration: TestX"}),
+            ("mechanical_repair", {**at, "repair": 1, "description": "renamed duplicate test TestX to TestX_2"}),
+            ("validation_result", {**at, "kind": "compile_error",
+                                   "output": "./x_test.go:9:6: xCases redeclared in this block"}),
+            ("fix_attempt", {**at, "attempt": 1, "kind": "compile_error"}),
+            ("validation_result", {**at, "kind": "compile_error", "output": "undefined: foo"}),
+            ("fix_attempt", {**at, "attempt": 2, "kind": "compile_error"}),  # not a collision
+            ("candidate_rejected", {**at, "reason": "no_gain"})]
+    seq = run[-1].seq
+    extra = [Event(seq=seq + 1 + i, ts=1.0, type=t, data=d) for i, (t, d) in enumerate(more)]
+    assert events[0].type == "job_started"
+    f = build_facts(summary, [started, *run[1:], *extra, *rest], repo="stats", model="m", job_id="x")
+    assert (f.parallel_writers, f.duplicate_test_renames, f.helper_collision_fixes, f.no_gain_rejections) == (
+        True, 1, 1, 1)
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def load_run(run_id):
+    """A saved run trimmed to its run-level events and the items of one file (code omitted)."""
+    path = FIXTURES / f"run_{run_id}" / "events.jsonl"
+    events = [Event.model_validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    summary = Summary.model_validate(next(e.data for e in events if e.type == "job_completed"))
+    return summary, events
+
+
+def test_a_writer_claim_the_runtime_refuted_is_dropped_from_the_facts():
+    """f910d155f3cd (stats, mode.go): the Writer claimed Mode returns the value twice for identical inputs. Its own
+    test of that case failed (Go returned [5] for {5,5,5}, as mode.go does) and was pruned, and that same answer
+    was accepted. Mode was also planned in a later round, whose accepted Fixer answer names no bug: the claim is
+    inferred to come from the answer whose test plan names it ("uniform values expose duplicate bug")."""
+    summary, events = load_run("f910d155f3cd")
+    assert [b.function for b in summary.suspected_bugs] == ["Mode"]  # as the old run recorded it
+    f = build_facts(summary, events, repo="stats", model="m", job_id="f910d155f3cd")
+    assert f.suspected_bugs == []
+
+
+@pytest.mark.parametrize("run_id,function", [("225c8beba1d9", "float64ToInt"), ("db3abc1f1b33", "Interp")])
+def test_a_fixer_doc_contradiction_report_is_kept(run_id, function):
+    """The Writer's test failed, the Fixer dropped the case and reported it as a suspected bug, and the Fixer's
+    answer was accepted: failures before that answer never refute its claims."""
+    summary, events = load_run(run_id)
+    f = build_facts(summary, events, repo="r", model="m", job_id=run_id)
+    assert [b.function for b in f.suspected_bugs] == [function]
+
+
+def _item(labels, *more, file="a.go"):
+    at = {"index": 1, "file": file}
+    head = [("plan_created", {"index": 1, "items": [{"file": file, "functions": labels, "uncovered_statements": 1}]}),
+            ("llm_call", {**at, "role": "writer"}),
+            ("candidate_generated", {**at, "test_plan": []})]
+    return [Event(seq=n, ts=0, type=t, data={**at, **d} if t != "plan_created" else d)
+            for n, (t, d) in enumerate([*head, *more])]
+
+
+def _pruned(*tests):
+    return [("validation_result", {"kind": "test_failure", "failed_tests": list(tests)}),
+            ("tests_pruned", {"tests": list(tests)})]
+
+
+def bug(function):
+    from app.models import SuspectedBug
+    return SuspectedBug(function=function, description="d")
+
+
+def test_a_failing_test_belongs_to_the_longest_planned_name_it_matches():
+    from app.summary.facts import drop_refuted_bugs
+    events = _item(["Sum", "SumOfSquares"], *_pruned("TestSumOfSquares_Big"), ("candidate_accepted", {}))
+    assert drop_refuted_bugs([bug("Sum"), bug("SumOfSquares")], events) == [bug("Sum")]
+
+
+def test_receiver_qualified_claims_match_their_own_receiver_only():
+    from app.summary.facts import drop_refuted_bugs
+    events = _item(["*A.String", "B.String"], *_pruned("TestA_String"), ("candidate_accepted", {}))
+    assert drop_refuted_bugs([bug("(*A).String"), bug("B.String")], events) == [bug("B.String")]
+    other_file = _item(["*A.String"], *_pruned("TestA_String"), ("candidate_accepted", {}))
+    assert drop_refuted_bugs([bug("B.String")], other_file) == [bug("B.String")]  # never planned: kept
+
+
+def test_newer_runs_record_which_answer_carried_each_claim():
+    from app.summary.facts import drop_refuted_bugs
+    carried = {"suspected_bugs": [{"function": "F", "description": "d"}]}
+    refuted = _item(["F"], *_pruned("TestF_Case"), ("candidate_accepted", carried))
+    assert drop_refuted_bugs([bug("F")], refuted) == []
+    # a Fixer's accepted answer carrying the claim after the Writer's test of it failed: kept
+    fixed = _item(["F"], ("validation_result", {"kind": "test_failure", "failed_tests": ["TestF_Case"]}),
+                  ("fix_attempt", {"attempt": 1, "kind": "test_failure"}), ("llm_call", {"role": "fixer"}),
+                  ("candidate_generated", {"test_plan": []}), ("candidate_accepted", carried))
+    assert drop_refuted_bugs([bug("F")], fixed) == [bug("F")]
+    # a failure that was neither pruned nor fixed refutes nothing
+    failed_only = _item(["F"], ("validation_result", {"kind": "test_failure", "failed_tests": ["TestF_Case"]}),
+                        ("candidate_accepted", carried))
+    assert drop_refuted_bugs([bug("F")], failed_only) == [bug("F")]
+
+
+def test_an_ambiguous_older_claim_is_kept():
+    from app.summary.facts import drop_refuted_bugs
+    first = _item(["F"], *_pruned("TestF_Case"), ("candidate_accepted", {}))
+    second = [Event(seq=100 + e.seq, ts=0, type=e.type, data={**e.data, "index": 2}) for e in
+              _item(["F"], ("candidate_accepted", {}))]
+    second[0] = Event(seq=100, ts=0, type="plan_created", data={"index": 2, "items": [
+        {"file": "a.go", "functions": ["F"], "uncovered_statements": 1}]})
+    assert drop_refuted_bugs([bug("F")], first) == []  # one accepted answer for F: it carried the claim
+    assert drop_refuted_bugs([bug("F")], first + second) == [bug("F")]  # two, neither plan names a bug: keep

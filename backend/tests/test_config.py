@@ -127,3 +127,10 @@ def test_no_setting_reads_a_compose_only_variable(monkeypatch):
     for name in names:
         monkeypatch.delenv(name)
     assert s.model_dump() == Settings(_env_file=None).model_dump(), "a setting reads a compose-only variable"
+
+
+def test_parallel_writers_is_off_by_default_and_read_from_env(monkeypatch):
+    monkeypatch.delenv("PARALLEL_WRITERS", raising=False)
+    assert Settings(_env_file=None).parallel_writers is False
+    monkeypatch.setenv("PARALLEL_WRITERS", "true")
+    assert Settings(_env_file=None).parallel_writers is True

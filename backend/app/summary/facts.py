@@ -2,7 +2,9 @@
 """RunFacts: everything the summary may state, measured from the finished run (its Summary and events). No LLM."""
 from __future__ import annotations
 
+import re
 from collections import Counter
+from dataclasses import dataclass, field
 from typing import Sequence
 
 from pydantic import BaseModel
@@ -10,6 +12,8 @@ from pydantic import BaseModel
 from app.models import Event, Summary, SuspectedBug
 
 TERMINAL = ("job_completed", "job_cancelled")
+# a compile error from a name declared twice in the package (gohelper's merge check, or the compiler)
+_COLLISION = re.compile(r"duplicate declaration: |redeclared in this block")
 LOWEST_FILES = 5
 
 
@@ -69,6 +73,11 @@ class RunFacts(BaseModel):
     llm_fixes: int
     mechanical_repairs: int
     pruned_tests: int
+    # PARALLEL_WRITERS comparisons: whether the run's writer requests went out together, and the costs of stale context
+    parallel_writers: bool = False
+    duplicate_test_renames: int = 0  # Test functions renamed mechanically because the name was already declared
+    helper_collision_fixes: int = 0  # Fixer calls for a compile error about a name declared twice in the package
+    no_gain_rejections: int = 0  # candidates rejected because they covered nothing new
     llm_timeouts: int
     rate_limit_waits: int
     rate_limit_wait_s: float
@@ -99,6 +108,110 @@ def _module(packages: Sequence[str]) -> str | None:
     return root if all(p == root or p.startswith(root + "/") for p in packages) else None
 
 
+def _norm(label: str) -> str:
+    """`(*T).Do` / `*T.Do` -> `T.Do`; `Mode` -> `Mode`."""
+    return re.sub(r"[()*\s]", "", label)
+
+
+def _bare(label: str) -> str:
+    return _norm(label).rsplit(".", 1)[-1]
+
+
+def _test_target(test: str, labels: Sequence[str]) -> str | None:
+    """The planned function a failing test is named after (`TestF`, `TestF_case`, `TestT_F`): the longest matching
+    name, preferring a label whose receiver also appears in the test name. With one planned function, that one."""
+    def named(label: str) -> bool:
+        return re.search(rf"(?:^Test_?|_){re.escape(_bare(label))}(?![a-z0-9])", test) is not None
+    matches = [lb for lb in labels if named(lb)]
+    if not matches:
+        return labels[0] if len(labels) == 1 else None
+    def score(label: str) -> tuple[bool, int]:
+        receiver = _norm(label).rpartition(".")[0]
+        return (bool(receiver) and receiver in test, len(_bare(label)))
+    return max(matches, key=score)
+
+
+@dataclass
+class _Answer:
+    """One accepted LLM answer (the Writer's or a Fixer's) of an item, and what Go refuted after it was written."""
+    labels: list[str]
+    refuted: set[str] = field(default_factory=set)  # planned labels with a failing assertion pruned after this answer
+    plan: list[dict] = field(default_factory=list)  # its test plan (scenario, target)
+    bugs: list[dict] | None = None  # the claims it carried, as recorded on candidate_accepted (newer runs)
+
+
+def _accepted_answers(events: Sequence[Event]) -> list[_Answer]:
+    planned: dict[tuple[int, str], list[str]] = {}
+    current: dict[tuple[int, str], _Answer] = {}
+    failing: dict[tuple[int, str], list[str]] = {}
+    accepted: list[_Answer] = []
+    for e in events:
+        d = e.data
+        if e.type == "plan_created":
+            for item in d.get("items", []):
+                planned[(d.get("index", 0), item.get("file", ""))] = list(item.get("functions", []))
+            continue
+        key = (d.get("index", 0), d.get("file", ""))
+        if e.type == "llm_call" and d.get("role") in ("writer", "fixer") and not d.get("failed"):
+            current[key] = _Answer(labels=planned.get(key, []))  # a new answer: its claims start here
+            failing[key] = []
+        elif e.type == "candidate_generated" and key in current and not current[key].plan:
+            current[key].plan = list(d.get("test_plan") or [])  # the answer's own plan (repairs come later)
+        elif e.type == "validation_result":
+            failing[key] = list(d.get("failed_tests") or []) if d.get("kind") == "test_failure" else []
+        elif e.type == "tests_pruned" and key in current and failing.get(key):
+            for test in failing[key]:
+                target = _test_target(test, current[key].labels)
+                if target is not None:
+                    current[key].refuted.add(target)
+        elif e.type == "candidate_accepted" and key in current:
+            answer = current.pop(key)
+            if "suspected_bugs" in d:
+                answer.bugs = list(d["suspected_bugs"])
+            accepted.append(answer)
+    return accepted
+
+
+def _claims(answer: _Answer, function: str) -> str | None:
+    """The planned label of this answer's item that a claim about `function` names, if any."""
+    want = _norm(function)
+    for label in answer.labels:
+        if (_norm(label) == want) if "." in want else (_bare(label) == want):
+            return label
+    return None
+
+
+def drop_refuted_bugs(bugs: Sequence[SuspectedBug], events: Sequence[Event]) -> list[SuspectedBug]:
+    """Suspected bugs are leads, not verdicts: drop a claim the Go runtime disproved.
+
+    A claim belongs to the accepted answer (Writer or Fixer) that carried it, and is refuted only when, after that
+    answer was written and in the same item, a failing test named after the claimed function was pruned (the
+    accepted code no longer asserts it). Failures before the answer never refute it: a Fixer that reports a
+    documentation contradiction does so because an earlier assertion failed. Newer runs record each accepted
+    answer's claims on `candidate_accepted`; for older runs the answer is inferred: the only accepted answer for
+    that function, or else the only one whose test plan names a bug for it. Anything ambiguous is kept."""
+    answers = _accepted_answers(events)
+    kept = []
+    for bug in bugs:
+        mine = [(a, lb) for a in answers if (lb := _claims(a, bug.function)) is not None]
+        recorded = [(a, lb) for a, lb in mine
+                    if a.bugs is not None and {"function": bug.function, "description": bug.description} in a.bugs]
+        if recorded:
+            source = recorded
+        else:
+            source = [(a, lb) for a, lb in mine if a.bugs is None]  # older runs: infer
+            if len(source) > 1:
+                source = [(a, lb) for a, lb in source if any(
+                    "bug" in str(s.get("scenario", "")).lower() and _claims(_Answer([lb]), str(s.get("target", "")))
+                    for s in a.plan)]
+                if len(source) != 1:
+                    source = []
+        if source and all(lb in a.refuted for a, lb in source):
+            continue
+        kept.append(bug)
+    return kept
+
+
 def _run_events(events: Sequence[Event]) -> list[Event]:
     """Events of the run itself: up to its terminal event (later ones belong to summaries written afterwards)."""
     for i, e in enumerate(events):
@@ -121,6 +234,16 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
     answered = [d for d in by_type.get("llm_call", []) if not d.get("failed")]
     calls = Counter((d.get("role", ""), d.get("reasoning_effort")) for d in answered)
     rejected = Counter(d.get("reason", "") for d in by_type.get("candidate_rejected", []))
+
+    collision_fixes = 0
+    last_output: dict[tuple[int, str], str] = {}  # each item's latest compile error output
+    for e in run:
+        key = (e.data.get("index", 0), e.data.get("file", ""))
+        if e.type == "validation_result":
+            last_output[key] = e.data.get("output", "") if e.data.get("kind") == "compile_error" else ""
+        elif e.type == "fix_attempt" and e.data.get("kind") == "compile_error":
+            collision_fixes += bool(_COLLISION.search(last_output.get(key, "")))
+    started = next((d for d in by_type.get("job_started", [])), {})
 
     first_passes = 0
     awaiting: set[tuple[int, str]] = set()  # items whose writer answer has not been checked yet
@@ -159,10 +282,14 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
         failed_llm_calls=len(by_type.get("llm_call", [])) - len(answered),
         llm_fixes=len(by_type.get("fix_attempt", [])), mechanical_repairs=len(by_type.get("mechanical_repair", [])),
         pruned_tests=sum(len(d.get("tests", [])) for d in by_type.get("tests_pruned", [])),
+        parallel_writers=bool((started.get("options") or {}).get("parallel_writers", False)),
+        duplicate_test_renames=sum(str(d.get("description", "")).startswith("renamed duplicate test")
+                                   for d in by_type.get("mechanical_repair", [])),
+        helper_collision_fixes=collision_fixes, no_gain_rejections=rejected.get("no_gain", 0),
         llm_timeouts=sum(d.get("kind") == "llm_timeout" for d in by_type.get("validation_result", [])),
         rate_limit_waits=len(waits), rate_limit_wait_s=round(sum(float(d.get("seconds", 0)) for d in waits), 1),
         tests_added_count=len(summary.tests_added), tests_added=list(summary.tests_added),
         test_files_count=len(summary.test_files), test_files=list(summary.test_files),
         tests_dir=f"output/{job_id}/tests",
-        per_file=per_file, lowest_files=lows[:LOWEST_FILES], suspected_bugs=list(summary.suspected_bugs),
+        per_file=per_file, lowest_files=lows[:LOWEST_FILES], suspected_bugs=drop_refuted_bugs(summary.suspected_bugs, run),
     )

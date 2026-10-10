@@ -119,6 +119,42 @@ The last two runs needed one LLM fix each (12.8 s at `medium`, 9.6 s at `low`), 
 
 With the cap of 5 more targets passed on the first check and fewer LLM fixes were needed; semver used 34% fewer tokens, stats about the same. These are single runs, so a few seconds or a percentage point is within normal variation.
 
+**Parallel writers (2026-10-10)** (stats, cap of 5; within each comparison only `PARALLEL_WRITERS` changed).
+
+Goal 80%, default options:
+
+| | Sequential | Parallel |
+|---|---|---|
+| Run | `e2de1ca387cb` | `adb390243460` |
+| Coverage | 0% → 81.07% (target reached) | 0% → 80.27% (target reached) |
+| Rounds | 11 | 11 |
+| Time | 310 s | 147 s (−53%) |
+| Targets accepted / rejected | 31 / 0 | 33 / 0 |
+| Passed on the first check | 27 | 25 |
+| LLM fixes | 1 | 2 |
+| Duplicate-name errors / renames | 0 / 0 | 0 / 0 |
+| `no_gain` rejections | 0 | 0 |
+| Rate-limit waits | 0 | 0 |
+| Tokens | 175K | 187K |
+
+Goal 100%, long run (30 rounds max, minimum gain 0.5 pp, 5 targets per round, 3 fix attempts):
+
+| | Sequential | Parallel |
+|---|---|---|
+| Run | `979b912d00b4` | `73d630a6dd05` |
+| Coverage | 0% → 99.84% | 0% → 99.68% |
+| Rounds | 17 (stopped on small gains) | 17 (stopped on small gains) |
+| Time | 681 s | 377 s (−45%) |
+| Targets accepted / rejected | 78 / 0 | 75 / 1 |
+| Passed on the first check | 61 | 55 |
+| LLM fixes | 14 | 16 |
+| Duplicate-name errors | 2 | 1 |
+| `no_gain` rejections | 2 | 0 |
+| Rate-limit waits | 0 | 0 |
+| Tokens | 493K | 506K |
+
+These are single runs: parallel writers cut the time roughly in half on both a short and a long run, with the same rounds and coverage within 0.8 pp, for 3–7% more tokens. `PARALLEL_WRITERS` is off by default and meant to be turned on for paid keys.
+
 ### Issues I found in testing and fixed
 
 I had the system run end to end (Claude ran the live runs I approved), read the results, spotted these problems and decided the fixes. Claude Code implemented them under review.
@@ -133,13 +169,14 @@ I had the system run end to end (Claude ran the live runs I approved), read the 
 | No theme switch, no way back to the start page, a one-line running banner, no explanation of the loop | UI gaps | Theme toggle, Run history panel, "← All runs", How it works page | Screenshots below |
 | semver stalled at 64.2% (prompt too large for the Fixer, duplicate test names) | A prompt cap from the free-trial era; existing test names crowded out | `MAX_PROMPT_TOKENS` 4,500 → 12,000; Fixer prompts shrink instead of failing; reused names renamed without an LLM call | `acab3e3c7570` 64.2% → `f9f3edcd9bfc` 80.1% |
 | The Fixer kept repeating a wrong assertion (semver `constraints.go`, rejected after 6 attempts) | The Fixer saw only the latest check; effort was at its minimum | Five changes, listed under [AI usage](#decisions-i-made-during-the-build) | `736baa413b5d`: 84.6%, 0 rejected |
+| A generated test asserted NaN/Inf-to-int results that differ between x86 and ARM, so it would fail on Apple Silicon | Go leaves out-of-range float-to-int conversion implementation-defined; the same test also locked in a behaviour the model had flagged as a suspected bug | Writer and Fixer prompt rules (no platform-dependent or suspected-bug assertions) plus a guard check that rejects `int(math.Inf(`, `int64(math.NaN())` and similar | Run `7e5223daa8e2`, `util_test.go`; re-run: re-run `73d630a6dd05` (same settings, goal 100%): 0% → 99.68%; NaN/Inf are now tested only for "does not panic", and the guard never had to fire |
 
 ## Screenshots
 
 <table>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="New run page at step 1 of the wizard: the header, the four-step stepper, the Sample repos tab with montanaflynn/stats selected, and the Run history panel listing 31 runs"></a><br><b>New run, step 1:</b> the wizard beside Run history.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="The review step of the New run wizard and the Run history panel in the dark theme"></a><br><b>Review &amp; start</b>, dark theme.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Step 1 of the New run wizard on the Your folders tab after uploading a copy of stats: the drop area, the upload result, the uploaded module selected and the HOST_REPOS_DIR note"></a><br><b>Your folders:</b> after uploading a local copy of stats.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Run in progress at 17.2 percent with a Cancel button and the Activity list ending in a running item"></a><br><b>Run in progress</b>, with Cancel and the Activity list.</td></tr>
-<tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage after each of 20 iterations rising towards the dashed 100 percent target line, with the Possible bugs found list below it"></a><br><b>Coverage by round</b> and the possible bug the run reported.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for histogram.go with three numbered attempts: rejected by the safety guard, one failing test after the LLM fix, then the failing test removed and the rest passing"></a><br><b>Attempt trace:</b> guard rejection, LLM fix, prune, accepted.</td></tr>
+<tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage after each of 11 iterations rising from 0 percent to the dashed 80 percent target line, with the Generated tests section below it"></a><br><b>Coverage by round</b> for the parallel-writers run of stats (<code>adb390243460</code>), above the generated tests.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for histogram.go with three numbered attempts: rejected by the safety guard, one failing test after the LLM fix, then the failing test removed and the rest passing"></a><br><b>Attempt trace:</b> guard rejection, LLM fix, prune, accepted.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-testfile.png"><img src="docs/screenshots/gallery-testfile.png" width="100%" alt="Generated tests section with clip_test.go selected and highlighted Go code"></a><br><b>Generated tests</b>, syntax-highlighted.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-dark.png"><img src="docs/screenshots/gallery-dark.png" width="100%" alt="Iteration limit reached summary card and the AI summary below it, on the For stakeholders tab, in the dark theme"></a><br><b>Run page</b>, dark theme.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-summary-ai.png"><img src="docs/screenshots/gallery-summary-ai.png" width="100%" alt="The Summary section of run f910d155f3cd on the For stakeholders tab: a headline about coverage rising from 0.0% to 97.83%, then Outcome, Efficiency with an estimated cost, Risks and Recommendation, with Copy as Markdown and Write again buttons"></a><br><b>AI summary</b> for stakeholders, with the cost line.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-summary-tech.png"><img src="docs/screenshots/gallery-summary-tech.png" width="100%" alt="The same Summary section on the For engineering teams tab: what was tested, where the tests live, how to run them, and a table of the files with uncovered statements"></a><br><b>AI summary</b> for engineering teams.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page: the five steps of a run side by side, steps 2 to 5 marked as one round with an arrow back to step 2"></a><br><b>How it works</b>, in plain words.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-walkthrough.png"><img src="docs/screenshots/gallery-walkthrough.png" width="100%" alt="Walkthrough page with a table of contents that follows the run beside the Start a run section"></a><br><b>Walkthrough</b>, the technical version.</td></tr>
@@ -171,6 +208,7 @@ Environment (`.env`; only the key is required). [`.env.example`](.env.example) d
 | `GROQ_API_KEY` | (empty) | Needed to start a job |
 | `GROQ_MODEL` | `openai/gpt-oss-120b` | `openai/gpt-oss-20b` is cheaper and weaker |
 | `GROQ_WRITER_REASONING_EFFORT` / `GROQ_FIXER_REASONING_EFFORT` | `medium` / `medium` | `low` also works; `high` is accepted but too slow. An answer cut off for length is retried one level lower |
+| `PARALLEL_WRITERS` | false | Send each round's writer requests at once; validation stays one at a time, in plan order. Faster on paid keys, no gain on free-trial keys (8K tokens/min). A round can spend tokens on answers that are never checked once the goal is reached mid-round |
 | `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only) |
 | `HOST_REPOS_DIR` | `./my-repos` | Your Go projects, mounted read-only at `/host-repos` |
 | `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily cap (not a Groq limit), counted in `output/.usage.json`, reset at midnight UTC |
@@ -208,6 +246,7 @@ The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` i
 - **Append-only test generation** through a small Go AST helper: accepted tests can't be lost, and failing tests are pruned one by one.
 - **Strict acceptance:** vet clean, tests pass twice, covered blocks strictly grow. Coverage never regresses.
 - **Token economy:** mechanical errors (forgotten imports, reused names) are repaired without an LLM call, and the planner packs up to 5 functions / 100 uncovered statements of one file into each call.
+- **The model predicts expected values; the Go runtime decides.** I considered a "record mode" where the LLM only chooses inputs and the system runs the function to capture the outputs as expected values. It would remove wrong-prediction failures and fixer calls, but every test would then agree with the code by construction and could never catch a bug. I kept the prediction as a weak, independent oracle: when it disagrees with the code, the Fixer adopts the observed value unless it contradicts the function's documentation, in which case the case is dropped and reported as a suspected bug. Suspected bugs are leads, not verdicts: a refuted one (stats `Mode`, run f910d155f3cd) once reached the report, so claims the runtime disproves are now dropped.
 - **Defense in depth, not a sandbox:** non-root user, env allowlist (the key is not passed to test processes), a best-effort import guard, timeouts with process-group kill, loopback-only ports, no Docker socket mount.
 
 ## What I would do differently in production
@@ -220,6 +259,7 @@ The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` i
 - **Supply chain:** pinned image digests and dependency hashes, plus an SBOM.
 - **Per-user rate limits and token budgets** instead of one app-wide daily budget.
 - **LLM endpoint:** a configurable OpenAI-compatible base URL, so a local model or a private deployment can replace Groq.
+- **Cheaper corrections:** patch simple mismatches (numbers, strings, booleans, error vs nil) from Go's own "got X, want Y" output without an LLM call, and keep the LLM fixer for suspicious cases (doc contradictions, NaN, panics).
 
 ## Limitations
 
@@ -250,6 +290,7 @@ I used Claude Code as a pair programmer and implementation team. I set the direc
 - **Proof that failing tests are not counted.** I asked for evidence, not an assurance: a fresh-clone re-run passed with 80.1%.
 - **Fixing `make` for PowerShell**, and the **UI gaps** (theme toggle, Run history, "← All runs", How it works page).
 - **LLM quality over token savings.** I traced semver's `constraints.go` item, asked why the Fixer kept failing, and decided five changes: (1) give the Fixer the item's full attempt history; (2) keep the tests that reached new lines and correct their expected values to the observed behaviour; (3) a reasoning effort per role, replacing the single `GROQ_REASONING_EFFORT` (then `low`), with both roles at `medium` because `high` was too slow; (4) a Writer rule to trace parsing logic before asserting; (5) measure it on semver: 64.2% before the earlier fixes, 84.6% after, nothing rejected.
+- **Prediction over record mode.** I weighed letting the runtime record expected values instead of the model predicting them, and kept prediction so the tests keep a chance of catching bugs.
 - **Disk-based run history** over a Redis/multi-user design, given the single-user scope.
 - **Hosted model, README-only privacy notice.** Groq rather than a local model (see [Why Groq](#why-groq-instead-of-a-local-model)), and the "code is sent to Groq" notice kept in this README rather than the UI.
 - **Publishing and disclosure.** The per-file disclosure wording and the pull-request workflow.
