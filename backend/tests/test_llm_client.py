@@ -408,3 +408,64 @@ async def test_failed_call_reports_the_tokens_it_already_spent(tmp_path):
     with pytest.raises(LLMOutputTooLarge) as exc:
         await call(llm)
     assert exc.value.spent.total == 300  # two truncated answers of 100 + 50
+
+
+class SlowGroq:
+    """Answers each request after `delay` seconds; `script` items (exceptions or responses) are used in order.
+    Records how many requests were in flight when each one was sent."""
+
+    def __init__(self, script, delay=0.02):
+        self.script, self.delay = list(script), delay
+        self.chat = self.completions = self.with_raw_response = self
+        self.inflight, self.seen = 0, []
+
+    async def create(self, **kwargs):
+        import asyncio
+        item = self.script.pop(0)
+        self.seen.append(self.inflight)
+        self.inflight += 1
+        try:
+            await asyncio.sleep(self.delay)
+        finally:
+            self.inflight -= 1
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+def _ok():
+    return Raw(Completion('{"answer": "ok"}', "stop"))
+
+
+async def test_concurrent_calls_cannot_jointly_pass_the_daily_ledger(tmp_path):
+    import asyncio
+    settings = Settings(groq_api_key="k", call_token_reservation=16_000)
+    ledger = UsageLedger(tmp_path / "u.json", 20_000)  # room for one reservation, not two
+    llm = GroqLLM(settings, ledger, RateLimiter(), client=SlowGroq([_ok(), _ok()]))
+    first, second = await asyncio.gather(call(llm), call(llm), return_exceptions=True)
+    assert first[0].answer == "ok"
+    assert isinstance(second, LLMBudgetExhausted) and second.local
+    assert ledger.reserved == 0 and ledger.used_today() == 150  # reconciled: the reservation became the actual usage
+
+
+async def test_ledger_reservation_is_released_when_a_call_fails(tmp_path):
+    llm, _, _ = make(tmp_path, [http_error(groq.AuthenticationError, 401)])
+    with pytest.raises(LLMFatal):
+        await call(llm)
+    assert llm.ledger.reserved == 0 and llm.limiter._inflight == 0
+
+
+async def test_after_a_429_one_request_probes_before_the_others_retry(tmp_path):
+    import asyncio
+    limited = [http_error(groq.RateLimitError, 429, {"retry-after": "0.05"}) for _ in range(3)]
+    fake = SlowGroq([*limited, _ok(), _ok(), _ok()])
+    events = []
+    async def emit(t, d): events.append((t, d))
+    llm = GroqLLM(Settings(groq_api_key="k"), UsageLedger(tmp_path / "u.json", 1_000_000), RateLimiter(),
+                  emit=emit, client=fake)
+    results = await asyncio.wait_for(asyncio.gather(call(llm), call(llm), call(llm)), timeout=5)
+    assert [r[0].answer for r in results] == ["ok"] * 3
+    assert fake.seen[:3] == [0, 1, 2]  # the first three went out together and all met the 429
+    assert fake.seen[3] == 0  # the probe went alone; the others waited for it to succeed
+    assert not llm.limiter.probing and llm.limiter._inflight == 0
+    assert sum(1 for t, _ in events if t == "rate_limited") >= 3

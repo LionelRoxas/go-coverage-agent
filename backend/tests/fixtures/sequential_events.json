@@ -1,0 +1,451 @@
+[
+ [
+  "iteration_started",
+  {
+   "index": 1,
+   "percent": 0.0
+  }
+ ],
+ [
+  "plan_created",
+  {
+   "index": 1,
+   "items": [
+    {
+     "file": "c.go",
+     "functions": [
+      "C",
+      "C2"
+     ],
+     "uncovered_statements": 4
+    },
+    {
+     "file": "a.go",
+     "functions": [
+      "A"
+     ],
+     "uncovered_statements": 2
+    },
+    {
+     "file": "b.go",
+     "functions": [
+      "B"
+     ],
+     "uncovered_statements": 2
+    }
+   ]
+  }
+ ],
+ [
+  "llm_request",
+  {
+   "index": 1,
+   "file": "c.go",
+   "role": "writer",
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "llm_request",
+  {
+   "index": 1,
+   "file": "c.go",
+   "role": "writer",
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "llm_call",
+  {
+   "index": 1,
+   "file": "c.go",
+   "role": "writer",
+   "prompt_tokens": 10,
+   "completion_tokens": 5,
+   "total_tokens": 15,
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "candidate_generated",
+  {
+   "index": 1,
+   "file": "c.go",
+   "test_file": "c_test.go",
+   "code": "func TestA(t *testing.T) {}",
+   "test_plan": []
+  }
+ ],
+ [
+  "validation_result",
+  {
+   "index": 1,
+   "file": "c.go",
+   "kind": "accepted",
+   "output": "",
+   "failed_tests": []
+  }
+ ],
+ [
+  "candidate_accepted",
+  {
+   "index": 1,
+   "file": "c.go",
+   "test_file": "c_test.go",
+   "tests": [
+    "TestA"
+   ],
+   "percent": 25.0,
+   "gain": 25.0
+  }
+ ],
+ [
+  "llm_request",
+  {
+   "index": 1,
+   "file": "a.go",
+   "role": "writer",
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "llm_call",
+  {
+   "index": 1,
+   "file": "a.go",
+   "role": "writer",
+   "prompt_tokens": 10,
+   "completion_tokens": 5,
+   "total_tokens": 30,
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "candidate_generated",
+  {
+   "index": 1,
+   "file": "a.go",
+   "test_file": "a_test.go",
+   "code": "func TestA(t *testing.T) {}",
+   "test_plan": []
+  }
+ ],
+ [
+  "validation_result",
+  {
+   "index": 1,
+   "file": "a.go",
+   "kind": "compile_error",
+   "output": "gohelper: duplicate declaration: TestA",
+   "failed_tests": []
+  }
+ ],
+ [
+  "mechanical_repair",
+  {
+   "index": 1,
+   "file": "a.go",
+   "repair": 1,
+   "description": "renamed duplicate test TestA to TestA_2"
+  }
+ ],
+ [
+  "candidate_generated",
+  {
+   "index": 1,
+   "file": "a.go",
+   "test_file": "a_test.go",
+   "code": "func TestA_2(t *testing.T) {}",
+   "test_plan": []
+  }
+ ],
+ [
+  "validation_result",
+  {
+   "index": 1,
+   "file": "a.go",
+   "kind": "test_failure",
+   "output": "--- FAIL: TestBad",
+   "failed_tests": [
+    "TestBad"
+   ]
+  }
+ ],
+ [
+  "tests_pruned",
+  {
+   "index": 1,
+   "file": "a.go",
+   "tests": [
+    "TestBad"
+   ]
+  }
+ ],
+ [
+  "validation_result",
+  {
+   "index": 1,
+   "file": "a.go",
+   "kind": "no_gain",
+   "output": "no new coverage",
+   "failed_tests": []
+  }
+ ],
+ [
+  "fix_attempt",
+  {
+   "index": 1,
+   "file": "a.go",
+   "attempt": 1,
+   "kind": "no_gain"
+  }
+ ],
+ [
+  "llm_request",
+  {
+   "index": 1,
+   "file": "a.go",
+   "role": "fixer",
+   "reasoning_effort": "high",
+   "attempt": 1
+  }
+ ],
+ [
+  "llm_call",
+  {
+   "index": 1,
+   "file": "a.go",
+   "role": "fixer",
+   "prompt_tokens": 10,
+   "completion_tokens": 5,
+   "total_tokens": 45,
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "candidate_generated",
+  {
+   "index": 1,
+   "file": "a.go",
+   "test_file": "a_test.go",
+   "code": "func TestA(t *testing.T) {}",
+   "test_plan": []
+  }
+ ],
+ [
+  "validation_result",
+  {
+   "index": 1,
+   "file": "a.go",
+   "kind": "accepted",
+   "output": "",
+   "failed_tests": []
+  }
+ ],
+ [
+  "candidate_accepted",
+  {
+   "index": 1,
+   "file": "a.go",
+   "test_file": "a_test.go",
+   "tests": [
+    "TestA_2"
+   ],
+   "percent": 50.0,
+   "gain": 25.0
+  }
+ ],
+ [
+  "llm_request",
+  {
+   "index": 1,
+   "file": "b.go",
+   "role": "writer",
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "validation_result",
+  {
+   "index": 1,
+   "file": "b.go",
+   "kind": "llm_unavailable",
+   "output": "down",
+   "failed_tests": []
+  }
+ ],
+ [
+  "candidate_deferred",
+  {
+   "index": 1,
+   "file": "b.go",
+   "reason": "llm_unavailable"
+  }
+ ],
+ [
+  "llm_unreachable",
+  {
+   "seconds": 15.0,
+   "unreachable_s": 0.0
+  }
+ ],
+ [
+  "iteration_completed",
+  {
+   "index": 1,
+   "start_percent": 0.0,
+   "end_percent": 50.0,
+   "accepted": 2,
+   "rejected": 0,
+   "deferred": 1
+  }
+ ],
+ [
+  "iteration_started",
+  {
+   "index": 2,
+   "percent": 50.0
+  }
+ ],
+ [
+  "plan_created",
+  {
+   "index": 2,
+   "items": [
+    {
+     "file": "b.go",
+     "functions": [
+      "B"
+     ],
+     "uncovered_statements": 2
+    },
+    {
+     "file": "c.go",
+     "functions": [
+      "C2"
+     ],
+     "uncovered_statements": 2
+    }
+   ]
+  }
+ ],
+ [
+  "llm_request",
+  {
+   "index": 2,
+   "file": "b.go",
+   "role": "writer",
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "llm_call",
+  {
+   "index": 2,
+   "file": "b.go",
+   "role": "writer",
+   "prompt_tokens": 10,
+   "completion_tokens": 5,
+   "total_tokens": 60,
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "candidate_generated",
+  {
+   "index": 2,
+   "file": "b.go",
+   "test_file": "b_test.go",
+   "code": "func TestA(t *testing.T) {}",
+   "test_plan": []
+  }
+ ],
+ [
+  "validation_result",
+  {
+   "index": 2,
+   "file": "b.go",
+   "kind": "accepted",
+   "output": "",
+   "failed_tests": []
+  }
+ ],
+ [
+  "candidate_accepted",
+  {
+   "index": 2,
+   "file": "b.go",
+   "test_file": "b_test.go",
+   "tests": [
+    "TestB"
+   ],
+   "percent": 75.0,
+   "gain": 25.0
+  }
+ ],
+ [
+  "llm_request",
+  {
+   "index": 2,
+   "file": "c.go",
+   "role": "writer",
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "llm_call",
+  {
+   "index": 2,
+   "file": "c.go",
+   "role": "writer",
+   "prompt_tokens": 10,
+   "completion_tokens": 5,
+   "total_tokens": 75,
+   "reasoning_effort": "medium"
+  }
+ ],
+ [
+  "candidate_generated",
+  {
+   "index": 2,
+   "file": "c.go",
+   "test_file": "c_test.go",
+   "code": "func TestA(t *testing.T) {}",
+   "test_plan": []
+  }
+ ],
+ [
+  "validation_result",
+  {
+   "index": 2,
+   "file": "c.go",
+   "kind": "accepted",
+   "output": "",
+   "failed_tests": []
+  }
+ ],
+ [
+  "candidate_accepted",
+  {
+   "index": 2,
+   "file": "c.go",
+   "test_file": "c_test.go",
+   "tests": [
+    "TestC2"
+   ],
+   "percent": 100.0,
+   "gain": 25.0
+  }
+ ],
+ [
+  "iteration_completed",
+  {
+   "index": 2,
+   "start_percent": 50.0,
+   "end_percent": 100.0,
+   "accepted": 2,
+   "rejected": 0,
+   "deferred": 0
+  }
+ ]
+]

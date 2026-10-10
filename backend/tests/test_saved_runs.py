@@ -86,7 +86,8 @@ def test_runs_load_with_their_status_and_numbers(tmp_path, out):
     assert snaps["aaaaaaaaaaa1"]["status"] == "completed" and snaps["aaaaaaaaaaa1"]["percent"] == 81.0
     assert snaps["aaaaaaaaaaa1"]["summary"]["final_percent"] == 81.0
     assert snaps["aaaaaaaaaaa1"]["request"] == {"repo_path": "stats", "target_coverage": 80.0,
-                                                "options": {**OPTIONS, "write_summary": True}}
+                                                "options": {**OPTIONS, "write_summary": True,
+                                                            "parallel_writers": False}}  # older runs: sequential
     assert snaps["aaaaaaaaaaa1"]["created_at"] == 1000 and snaps["aaaaaaaaaaa1"]["event_count"] == 4
     assert snaps["aaaaaaaaaaa1"]["writing_summary"] is False
     # no report.json: the summary and percent come from the events

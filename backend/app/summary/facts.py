@@ -2,6 +2,7 @@
 """RunFacts: everything the summary may state, measured from the finished run (its Summary and events). No LLM."""
 from __future__ import annotations
 
+import re
 from collections import Counter
 from typing import Sequence
 
@@ -10,6 +11,8 @@ from pydantic import BaseModel
 from app.models import Event, Summary, SuspectedBug
 
 TERMINAL = ("job_completed", "job_cancelled")
+# a compile error from a name declared twice in the package (gohelper's merge check, or the compiler)
+_COLLISION = re.compile(r"duplicate declaration: |redeclared in this block")
 LOWEST_FILES = 5
 
 
@@ -69,6 +72,11 @@ class RunFacts(BaseModel):
     llm_fixes: int
     mechanical_repairs: int
     pruned_tests: int
+    # PARALLEL_WRITERS comparisons: whether the run's writer requests went out together, and the costs of stale context
+    parallel_writers: bool = False
+    duplicate_test_renames: int = 0  # Test functions renamed mechanically because the name was already declared
+    helper_collision_fixes: int = 0  # Fixer calls for a compile error about a name declared twice in the package
+    no_gain_rejections: int = 0  # candidates rejected because they covered nothing new
     llm_timeouts: int
     rate_limit_waits: int
     rate_limit_wait_s: float
@@ -122,6 +130,16 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
     calls = Counter((d.get("role", ""), d.get("reasoning_effort")) for d in answered)
     rejected = Counter(d.get("reason", "") for d in by_type.get("candidate_rejected", []))
 
+    collision_fixes = 0
+    last_output: dict[tuple[int, str], str] = {}  # each item's latest compile error output
+    for e in run:
+        key = (e.data.get("index", 0), e.data.get("file", ""))
+        if e.type == "validation_result":
+            last_output[key] = e.data.get("output", "") if e.data.get("kind") == "compile_error" else ""
+        elif e.type == "fix_attempt" and e.data.get("kind") == "compile_error":
+            collision_fixes += bool(_COLLISION.search(last_output.get(key, "")))
+    started = next((d for d in by_type.get("job_started", [])), {})
+
     first_passes = 0
     awaiting: set[tuple[int, str]] = set()  # items whose writer answer has not been checked yet
     for e in run:
@@ -159,6 +177,10 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
         failed_llm_calls=len(by_type.get("llm_call", [])) - len(answered),
         llm_fixes=len(by_type.get("fix_attempt", [])), mechanical_repairs=len(by_type.get("mechanical_repair", [])),
         pruned_tests=sum(len(d.get("tests", [])) for d in by_type.get("tests_pruned", [])),
+        parallel_writers=bool((started.get("options") or {}).get("parallel_writers", False)),
+        duplicate_test_renames=sum(str(d.get("description", "")).startswith("renamed duplicate test")
+                                   for d in by_type.get("mechanical_repair", [])),
+        helper_collision_fixes=collision_fixes, no_gain_rejections=rejected.get("no_gain", 0),
         llm_timeouts=sum(d.get("kind") == "llm_timeout" for d in by_type.get("validation_result", [])),
         rate_limit_waits=len(waits), rate_limit_wait_s=round(sum(float(d.get("seconds", 0)) for d in waits), 1),
         tests_added_count=len(summary.tests_added), tests_added=list(summary.tests_added),

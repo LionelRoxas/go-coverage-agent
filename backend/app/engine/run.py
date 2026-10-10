@@ -46,7 +46,8 @@ async def run_job(job_id: str, request: JobRequest, settings: Settings, llm: LLM
     try:
         prepared = await prepare(job_id, request, settings, llm, emit, cancel)
         summary = await Orchestrator(prepared.deps, request, emit, cancel,
-                                     unavailable_after_s=settings.llm_unavailable_after_s).run(prepared.baseline)
+                                     unavailable_after_s=settings.llm_unavailable_after_s,
+                                     call_reservation=settings.call_token_reservation).run(prepared.baseline)
         return summary
     except LLMFatal as e:
         raise JobFailed("llm_auth", str(e)) from e

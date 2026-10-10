@@ -84,6 +84,21 @@ def _labels(item: PlanItem) -> str:
     return ", ".join(f"`{k.label()}`" for k in item.functions)
 
 
+def helper_prefix(file: str) -> str:
+    """A Go identifier prefix from a source file's base name: `norm.go` -> `norm`, `big_int.go` -> `bigInt`."""
+    words = [w for w in re.split(r"[^0-9A-Za-z]+", Path(file).stem) if w]
+    prefix = "".join([words[0].lower(), *(w[:1].upper() + w[1:] for w in words[1:])]) if words else "t"
+    return prefix if prefix[0].isalpha() else f"t{prefix}"
+
+
+def parallel_naming_rule(item: PlanItem) -> str:
+    """PARALLEL_WRITERS only: other writers fill the same package (one Go namespace) at the same time."""
+    p = helper_prefix(item.file)
+    return (f"Other tests for this package are being written at the same time: name every new helper function, type, "
+            f"var and const with the prefix `{p}` (e.g. `{p}ApproxEqual`, `{p}Cases`), and start each Test function "
+            f"name with the name of the function it tests.")
+
+
 class Agents:
     def __init__(self, llm: LLMClient, max_prompt_tokens: int):
         self.llm = llm
@@ -98,11 +113,13 @@ class Agents:
         budget = self.max_prompt_tokens - estimate_tokens(system) - estimate_tokens(task) - 20
         return f"{render_context(inputs, budget)}\n\n{task}"
 
-    async def write(self, item: PlanItem, inputs: ContextInputs,
-                    on_request: OnRequest | None = None) -> tuple[TestSnippet, TokenUsage]:
+    async def write(self, item: PlanItem, inputs: ContextInputs, on_request: OnRequest | None = None,
+                    parallel: bool = False) -> tuple[TestSnippet, TokenUsage]:
         system = load_prompt("writer")
         task = (f"## Task\nWrite new tests for {_labels(item)} that will be appended to `{inputs.test_file}`. "
                 "Focus on executing the lines marked `// UNCOVERED`.")
+        if parallel:  # off: the prompt stays exactly as it was
+            task += f"\n{parallel_naming_rule(item)}"
         return await self.llm.complete(role="writer", system=system, user=self._user(system, inputs, task),
                                        schema=TestSnippet, on_request=on_request)
 

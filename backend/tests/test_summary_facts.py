@@ -119,3 +119,28 @@ def test_deferred_items_and_failed_calls_are_not_rejections_or_calls():
                                                                             ("fixer", "medium", 1)]
     assert (f.failed_llm_calls, f.targets_deferred) == (1, 1)
     assert (f.targets_rejected, f.rejected_reasons) == (0, {})
+
+
+def test_counts_for_comparing_parallel_and_sequential_writers():
+    summary, events = load()
+    f = facts()
+    assert (f.parallel_writers, f.duplicate_test_renames, f.helper_collision_fixes, f.no_gain_rejections) == (
+        False, 0, 0, 0)  # an older log: no parallel_writers option, so it was sequential
+    run, rest = events[:-1], events[-1:]
+    started = events[0].model_copy(update={"data": {**events[0].data, "options": {
+        **events[0].data["options"], "parallel_writers": True}}})
+    at = {"index": 1, "file": "x.go"}
+    more = [("validation_result", {**at, "kind": "compile_error", "output": "gohelper: duplicate declaration: TestX"}),
+            ("mechanical_repair", {**at, "repair": 1, "description": "renamed duplicate test TestX to TestX_2"}),
+            ("validation_result", {**at, "kind": "compile_error",
+                                   "output": "./x_test.go:9:6: xCases redeclared in this block"}),
+            ("fix_attempt", {**at, "attempt": 1, "kind": "compile_error"}),
+            ("validation_result", {**at, "kind": "compile_error", "output": "undefined: foo"}),
+            ("fix_attempt", {**at, "attempt": 2, "kind": "compile_error"}),  # not a collision
+            ("candidate_rejected", {**at, "reason": "no_gain"})]
+    seq = run[-1].seq
+    extra = [Event(seq=seq + 1 + i, ts=1.0, type=t, data=d) for i, (t, d) in enumerate(more)]
+    assert events[0].type == "job_started"
+    f = build_facts(summary, [started, *run[1:], *extra, *rest], repo="stats", model="m", job_id="x")
+    assert (f.parallel_writers, f.duplicate_test_renames, f.helper_collision_fixes, f.no_gain_rejections) == (
+        True, 1, 1, 1)

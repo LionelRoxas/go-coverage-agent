@@ -185,3 +185,17 @@ def test_clean_work_dir_without_work_dir_is_a_no_op(tmp_path):
     from app.config import Settings
     from app.jobs import JobManager
     JobManager(Settings(work_dir=tmp_path / "missing", output_dir=tmp_path / "out")).clean_work_dir()
+
+
+@pytest.mark.parametrize("setting", [False, True])
+async def test_parallel_writers_comes_from_the_server_setting_and_is_recorded(tmp_path, setting):
+    async def runner(job, emit, cancel):
+        return summary()
+
+    m = JobManager(Settings(groq_api_key="k", output_dir=tmp_path, parallel_writers=setting), runner=runner,
+                   llm_factory=fake_llm)
+    request = JobRequest.model_validate({"repo_path": "stats", "options": {"parallel_writers": not setting}})
+    job = m.start(request)
+    await finish(job)
+    assert job.request.options.parallel_writers is setting  # a client cannot choose it
+    assert job.events[0].type == "job_started" and job.events[0].data["options"]["parallel_writers"] is setting
