@@ -78,7 +78,7 @@ The tab also lists every other Go module (a folder with a `go.mod`, up to two le
 
 Your repository is never modified: the agent works on a copy, and the generated tests are written to `./output/<job-id>/tests/`.
 
-Every run is saved in `./output/<job-id>` (events, report, tests, summary), and Run history reloads it from there when the app restarts, so earlier runs stay viewable. A run the app stopped in the middle of shows as Interrupted, with the results up to that point. Delete `./output/<job-id>` to remove a run.
+Every run is saved in `./output/<job-id>` (events, report, tests, summary), and Run history reloads it from there when the app restarts, so earlier runs stay viewable. A run the app was shut down in the middle of shows as Interrupted, with the results up to that point; a run whose container was killed outright mid-run has no saved events yet and is not listed. Delete `./output/<job-id>` to remove a run.
 
 ## How it works
 

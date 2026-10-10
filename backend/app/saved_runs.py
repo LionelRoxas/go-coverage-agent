@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.jobs import Job, iter_events
-from app.models import Event, JobRequest, JobStatus, Summary, TokenUsage
+from app.models import Event, JobRequest, JobStatus, StopReason, Summary, TokenUsage
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class Unreadable(Exception):
 def _first_event(path: Path) -> Event:
     try:
         first = next(iter_events(path), None)
-    except (OSError, UnicodeDecodeError) as e:
+    except (OSError, ValueError) as e:
         raise Unreadable(f"events.jsonl cannot be read ({e})") from e
     if first is None or first.type != "job_started":
         raise Unreadable("events.jsonl does not start with job_started")
@@ -59,10 +59,12 @@ def load_run(folder: Path) -> Job:
         raise Unreadable(f"job_started does not hold a valid request ({e.errors()[0]['msg']})") from e
 
     terminal: Event | None = None
+    last: Event | None = None
     count, percent, ai_summary, accepted = 0, None, None, set()
     try:
         for e in iter_events(path):
             count += 1
+            last = e
             if e.type in TERMINAL:
                 terminal = e
             elif e.type in AI_SUMMARY:
@@ -73,19 +75,12 @@ def load_run(folder: Path) -> Job:
                 percent = e.data.get("percent", percent)
                 if "test_file" in e.data:
                     accepted.add(e.data["test_file"])
-    except (OSError, UnicodeDecodeError) as e:
+    except (OSError, ValueError) as e:
         raise Unreadable(f"events.jsonl cannot be read ({e})") from e
 
     job = Job(folder.name, request)
     job.created_at, job.finished, job.log_path = started.ts, True, path
     job.saved_event_count, job.saved_test_files = count, sorted(accepted)
-    if terminal is None:
-        job.status = JobStatus.INTERRUPTED
-    elif terminal.type == "job_failed" and terminal.data.get("reason") == "cancelled":
-        job.status = JobStatus.CANCELLED  # cancelled during setup: no Summary
-    else:
-        job.status = TERMINAL[terminal.type]
-
     report = _report(folder)
     summary_data = report if report is not None else (
         terminal.data if terminal is not None and terminal.type != "job_failed" else None)
@@ -100,6 +95,20 @@ def load_run(folder: Path) -> Job:
                                         completion_tokens=tokens.get("completion_tokens", 0))
         if ai_summary is None:
             ai_summary = "generated" if "ai_summary" in report else "failed" if "ai_summary_error" in report else None
+    if terminal is not None:
+        cancelled_in_setup = terminal.type == "job_failed" and terminal.data.get("reason") == "cancelled"
+        job.status = JobStatus.CANCELLED if cancelled_in_setup else TERMINAL[terminal.type]  # setup: no Summary
+    elif job.summary is not None and report is not None:
+        # The run finished (report.json is written with its result) but the app stopped before its terminal event
+        # reached the file, e.g. while the summary was written: replay that event after the file.
+        cancelled = job.summary.stop_reason is StopReason.CANCELLED
+        job.status = JobStatus.CANCELLED if cancelled else JobStatus.COMPLETED
+        assert last is not None
+        job.saved_tail = [Event(seq=last.seq + 1, ts=last.ts, type="job_cancelled" if cancelled else "job_completed",
+                                data=job.summary.model_dump(mode="json"))]
+        job.saved_event_count += 1
+    else:
+        job.status = JobStatus.INTERRUPTED
     job.percent = job.summary.final_percent if job.summary is not None else percent
     job.ai_summary = ai_summary
     return job

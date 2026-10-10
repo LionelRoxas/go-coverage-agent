@@ -15,6 +15,7 @@ from app.uploads import UploadError, receive_upload
 from app.workspace import WorkspaceError, resolve_repo
 
 router = APIRouter(prefix="/api")
+MAX_TEST_FILE_BYTES = 1024 * 1024  # a generated test file larger than this is not served
 
 
 class ApiError(Exception):
@@ -137,8 +138,10 @@ async def cancel(job_id: str, request: Request) -> dict:
 async def write_summary(job_id: str, request: Request) -> dict:
     """Write the AI summary of a finished run (again); summary events follow on the job's event stream."""
     _job(request, job_id)
+    manager = _manager(request)
     try:
-        return _manager(request).write_summary_again(job_id).snapshot()
+        saved = await asyncio.to_thread(manager.saved_events, job_id)  # a saved run: read its file off the loop
+        return manager.write_summary_again(job_id, saved).snapshot()
     except JobRejected as e:
         raise ApiError(e.status, e.code, e.message) from e
 
@@ -146,12 +149,21 @@ async def write_summary(job_id: str, request: Request) -> dict:
 @router.get("/jobs/{job_id}/files/{path:path}")
 async def file(job_id: str, path: str, request: Request) -> PlainTextResponse:
     job = _job(request, job_id)
-    if path not in job.accepted_test_files():
+    # A saved run's list comes from a file on disk, so the path is also checked against where it may lead.
+    if not path.endswith("_test.go") or path not in job.accepted_test_files():
         raise ApiError(404, "file_not_found", "Not a generated test file of this job.")
     settings = request.app.state.settings
-    target = settings.work_dir / job_id / "repo" / path
-    if not target.is_file():  # e.g. a run reloaded after a restart: its working copy is gone, its export is not
-        target = settings.output_dir / job_id / "tests" / path
-    if not target.is_file():
-        raise ApiError(404, "file_not_found", "File no longer exists.")
-    return PlainTextResponse(target.read_text(encoding="utf-8"))
+    gone = ApiError(404, "file_not_found", "File no longer exists.")
+    # The working copy, else (e.g. a run reloaded after a restart: its working copy is gone) the exported tests.
+    for root in (settings.work_dir / job_id / "repo", settings.output_dir / job_id / "tests"):
+        target = root / path
+        if target.is_file():
+            break
+    else:
+        raise gone
+    try:
+        if not target.resolve().is_relative_to(root.resolve()) or target.stat().st_size > MAX_TEST_FILE_BYTES:
+            raise gone
+        return PlainTextResponse(target.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as e:
+        raise gone from e

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -39,8 +40,9 @@ class JobRejected(Exception):
 
 
 def iter_events(path: Path) -> Iterator[Event]:
-    """The events of an events.jsonl, skipping a line that does not parse (a truncated last line: a partial write)."""
-    with path.open(encoding="utf-8") as f:
+    """The events of an events.jsonl, skipping a line that does not parse (a truncated last line: a partial write,
+    possibly cut inside a multi-byte character, which `errors="replace"` turns into a line that fails validation)."""
+    with path.open(encoding="utf-8", errors="replace") as f:
         for n, line in enumerate(f, 1):
             if not line.strip():
                 continue
@@ -75,6 +77,9 @@ class Job:
         self.log_path: Path | None = None
         self.saved_event_count = 0
         self.saved_test_files: list[str] = []
+        # Replayed after the file, never written: the job_completed / job_cancelled of a saved run whose file lacks it
+        # (the app stopped while its summary was written) but whose report.json holds the Summary.
+        self.saved_tail: list[Event] = []
 
     @property
     def on_disk(self) -> bool:
@@ -103,10 +108,10 @@ class Job:
             assert self.log_path is not None
             try:
                 events = await asyncio.to_thread(read_events, self.log_path)
-            except OSError:
+            except (OSError, ValueError):
                 log.warning("could not read %s", self.log_path, exc_info=True)
                 return
-            for event in events:
+            for event in [*events, *self.saved_tail]:
                 yield event
             return
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
@@ -248,6 +253,9 @@ class JobManager:
             job.status = JobStatus.FAILED
             await job.emit("job_failed", {"reason": "internal_error", "message": str(e), "output": ""})
         else:
+            # The terminal event is on disk before the summary call, which can take minutes: a restart meanwhile
+            # reloads the run as completed / cancelled, not interrupted.
+            self._save_events(job)
             # After job_completed / job_cancelled, so the result shows at once; the stream stays open meanwhile.
             # Setup failures have no Summary and get no summary.
             if job.request.options.write_summary:
@@ -259,7 +267,7 @@ class JobManager:
             finally:
                 job.close()
 
-    def write_summary_again(self, job_id: str) -> Job:
+    def write_summary_again(self, job_id: str, saved_events: list[Event] | None = None) -> Job:
         """POST /api/jobs/{id}/summary: (re)write the summary of a finished job; its events go to the job's stream,
         which stays open until the summary is written or has failed."""
         job = self.jobs[job_id]
@@ -276,27 +284,31 @@ class JobManager:
         if not self.settings.llm_configured:
             raise JobRejected(400, "llm_not_configured", "Set GROQ_API_KEY in .env and restart the app.")
         if job.on_disk:
-            self._load_saved_events(job)
+            job.events = saved_events if saved_events is not None else self.saved_events(job_id)
         job.finished = False
         job.summary_cancel = asyncio.Event()  # now, not in the task: a Cancel before it starts must count
         job.summary_task = asyncio.create_task(self._summary_again(job))
         return job
 
-    def _load_saved_events(self, job: Job) -> None:
-        """A saved run's events, in memory while its summary is written again; 409 when its files no longer give
-        the facts the summary needs."""
-        assert job.log_path is not None and job.summary is not None
+    def saved_events(self, job_id: str) -> list[Event] | None:
+        """A saved run's events (with its replayed tail), to hold in memory while its summary is written again; None
+        for a job whose events are in memory. 409 when its files no longer give the facts the summary needs. Blocking
+        file I/O: the API calls it in a thread."""
+        job = self.jobs[job_id]
+        if not job.on_disk or job.summary is None:
+            return None
+        assert job.log_path is not None
         unreadable = JobRejected(409, "run_files_unreadable", f"This run's saved files in ./output/{job.id} can't be "
                                  "read any more, so its summary can't be written again.")
         try:
-            events = read_events(job.log_path)
+            events = [*read_events(job.log_path), *job.saved_tail]
             build_facts(job.summary, events, repo=job.request.repo_path, model="", job_id=job.id)
         except Exception as e:  # noqa: BLE001 — a missing file, or events older code can't use
             log.info("cannot write the summary of saved run %s again", job.id, exc_info=True)
             raise unreadable from e
         if not events:
             raise unreadable
-        job.events = events
+        return events
 
     async def _summary_again(self, job: Job) -> None:
         try:
@@ -307,7 +319,7 @@ class JobManager:
             finally:
                 if job.log_path is not None:  # a saved run: back to disk, keeping the counts its snapshot shows
                     job.saved_event_count, job.saved_test_files = len(job.events), job.accepted_test_files()
-                    job.events = []
+                    job.events, job.saved_tail = [], []  # the tail is in the file now
                 job.close()
 
     def _model(self, job: Job) -> str:
@@ -389,7 +401,8 @@ class JobManager:
         try:
             out = self.settings.output_dir / job.id
             out.mkdir(parents=True, exist_ok=True)
-            (out / "events.jsonl").write_text(
-                "".join(e.model_dump_json() + "\n" for e in job.events), encoding="utf-8")
+            tmp = out / "events.jsonl.tmp"  # replace, never truncate: a kill mid-write keeps the earlier file
+            tmp.write_text("".join(e.model_dump_json() + "\n" for e in job.events), encoding="utf-8")
+            os.replace(tmp, out / "events.jsonl")
         except Exception:  # noqa: BLE001 — never let artifact writing block close()
             log.warning("could not write events.jsonl for job %s", job.id, exc_info=True)

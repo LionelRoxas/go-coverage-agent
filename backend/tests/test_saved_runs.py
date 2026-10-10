@@ -16,7 +16,8 @@ from app.models import JobStatus
 from app.saved_runs import load_runs
 from tests.fakes import fake_llm
 
-REAL_RUN = Path(__file__).parent / "fixtures" / "run_fc080d7fc500"
+FIXTURES = Path(__file__).parent / "fixtures"
+REAL_RUN = FIXTURES / "run_fc080d7fc500"
 OPTIONS = {"max_iterations": 20, "min_gain": 1.0, "patience": 2, "targets_per_iteration": 3, "max_fix_attempts": 2,
            "delete_existing_tests": True, "max_llm_tokens": 1000000, "exclude_patterns": []}
 
@@ -105,6 +106,63 @@ def test_an_interrupted_folder_is_not_modified(tmp_path, out):
     assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
 
 
+def frames_of(body: str) -> list[dict]:
+    return [json.loads(line[len("data: "):]) for line in body.splitlines() if line.startswith("data: ")]
+
+
+def test_a_finished_run_whose_file_lacks_its_terminal_event_is_not_interrupted(tmp_path, out):
+    """report.json holds the result: the app stopped after the run, e.g. while its summary was written."""
+    folder = write_run(out, "aaaaaaaaaaa1", run_events(("llm_request", {"role": "summarizer"})), report=summary_data())
+    write_run(out, "aaaaaaaaaaa2", run_events(), report=summary_data("cancelled", 55.5), ts=2000)
+    write_run(out, "aaaaaaaaaaa3", run_events(), report={"not": "a summary"}, ts=3000)
+    before = (folder / "events.jsonl").read_bytes()
+    m = manager_for(tmp_path)
+    assert [m.get(f"aaaaaaaaaaa{i}").status.value for i in (1, 2, 3)] == ["completed", "cancelled", "interrupted"]
+    assert m.get("aaaaaaaaaaa1").snapshot()["event_count"] == 5  # 4 saved + the replayed job_completed
+    assert (folder / "events.jsonl").read_bytes() == before
+
+
+async def test_the_missing_terminal_event_is_replayed_and_write_again_saves_it(tmp_path, out):
+    folder = write_run(out, "aaaaaaaaaaa1", run_events(("llm_request", {"role": "summarizer"})), report=summary_data())
+    m = manager_for(tmp_path)
+    async with client_for(m) as client:
+        frames = frames_of((await client.get("/api/jobs/aaaaaaaaaaa1/events")).text)
+        assert [f["seq"] for f in frames] == list(range(5))
+        assert frames[-1]["type"] == "job_completed" and frames[-1]["data"]["final_percent"] == 80.0
+        assert (await client.post("/api/jobs/aaaaaaaaaaa1/summary")).status_code == 202
+        await m.get("aaaaaaaaaaa1").summary_task
+        frames = frames_of((await client.get("/api/jobs/aaaaaaaaaaa1/events")).text)
+    saved = [json.loads(line)["type"] for line in (folder / "events.jsonl").read_text("utf-8").splitlines()]
+    assert saved[-4:] == ["llm_request", "job_completed", "llm_request", "summary_generated"]
+    assert [f["type"] for f in frames] == saved  # the tail is in the file now, not replayed twice
+
+
+@pytest.mark.parametrize("name", ["run_e2de1ca387cb", "run_fc080d7fc500"])
+@pytest.mark.parametrize("cut", [False, True])
+def test_real_runs_load_as_completed(tmp_path, out, name, cut):
+    """Copies of real ./output runs (trimmed events). cut: the file stops before job_completed, as run_job wrote it."""
+    folder = out / name.removeprefix("run_")
+    folder.mkdir()
+    lines = (FIXTURES / name / "events.jsonl").read_text("utf-8").splitlines(keepends=True)
+    if cut:
+        lines = lines[:[json.loads(line)["type"] for line in lines].index("job_completed")]
+    (folder / "events.jsonl").write_text("".join(lines), encoding="utf-8")
+    shutil.copyfile(FIXTURES / name / "report.json", folder / "report.json")
+    report = json.loads((folder / "report.json").read_text("utf-8"))
+    job = manager_for(tmp_path).get(folder.name)
+    assert job.status is JobStatus.COMPLETED and job.percent == report["final_percent"]
+    assert job.summary is not None and job.summary.stop_reason.value == report["stop_reason"]
+
+
+def test_a_last_line_cut_inside_a_multibyte_character_is_ignored(tmp_path, out):
+    folder = write_run(out, "aaaaaaaaaaa1", run_events(("job_completed", summary_data())))
+    cut = json.dumps({"seq": 4, "ts": 1, "type": "log", "data": {"m": "a — b"}}, ensure_ascii=False).encode()
+    with (folder / "events.jsonl").open("ab") as f:
+        f.write(cut[:cut.index("—".encode()) + 1])  # the first byte of the 3-byte dash
+    job = manager_for(tmp_path).get("aaaaaaaaaaa1")
+    assert job.status is JobStatus.COMPLETED and job.snapshot()["event_count"] == 4
+
+
 def test_a_truncated_last_line_is_ignored(tmp_path, out):
     write_run(out, "ccccccccccc1", run_events(("job_completed", summary_data())), tail='{"seq": 4, "ts": 12')
     job = manager_for(tmp_path).get("ccccccccccc1")
@@ -175,6 +233,31 @@ async def test_saved_test_files_are_served_from_output(tmp_path, out):
         assert (await client.get("/api/jobs/aaaaaaaaaaa1/files/other_test.go")).status_code == 404
 
 
+async def test_saved_file_paths_cannot_leave_the_tests_folder(tmp_path, out):
+    """A saved run's file list comes from disk: entries that point elsewhere are refused."""
+    folder = write_run(out, "aaaaaaaaaaa1", run_events(
+        ("candidate_accepted", {"index": 1, "file": "x.go", "test_file": "../events.jsonl", "percent": 60.0}),
+        ("candidate_accepted", {"index": 1, "file": "x.go", "test_file": "../x_test.go", "percent": 60.0}),
+        ("candidate_accepted", {"index": 1, "file": "y.go", "test_file": "link_test.go", "percent": 60.0}),
+        ("candidate_accepted", {"index": 1, "file": "z.go", "test_file": "big_test.go", "percent": 60.0}),
+        ("job_completed", summary_data())))
+    (folder / "tests").mkdir()
+    (folder / "x_test.go").write_text("package outside\n")
+    (folder / "tests" / "big_test.go").write_text("x" * (1024 * 1024 + 1))
+    try:
+        (folder / "tests" / "link_test.go").symlink_to(folder / "x_test.go")
+        linked = True
+    except OSError:  # no symlink privilege (Windows without developer mode)
+        linked = False
+    async with client_for(manager_for(tmp_path)) as client:
+        for path in ("../events.jsonl", "%2e%2e%2fevents.jsonl", "..%2Fx_test.go", "../x_test.go", "big_test.go",
+                     f"{(folder / 'x_test.go').as_posix()}"):
+            r = await client.get(f"/api/jobs/aaaaaaaaaaa1/files/{path}")
+            assert r.status_code == 404 and "error" in r.json() and "package outside" not in r.text, path
+        if linked:
+            assert (await client.get("/api/jobs/aaaaaaaaaaa1/files/link_test.go")).status_code == 404
+
+
 async def test_interrupted_runs_never_block_a_new_run(tmp_path, out, monkeypatch):
     write_run(out, "aaaaaaaaaaa1", run_events())
     ids = iter(["aaaaaaaaaaa1", "aaaaaaaaaaa1", "aaaaaaaaaaa9"])  # the first two collide with the saved run
@@ -221,7 +304,7 @@ async def test_write_again_on_a_saved_run(tmp_path, out):
 
 
 async def test_write_again_needs_a_report(tmp_path, out):
-    write_run(out, "aaaaaaaaaaa1", run_events(), report=summary_data())  # interrupted, though report.json exists
+    write_run(out, "aaaaaaaaaaa1", run_events())  # interrupted
     write_run(out, "aaaaaaaaaaa2", run_events(("job_failed", {"reason": "x", "message": "x", "output": ""})))
     folder = write_run(out, "aaaaaaaaaaa3", run_events(("job_completed", summary_data())))
     m = manager_for(tmp_path)
