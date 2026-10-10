@@ -1,6 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import type { Metadata } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { actionLinkClass, buttonClass, cardClass, readingHeadingClass, statementTitleClass } from "@/components/ui";
 import { type SectionId, walkthroughHref } from "../walkthrough/sections";
 
@@ -94,6 +95,11 @@ function CoverageLines() {
       </figcaption>
     </figure>
   );
+}
+
+/** A short piece of code in running text; long lines wrap at phone width. */
+function Code({ children }: { children: ReactNode }) {
+  return <code className="break-words font-mono text-[0.8125rem] text-text">{children}</code>;
 }
 
 function RepeatBracket({ index }: { index: number }) {
@@ -236,7 +242,7 @@ export default function HowItWorksPage() {
             <li>Each new batch of tests also has to run at least one piece of code that no earlier test ran. A batch that only repeats what is already checked adds nothing, so it isn’t kept.</li>
             <li>A test that runs code but never checks the result is not kept either.</li>
             <li>A failing test is dropped or undone, so it never counts toward the number.</li>
-            <li>Coverage says code ran, not that a test would notice it breaking. On a finished run, <strong className="font-semibold text-text">Run mutation test</strong> plants small bugs (such as <code className="font-mono text-sm">&lt;</code> turned into <code className="font-mono text-sm">&lt;=</code>) in a fresh copy and reports how many the kept tests catch. No AI, no tokens.</li>
+            <li>Coverage says code ran, not that a test would notice it breaking. The mutation score, below, measures that.</li>
             <li>The result was also checked independently: an earlier stats run (which reached 80.51%) had its kept tests re-run in a fresh copy of the project. They all passed and measured 80.5%.</li>
           </ul>
         </section>
@@ -269,6 +275,45 @@ export default function HowItWorksPage() {
             </article>
           ))}
         </div>
+      </section>
+
+      <section aria-labelledby="mutation-heading" className="space-y-4">
+        <h2 id="mutation-heading" className={h2}>How good are the tests? (mutation score)</h2>
+        <p className="leading-relaxed text-muted">
+          Coverage asks “did the tests run this line?” The mutation score asks “if this line had a bug, would the tests notice?”
+          To find out, the tool plants one small fake bug at a time in a fresh copy, such as a <Code>-</Code> turned into a <Code>+</Code> or
+          a <Code>&lt;</Code> turned into <Code>&lt;=</Code>, and runs the tests again:
+        </p>
+        <ul data-testid="mutation-compare" className={`divide-y divide-border text-sm ${cardClass({ padded: false })}`}>
+          <li className="grid gap-1 p-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-4">
+            <span className="font-medium">Caught</span>
+            <span className="min-w-0 text-muted">
+              A test fails. For example, in <Code>histogram.go</Code>, <Code>width := (max - min) / float64(bins)</Code> was changed
+              to <Code>* float64(bins)</Code> and a test failed.
+            </span>
+          </li>
+          <li className="grid gap-1 p-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-4">
+            <span className="font-medium">Slipped through</span>
+            <span className="min-w-0 text-muted">
+              Every test still passes. For example, in <Code>percentile.go</Code>, <Code>percentile = (1-f)*c[k] + f*c[k+1]</Code> was
+              changed to <Code>(1+f)</Code> and no test noticed.
+            </span>
+          </li>
+        </ul>
+        <p className="text-sm leading-relaxed text-muted">
+          The score is caught ÷ (caught + slipped through), over a fixed sample of 60 planted bugs in code the tests run.
+          A planted bug that stops the code from building is skipped and not counted; a test run that takes too long counts as caught.
+          The score is a lower bound: each planted bug is checked only by the tests of its own package, and a few swaps don’t change what the code does.
+        </p>
+        <p className="text-sm leading-relaxed text-muted">
+          On the stats project the two evidence runs scored 71.7% and 75.0%. Most bugs that slipped through were in <Code>norm.go</Code> and <Code>ttest.go</Code>,
+          maths-heavy code whose tests check loose properties (such as “returns 5 numbers”) instead of exact values.
+          Coverage showed those lines as tested; the mutation score shows they are only weakly checked.
+        </p>
+        <p className="text-sm leading-relaxed text-muted">
+          It is optional: press <strong className="font-semibold text-text">Run mutation test</strong> on a finished run. The test itself uses no AI and no tokens.
+          When it finishes, the AI summary is written again (one AI call) with a short “Test quality” paragraph.
+        </p>
       </section>
 
       <footer className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-border pt-6">

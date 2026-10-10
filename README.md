@@ -76,7 +76,9 @@ The loop is plain, testable Python; the LLM is used only to write tests, fix the
 5. **Repair.** If some but not all new tests fail or don't assert, those are removed and the rest are checked again. Forgotten imports and reused test names are fixed without an LLM call. Anything else goes to the Fixer LLM with the item's full attempt history (up to 2 tries). A candidate that still fails is rolled back.
 6. **Stop** on target reached, marginal gains (less than `min_gain` points for `patience` rounds), max rounds, no targets left, token budget, cancel, or Groq unreachable for 10 minutes. A Groq outage never counts against a target; the item is retried later.
 7. **Summarize.** One more LLM call writes two summaries from the run's measured facts, one for stakeholders and one for engineers. A deterministic check drops any sentence whose numbers, files or test names aren't in those facts. Saved as `SUMMARY.md`; it can be turned off.
-8. **Mutation test (optional).** On a finished run, **Run mutation test** swaps one operator at a time (`+`/`-`, `*`/`/`, `<`/`<=`, `>`/`>=`, `==`/`!=`, `&&`/`||`) in covered code of a fresh copy, for a seeded sample of up to 60 mutants, and reruns that package's tests. It shows the **mutation score** (bugs caught ÷ bugs counted) next to the coverage, per file, with each missed bug as a one-line diff. No LLM call.
+8. **Mutation test (optional).** On a finished run, **Run mutation test** swaps one operator at a time (`+`/`-`, `*`/`/`, `<`/`<=`, `>`/`>=`, `==`/`!=`, `&&`/`||`) in covered code of a fresh copy, for a seeded sample of up to 60 mutants, and reruns that package's tests. It shows the **mutation score** next to the coverage, per file, with each missed bug as a one-line diff. No LLM call for the test itself.
+   - Score = caught ÷ (caught + missed): a planted bug is caught when a test fails or the test run times out, and missed when every test still passes. One that does not build is skipped and not counted.
+   - Afterwards the AI summary is written again (as in step 7) with a *Test quality* paragraph, unless the summary is turned off or no Groq key or budget is left.
 
 ## Results
 
