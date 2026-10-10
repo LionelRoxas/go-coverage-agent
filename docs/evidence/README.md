@@ -17,6 +17,8 @@ Both runs used `openai/gpt-oss-120b` on Groq (Writer and Fixer at `medium` effor
 first. Re-measured on 2026-10-10 with `golang:1.27-bookworm`; `go vet ./...` was clean and every test passed in both
 folders.
 
+**Mutation score** (the app's **Run mutation test**, a seeded sample of 60 operator swaps in covered code, each re-tested with its package's tests): `8c38d392ecaf` **71.7%** (43 caught, 17 missed), `befcbd2b6ada` **75.0%** (45 caught, 15 missed). Each mutant and its result is in `report.json` under `mutation`; most missed ones are in `norm.go` and `ttest.go`, where tests check properties rather than exact values.
+
 The 100% run reported two suspected bugs, and neither is locked in by a test: `Sigmoid`'s doc comment says the output
 range is -1 to 1 while the code (correctly) returns values in (0, 1), and the tests assert the mathematical values;
 `NormSample` is tested only for properties (length, and a constant output when the scale is 0).
@@ -39,5 +41,5 @@ tests.
 ## What `report.json` contains
 
 The app's final report of the run: per-file coverage before and after, each round, the tests and test files added,
-suspected bugs, prediction disagreements, token counts and duration. Both files were checked before they were
+suspected bugs, prediction disagreements, token counts, duration and the mutation test result. Both files were checked before they were
 committed: they hold no API keys or other secrets and no absolute host paths, so nothing was changed in them.

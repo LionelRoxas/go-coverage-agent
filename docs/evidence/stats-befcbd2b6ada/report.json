@@ -1015,5 +1015,827 @@
     "prompt_tokens": 4838,
     "completion_tokens": 2279,
     "total_tokens": 7117
+  },
+  "mutation": {
+    "total": 60,
+    "killed": 45,
+    "survived": 15,
+    "invalid": 0,
+    "timeouts": 0,
+    "score": 75.0,
+    "per_file": [
+      {
+        "file": "correlation.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "cumulative.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "describe.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "diff.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "distances.go",
+        "killed": 4,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "geometric_distribution.go",
+        "killed": 3,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "kendall.go",
+        "killed": 0,
+        "survived": 1,
+        "score": 0.0
+      },
+      {
+        "file": "kurtosis.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "mean.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "median.go",
+        "killed": 2,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "moving.go",
+        "killed": 1,
+        "survived": 1,
+        "score": 50.0
+      },
+      {
+        "file": "norm.go",
+        "killed": 11,
+        "survived": 4,
+        "score": 73.3
+      },
+      {
+        "file": "outlier.go",
+        "killed": 1,
+        "survived": 1,
+        "score": 50.0
+      },
+      {
+        "file": "percentile.go",
+        "killed": 2,
+        "survived": 1,
+        "score": 66.7
+      },
+      {
+        "file": "percentile_of_score.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "quartile.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "regression.go",
+        "killed": 4,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "sigmoid.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "softmax.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "trimmed_mean.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "ttest.go",
+        "killed": 1,
+        "survived": 5,
+        "score": 16.7
+      },
+      {
+        "file": "variance.go",
+        "killed": 3,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "weighted_mean.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "winsorize.go",
+        "killed": 1,
+        "survived": 1,
+        "score": 50.0
+      },
+      {
+        "file": "ztest.go",
+        "killed": 0,
+        "survived": 1,
+        "score": 0.0
+      }
+    ],
+    "mutants": [
+      {
+        "index": 1,
+        "file": "correlation.go",
+        "line": 46,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if l1 == 0 || l2 == 0 {",
+        "after": "if l1 != 0 || l2 == 0 {"
+      },
+      {
+        "index": 2,
+        "file": "cumulative.go",
+        "line": 6,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if input.Len() == 0 {",
+        "after": "if input.Len() != 0 {"
+      },
+      {
+        "index": 3,
+        "file": "describe.go",
+        "line": 35,
+        "original": "&&",
+        "mutated": "||",
+        "op": "logical",
+        "status": "killed",
+        "before": "if description.Count == 0 && !allowNaN {",
+        "after": "if description.Count == 0 || !allowNaN {"
+      },
+      {
+        "index": 4,
+        "file": "diff.go",
+        "line": 16,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "diff[i-1] = input[i] - input[i-1]",
+        "after": "diff[i-1] = input[i] + input[i-1]"
+      },
+      {
+        "index": 5,
+        "file": "distances.go",
+        "line": 44,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "distance = distance + ((dataPointX[i] - dataPointY[i]) * (dataPointX[i] - dataPointY[i]))",
+        "after": "distance = distance - ((dataPointX[i] - dataPointY[i]) * (dataPointX[i] - dataPointY[i]))"
+      },
+      {
+        "index": 6,
+        "file": "distances.go",
+        "line": 44,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "distance = distance + ((dataPointX[i] - dataPointY[i]) * (dataPointX[i] - dataPointY[i]))",
+        "after": "distance = distance + ((dataPointX[i] - dataPointY[i]) / (dataPointX[i] - dataPointY[i]))"
+      },
+      {
+        "index": 7,
+        "file": "distances.go",
+        "line": 57,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "distance = distance + math.Abs(dataPointX[i]-dataPointY[i])",
+        "after": "distance = distance - math.Abs(dataPointX[i]-dataPointY[i])"
+      },
+      {
+        "index": 8,
+        "file": "distances.go",
+        "line": 80,
+        "original": "!=",
+        "mutated": "==",
+        "op": "equality",
+        "status": "killed",
+        "before": "if err != nil {",
+        "after": "if err == nil {"
+      },
+      {
+        "index": 9,
+        "file": "geometric_distribution.go",
+        "line": 23,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "return math.Pow(q, float64(a-1)) * -math.Expm1(float64(b-a+1)*math.Log1p(-p)), nil",
+        "after": "return math.Pow(q, float64(a-1)) * -math.Expm1(float64(b+a+1)*math.Log1p(-p)), nil"
+      },
+      {
+        "index": 10,
+        "file": "geometric_distribution.go",
+        "line": 23,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "return math.Pow(q, float64(a-1)) * -math.Expm1(float64(b-a+1)*math.Log1p(-p)), nil",
+        "after": "return math.Pow(q, float64(a-1)) * -math.Expm1(float64(b-a-1)*math.Log1p(-p)), nil"
+      },
+      {
+        "index": 11,
+        "file": "geometric_distribution.go",
+        "line": 39,
+        "original": "||",
+        "mutated": "&&",
+        "op": "logical",
+        "status": "killed",
+        "before": "if (p > 1) || (p < 0) {",
+        "after": "if (p > 1) && (p < 0) {"
+      },
+      {
+        "index": 12,
+        "file": "kendall.go",
+        "line": 45,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "denominator := math.Sqrt((concordant + discordant + tiedX) * (concordant + discordant + tiedY))",
+        "after": "denominator := math.Sqrt((concordant + discordant + tiedX) * (concordant - discordant + tiedY))"
+      },
+      {
+        "index": 13,
+        "file": "kurtosis.go",
+        "line": 36,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "return (sumOfFourths/n)/(variance*variance) - 3.0, nil",
+        "after": "return (sumOfFourths/n)/(variance*variance) + 3.0, nil"
+      },
+      {
+        "index": 14,
+        "file": "mean.go",
+        "line": 29,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "killed",
+        "before": "if n < 0 {",
+        "after": "if n <= 0 {"
+      },
+      {
+        "index": 15,
+        "file": "median.go",
+        "line": 18,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "} else if l%2 == 0 {",
+        "after": "} else if l%2 != 0 {"
+      },
+      {
+        "index": 16,
+        "file": "median.go",
+        "line": 19,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "median, _ = Mean(c[l/2-1 : l/2+1])",
+        "after": "median, _ = Mean(c[l*2-1 : l/2+1])"
+      },
+      {
+        "index": 17,
+        "file": "moving.go",
+        "line": 14,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "survived",
+        "before": "if window < 1 || window > input.Len() {",
+        "after": "if window <= 1 || window > input.Len() {"
+      },
+      {
+        "index": 18,
+        "file": "moving.go",
+        "line": 92,
+        "original": "||",
+        "mutated": "&&",
+        "op": "logical",
+        "status": "killed",
+        "before": "if window < 1 || window > input.Len() {",
+        "after": "if window < 1 && window > input.Len() {"
+      },
+      {
+        "index": 19,
+        "file": "norm.go",
+        "line": 32,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "for i := 0; i < int(float64(size/2)+float64(size%2)); i++ {",
+        "after": "for i := 0; i < int(float64(size*2)+float64(size%2)); i++ {"
+      },
+      {
+        "index": 20,
+        "file": "norm.go",
+        "line": 37,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "x1 := loc + (scale * (math.Sqrt(-2*math.Log(u1)) * math.Cos(2*math.Pi*u2)))",
+        "after": "x1 := loc + (scale * (math.Sqrt(-2*math.Log(u1)) * math.Cos(2/math.Pi*u2)))"
+      },
+      {
+        "index": 21,
+        "file": "norm.go",
+        "line": 49,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "return (math.Pow(math.E, -(math.Pow(x-loc, 2))/(2*math.Pow(scale, 2)))) / (scale * math.Sqrt(2*math.Pi))",
+        "after": "return (math.Pow(math.E, -(math.Pow(x-loc, 2))/(2*math.Pow(scale, 2)))) / (scale / math.Sqrt(2*math.Pi))"
+      },
+      {
+        "index": 22,
+        "file": "norm.go",
+        "line": 79,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "z := (x - loc) / scale",
+        "after": "z := (x - loc) * scale"
+      },
+      {
+        "index": 23,
+        "file": "norm.go",
+        "line": 92,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "if q := 0.5 * math.Erfc(z/math.Sqrt2); q >= normSmallestNormal {",
+        "after": "if q := 0.5 / math.Erfc(z/math.Sqrt2); q >= normSmallestNormal {"
+      },
+      {
+        "index": 24,
+        "file": "norm.go",
+        "line": 148,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "x = (((((c1*q+c2)*q+c3)*q+c4)*q+c5)*q + c6) /",
+        "after": "x = (((((c1*q-c2)*q+c3)*q+c4)*q+c5)*q + c6) /"
+      },
+      {
+        "index": 25,
+        "file": "norm.go",
+        "line": 149,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "((((d1*q+d2)*q+d3)*q+d4)*q + 1)",
+        "after": "((((d1*q+d2)*q+d3)/q+d4)*q + 1)"
+      },
+      {
+        "index": 26,
+        "file": "norm.go",
+        "line": 151,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "q := math.Sqrt(-2 * math.Log(1-p))",
+        "after": "q := math.Sqrt(-2 * math.Log(1+p))"
+      },
+      {
+        "index": 27,
+        "file": "norm.go",
+        "line": 153,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "((((d1*q+d2)*q+d3)*q+d4)*q + 1)",
+        "after": "((((d1*q+d2)*q+d3)/q+d4)*q + 1)"
+      },
+      {
+        "index": 28,
+        "file": "norm.go",
+        "line": 157,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "x = (((((a1*r+a2)*r+a3)*r+a4)*r+a5)*r + a6) * q /",
+        "after": "x = (((((a1*r+a2)*r+a3)*r+a4)*r+a5)/r + a6) * q /"
+      },
+      {
+        "index": 29,
+        "file": "norm.go",
+        "line": 158,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "(((((b1*r+b2)*r+b3)*r+b4)*r+b5)*r + 1)",
+        "after": "(((((b1*r+b2)*r+b3)*r-b4)*r+b5)*r + 1)"
+      },
+      {
+        "index": 30,
+        "file": "norm.go",
+        "line": 198,
+        "original": "<=",
+        "mutated": "<",
+        "op": "boundary",
+        "status": "killed",
+        "before": "for k := 2; k <= n; k++ {",
+        "after": "for k := 2; k < n; k++ {"
+      },
+      {
+        "index": 31,
+        "file": "norm.go",
+        "line": 206,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "next += float64(k-1) * variance * prev",
+        "after": "next += float64(k-1) / variance * prev"
+      },
+      {
+        "index": 32,
+        "file": "norm.go",
+        "line": 252,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "return [2]float64{mean, math.Sqrt((stdNumerator) / (float64(len(data))))}",
+        "after": "return [2]float64{mean, math.Sqrt((stdNumerator) * (float64(len(data))))}"
+      },
+      {
+        "index": 33,
+        "file": "norm.go",
+        "line": 311,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "ret, i = ret/g, i/(j/g)",
+        "after": "ret, i = ret/g, i/(j*g)"
+      },
+      {
+        "index": 34,
+        "file": "outlier.go",
+        "line": 26,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "lif := qs.Q1 - (1.5 * iqr)",
+        "after": "lif := qs.Q1 - (1.5 / iqr)"
+      },
+      {
+        "index": 35,
+        "file": "outlier.go",
+        "line": 40,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "survived",
+        "before": "} else if v < lif || v > uif {",
+        "after": "} else if v <= lif || v > uif {"
+      },
+      {
+        "index": 36,
+        "file": "percentile.go",
+        "line": 54,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "f := rank - float64(k)",
+        "after": "f := rank + float64(k)"
+      },
+      {
+        "index": 37,
+        "file": "percentile.go",
+        "line": 63,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "percentile = c[k] + f*delta",
+        "after": "percentile = c[k] + f/delta"
+      },
+      {
+        "index": 38,
+        "file": "percentile.go",
+        "line": 85,
+        "original": "||",
+        "mutated": "&&",
+        "op": "logical",
+        "status": "killed",
+        "before": "if math.IsNaN(percent) || percent < 0 || percent > 100 {",
+        "after": "if math.IsNaN(percent) || percent < 0 && percent > 100 {"
+      },
+      {
+        "index": 39,
+        "file": "percentile_of_score.go",
+        "line": 12,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if input.Len() == 0 {",
+        "after": "if input.Len() != 0 {"
+      },
+      {
+        "index": 40,
+        "file": "quartile.go",
+        "line": 30,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if il%2 == 0 {",
+        "after": "if il%2 != 0 {"
+      },
+      {
+        "index": 41,
+        "file": "regression.go",
+        "line": 27,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "meanY := sumY / float64(len(s))",
+        "after": "meanY := sumY * float64(len(s))"
+      },
+      {
+        "index": 42,
+        "file": "regression.go",
+        "line": 44,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "Y: meanY + gradient*(s[j].X-meanX),",
+        "after": "Y: meanY + gradient/(s[j].X-meanX),"
+      },
+      {
+        "index": 43,
+        "file": "regression.go",
+        "line": 71,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "meanDeltaX := sumDeltaXY / sumY",
+        "after": "meanDeltaX := sumDeltaXY * sumY"
+      },
+      {
+        "index": 44,
+        "file": "regression.go",
+        "line": 120,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "meanY := sumY / float64(len(s))",
+        "after": "meanY := sumY * float64(len(s))"
+      },
+      {
+        "index": 45,
+        "file": "sigmoid.go",
+        "line": 10,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if input.Len() == 0 {",
+        "after": "if input.Len() != 0 {"
+      },
+      {
+        "index": 46,
+        "file": "softmax.go",
+        "line": 9,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if input.Len() == 0 {",
+        "after": "if input.Len() != 0 {"
+      },
+      {
+        "index": 47,
+        "file": "trimmed_mean.go",
+        "line": 15,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if l == 0 {",
+        "after": "if l != 0 {"
+      },
+      {
+        "index": 48,
+        "file": "ttest.go",
+        "line": 26,
+        "original": ">",
+        "mutated": ">=",
+        "op": "boundary",
+        "status": "survived",
+        "before": "if data2 != nil && data2.Len() > 0 {",
+        "after": "if data2 != nil && data2.Len() >= 0 {"
+      },
+      {
+        "index": 49,
+        "file": "ttest.go",
+        "line": 39,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "se := math.Sqrt(pooledVar * (1.0/float64(n1) + 1.0/float64(n2)))",
+        "after": "se := math.Sqrt(pooledVar / (1.0/float64(n1) + 1.0/float64(n2)))"
+      },
+      {
+        "index": 50,
+        "file": "ttest.go",
+        "line": 79,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "front := math.Exp(math.Log(x)*a+math.Log(1-x)*b-lbeta) / a",
+        "after": "front := math.Exp(math.Log(x)*a+math.Log(1-x)/b-lbeta) / a"
+      },
+      {
+        "index": 51,
+        "file": "ttest.go",
+        "line": 84,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "d := clampTiny(1.0 - (a+b)*x/(a+1))",
+        "after": "d := clampTiny(1.0 + (a+b)*x/(a+1))"
+      },
+      {
+        "index": 52,
+        "file": "ttest.go",
+        "line": 98,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "num = -(a + m) * (a + b + m) * x / ((a + 2*m) * (a + 2*m + 1))",
+        "after": "num = -(a + m) * (a + b - m) * x / ((a + 2*m) * (a + 2*m + 1))"
+      },
+      {
+        "index": 53,
+        "file": "ttest.go",
+        "line": 105,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "survived",
+        "before": "if math.Abs(delta-1.0) < 1e-10 {",
+        "after": "if math.Abs(delta-1.0) <= 1e-10 {"
+      },
+      {
+        "index": 54,
+        "file": "variance.go",
+        "line": 8,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if input.Len() == 0 {",
+        "after": "if input.Len() != 0 {"
+      },
+      {
+        "index": 55,
+        "file": "variance.go",
+        "line": 22,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "return variance / float64((input.Len() - (1 * sample))), nil",
+        "after": "return variance / float64((input.Len() + (1 * sample))), nil"
+      },
+      {
+        "index": 56,
+        "file": "variance.go",
+        "line": 86,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if l1 == 0 || l2 == 0 {",
+        "after": "if l1 == 0 || l2 != 0 {"
+      },
+      {
+        "index": 57,
+        "file": "weighted_mean.go",
+        "line": 28,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "weightedSum += data[i] * weights[i]",
+        "after": "weightedSum += data[i] / weights[i]"
+      },
+      {
+        "index": 58,
+        "file": "winsorize.go",
+        "line": 23,
+        "original": ">=",
+        "mutated": ">",
+        "op": "boundary",
+        "status": "killed",
+        "before": "if !(percent >= 0 && percent < 0.5) {",
+        "after": "if !(percent > 0 && percent < 0.5) {"
+      },
+      {
+        "index": 59,
+        "file": "winsorize.go",
+        "line": 36,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "survived",
+        "before": "if v < lower {",
+        "after": "if v <= lower {"
+      },
+      {
+        "index": 60,
+        "file": "ztest.go",
+        "line": 36,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "z = (mean1 - mean2) / se",
+        "after": "z = (mean1 - mean2) * se"
+      }
+    ]
   }
 }

@@ -62,6 +62,7 @@ function Business({ ai }: { ai: SummaryGenerated }) {
             {ai.cost_usd && <span className="mt-1.5 block font-mono text-[0.8125rem] tabular-nums text-text">{costLine(ai.cost_usd)}</span>}
           </Row>
         )}
+        {b.test_quality && <Row label="Test quality"><Prose text={b.test_quality} /></Row>}
         {b.risks.length > 0 && <Row label="Risks"><Bullets items={b.risks} /></Row>}
         {b.recommendation && (
           <Row label="Recommendation">
@@ -81,6 +82,7 @@ function Technical({ ai }: { ai: SummaryGenerated }) {
       <Headline text={t.headline} />
       <dl className="space-y-4">
         {t.what_was_tested && <Row label="What was tested"><Prose text={t.what_was_tested} /></Row>}
+        {t.test_quality && <Row label="Test quality"><Prose text={t.test_quality} /></Row>}
         {t.where_tests_live && <Row label="Where the tests live"><Prose text={t.where_tests_live} /></Row>}
         {t.how_to_run && <Row label="How to run"><Prose text={t.how_to_run} /></Row>}
         {t.gaps.length > 0 && (

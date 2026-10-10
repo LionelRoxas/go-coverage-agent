@@ -259,3 +259,15 @@ class GoTools:
     async def asserts(self, go_file: Path) -> CommandResult:
         """`gohelper asserts`: a JSON list of the file's Test functions that never check a result."""
         return await self._run(["gohelper", "asserts", str(go_file)])
+
+    async def mutate(self, go_file: str) -> list[dict[str, Any]]:
+        """`gohelper mutate`: the file's operator mutation sites (file, line, col, offset, original, mutated, op)."""
+        r = await self._run(["gohelper", "mutate", go_file], max_chars=JSON_MAX_CHARS)
+        if r.exit_code != 0:
+            raise GoToolError("gohelper mutate failed", r)
+        return json.loads(r.stdout)
+
+    async def test_package(self, pkg: GoPackage, timeout_s: float) -> CommandResult:
+        """One mutant: `go test -count=1 -timeout=<t>` on one package; the build of a mutated file may take a while too."""
+        return await self._run(["go", "test", "-count=1", f"-timeout={timeout_s:g}s", pkg.import_path],
+                               timeout=self.settings.compile_timeout_s + timeout_s)

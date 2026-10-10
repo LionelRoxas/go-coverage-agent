@@ -99,7 +99,8 @@ async def create_job(body: JobRequest, request: Request) -> dict:
         job = _manager(request).start(body)
     except JobConflict as e:
         busy = _manager(request).get(e.job_id)
-        what = "writing its summary" if busy is not None and busy.writing_summary else "running"
+        what = ("writing its summary" if busy is not None and busy.writing_summary
+                else "running a mutation test" if busy is not None and busy.mutating else "running")
         raise ApiError(409, "job_running", f"Job {e.job_id} is still {what}.") from e
     except JobRejected as e:
         raise ApiError(e.status, e.code, e.message) from e
@@ -144,6 +145,18 @@ async def write_summary(job_id: str, request: Request) -> dict:
     try:
         saved = await asyncio.to_thread(manager.saved_events, job_id)  # a saved run: read its file off the loop
         return manager.write_summary_again(job_id, saved).snapshot()
+    except JobRejected as e:
+        raise ApiError(e.status, e.code, e.message) from e
+
+
+@router.post("/jobs/{job_id}/mutation", status_code=202)
+async def mutation_test(job_id: str, request: Request) -> dict:
+    """Mutation-test a finished run's kept tests; its events follow on the job's event stream."""
+    _job(request, job_id)
+    manager = _manager(request)
+    try:
+        saved = await asyncio.to_thread(manager.saved_log, job_id)  # a saved run: read its file off the loop
+        return manager.mutation_test(job_id, saved).snapshot()
     except JobRejected as e:
         raise ApiError(e.status, e.code, e.message) from e
 

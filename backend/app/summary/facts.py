@@ -47,6 +47,39 @@ class CostFacts(BaseModel):
     total_usd: float
 
 
+class SurvivorFile(BaseModel):
+    file: str
+    survived: int
+
+
+class MutationFacts(BaseModel):
+    """The latest "Run mutation test" result: small bugs planted one at a time in covered code."""
+    score: float | None  # percent of the counted mutants the tests caught; None when none could be counted
+    killed: int  # caught (a test failed or timed out)
+    survived: int  # every test still passed
+    counted: int  # killed + survived: what the score is over
+    skipped: int  # did not build; not counted
+    timeouts: int  # caught by a timeout (included in killed)
+    sample_size: int  # mutants tried (a seeded sample of the sites in covered code)
+    most_survivors: list[SurvivorFile]  # up to MOST_SURVIVORS files, most survivors first
+
+
+MOST_SURVIVORS = 3
+
+
+def mutation_facts(events: Sequence[Event]) -> MutationFacts | None:
+    """From the last mutation_completed (it is also report.json's `mutation`); None without one."""
+    d = next((e.data for e in reversed(events) if e.type == "mutation_completed"), None)
+    if d is None:
+        return None
+    survivors = sorted((f for f in d.get("per_file", []) if f.get("survived")),
+                       key=lambda f: (-f["survived"], f["file"]))[:MOST_SURVIVORS]
+    killed, survived = d.get("killed", 0), d.get("survived", 0)
+    return MutationFacts(score=d.get("score"), killed=killed, survived=survived, counted=killed + survived,
+                         skipped=d.get("invalid", 0), timeouts=d.get("timeouts", 0), sample_size=d.get("total", 0),
+                         most_survivors=[SurvivorFile(file=f["file"], survived=f["survived"]) for f in survivors])
+
+
 class RunFacts(BaseModel):
     repo: str
     module: str | None
@@ -94,6 +127,7 @@ class RunFacts(BaseModel):
     per_file: list[FileFact]
     lowest_files: list[LowFile]
     suspected_bugs: list[SuspectedBug]
+    mutation: MutationFacts | None = None  # only after "Run mutation test" completed on this run
 
 
 def cost_usd(prompt_tokens: int, completion_tokens: int,
@@ -301,4 +335,5 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
         test_files_count=len(summary.test_files), test_files=list(summary.test_files),
         tests_dir=f"output/{job_id}/tests",
         per_file=per_file, lowest_files=lows[:LOWEST_FILES], suspected_bugs=drop_refuted_bugs(summary.suspected_bugs, run),
+        mutation=mutation_facts(events),  # after the run's terminal event, so from all the events
     )

@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     upload_max_file_bytes: int = Field(1024 * 1024, gt=0)  # UPLOAD_MAX_FILE_BYTES: larger files are skipped
 
     history_max_runs: int = Field(500, ge=0)  # HISTORY_MAX_RUNS: the most recent runs in ./output reloaded on startup
+    # "Run mutation test" on a finished run: how many mutants (sampled with a fixed seed) and go's -timeout for each
+    mutation_sample: int = Field(60, gt=0)  # MUTATION_SAMPLE
+    mutation_timeout_s: float = Field(30.0, gt=0)  # MUTATION_TIMEOUT_S
 
     @property
     def llm_configured(self) -> bool:

@@ -39,6 +39,7 @@ export function toMarkdown(ai: SummaryGenerated, { repo, model, generatedAt }: {
   add(b.outcome);
   add(b.efficiency);
   if (ai.cost_usd) blocks.push(costLine(ai.cost_usd));
+  add(b.test_quality ?? "", "**Test quality:** "); // only after a mutation test (older payloads lack it)
   bullets("Risks", b.risks);
   add(b.recommendation, "**Recommendation:** ");
 
@@ -46,6 +47,7 @@ export function toMarkdown(ai: SummaryGenerated, { repo, model, generatedAt }: {
   if (!hasText(t)) blocks.push(`_${EMPTY_PART}_`);
   add(t.headline, "### ");
   add(t.what_was_tested, "**What was tested:** ");
+  add(t.test_quality ?? "", "**Test quality:** ");
   add(t.where_tests_live, "**Where the tests live:** ");
   bullets("Gaps", t.gaps.map((g) => `\`${g.file}\`: ${g.detail}`));
   bullets("Suspected bugs", t.suspected_bugs);

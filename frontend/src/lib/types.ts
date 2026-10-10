@@ -66,7 +66,10 @@ export type JobOptions = {
 };
 
 /** The end-of-run AI summary (summary_generated), written from the run's measured facts. */
-export type BusinessSummary = { headline: string; outcome: string; efficiency: string; risks: string[]; recommendation: string };
+/** test_quality: only after a mutation test (empty otherwise; older payloads lack it). */
+export type BusinessSummary = {
+  headline: string; outcome: string; efficiency: string; risks: string[]; recommendation: string; test_quality?: string;
+};
 export type TechnicalSummary = {
   headline: string;
   what_was_tested: string;
@@ -76,6 +79,7 @@ export type TechnicalSummary = {
   rejected_or_failed: string;
   how_to_run: string;
   next_steps: string[];
+  test_quality?: string;
 };
 /** run: the run itself (what the text talks about); summary: the summary call; input/output/total: both together. */
 export type CostUsd = { run: number; summary: number; input: number; output: number; total: number };
@@ -144,4 +148,20 @@ export type JobSnapshot = {
   writing_summary?: boolean;
   /** The last AI summary event: "generated" or "failed"; null when none. Older backends omit it. */
   ai_summary?: "generated" | "failed" | null;
+  /** "Run mutation test" is running on this finished run; the job still counts as busy. Older backends omit it. */
+  mutating?: boolean;
+};
+
+/** One planted bug (mutant_result): "timeout" counts as killed; "invalid" (does not build) is not counted. */
+export type Mutant = {
+  index: number; file: string; line: number; original: string; mutated: string; op: string;
+  status: "killed" | "survived" | "timeout" | "invalid";
+  /** The source line before and after the swap (the mini diff). */
+  before?: string; after?: string;
+};
+/** mutation_completed: score = killed ÷ (killed + survived) in percent, null when no mutant was counted. */
+export type MutationResult = {
+  total: number; killed: number; survived: number; invalid: number; timeouts: number; score: number | null;
+  per_file: { file: string; killed: number; survived: number; score: number | null }[];
+  mutants: Mutant[];
 };

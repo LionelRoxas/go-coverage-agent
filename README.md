@@ -9,7 +9,7 @@ An autonomous agent that raises unit-test coverage for Go repositories. Give it 
 
 ## At a glance
 
-- **Result on the assignment's repo** (montanaflynn/stats, its own tests deleted): **0% → 81.15% in 146 s** at the default 80% goal, and **0% → 100.0% in 332 s** at a 100% goal. Both runs were made with this code; `make verify-evidence` re-measures their tests in a plain Go container and gets the same numbers ([evidence](docs/evidence)).
+- **Result on the assignment's repo** (montanaflynn/stats, its own tests deleted): **0% → 81.15% in 146 s** at the default 80% goal, and **0% → 100.0% in 332 s** at a 100% goal. Both runs were made with this code; `make verify-evidence` re-measures their tests in a plain Go container and gets the same numbers ([evidence](docs/evidence)). Test quality: the kept tests catch **72–75%** of planted bugs (mutation score).
 - **How:** a deterministic loop does the planning, checking and stopping; the LLM only writes and fixes tests (strict JSON, no tools, no shell). A batch of tests is kept only if it compiles, passes `go vet`, every test asserts something, it passes twice and it covers code that wasn't covered before.
 - **Stack:** FastAPI backend, Next.js frontend, a small Go AST helper, Docker Compose. **Model:** `openai/gpt-oss-120b` on Groq.
 - **Scope:** a single-user tool that runs locally. There are no accounts: whoever opens http://localhost:3000 sees every run, and run history is saved in `./output`.
@@ -76,16 +76,23 @@ The loop is plain, testable Python; the LLM is used only to write tests, fix the
 5. **Repair.** If some but not all new tests fail or don't assert, those are removed and the rest are checked again. Forgotten imports and reused test names are fixed without an LLM call. Anything else goes to the Fixer LLM with the item's full attempt history (up to 2 tries). A candidate that still fails is rolled back.
 6. **Stop** on target reached, marginal gains (less than `min_gain` points for `patience` rounds), max rounds, no targets left, token budget, cancel, or Groq unreachable for 10 minutes. A Groq outage never counts against a target; the item is retried later.
 7. **Summarize.** One more LLM call writes two summaries from the run's measured facts, one for stakeholders and one for engineers. A deterministic check drops any sentence whose numbers, files or test names aren't in those facts. Saved as `SUMMARY.md`; it can be turned off.
+8. **Mutation test (optional).** On a finished run, **Run mutation test** swaps one operator at a time (`+`/`-`, `*`/`/`, `<`/`<=`, `>`/`>=`, `==`/`!=`, `&&`/`||`) in covered code of a fresh copy, for a seeded sample of up to 60 mutants, and reruns that package's tests. It shows the **mutation score** next to the coverage, per file, with each missed bug as a one-line diff. No LLM call for the test itself.
+   - Score = caught ÷ (caught + missed): a planted bug is caught when a test fails or the test run times out, and missed when every test still passes. One that does not build is skipped and not counted.
+   - Afterwards the AI summary is written again (as in step 7) with a *Test quality* paragraph, unless the summary is turned off or no Groq key or budget is left.
 
 ## Results
 
 All on a Developer-plan Groq key, each repo's own tests deleted first.
 
-| Repo | Run | Goal | Coverage | Time | Notes |
-|---|---|---|---|---|---|
-| montanaflynn/stats | `8c38d392ecaf` | 80% | 0% → **81.15%** | 146 s | Default options, parallel writers; 30 targets kept, 0 rejected; 205K tokens. [Re-measurable](docs/evidence) |
-| montanaflynn/stats | `befcbd2b6ada` | 100% | 0% → **100.0%** | 332 s | 30 rounds max, 5 targets per round; 481K tokens. [Re-measurable](docs/evidence) |
-| Masterminds/semver | `736baa413b5d` | 80% | 1.4% → **84.6%** | 114 s | Starts at 1.4% because its `init()` functions run on load |
+| Repo | Run | Goal | Coverage | Mutation score | Time | Notes |
+|---|---|---|---|---|---|---|
+| montanaflynn/stats | `8c38d392ecaf` | 80% | 0% → **81.15%** | **71.7%** (43 of 60) | 146 s | Default options, parallel writers; 30 targets kept, 0 rejected; 205K tokens. [Re-measurable](docs/evidence) |
+| montanaflynn/stats | `befcbd2b6ada` | 100% | 0% → **100.0%** | **75.0%** (45 of 60) | 332 s | 30 rounds max, 5 targets per round; 481K tokens. [Re-measurable](docs/evidence) |
+| Masterminds/semver | `736baa413b5d` | 80% | 1.4% → **84.6%** | not run | 114 s | Starts at 1.4% because its `init()` functions run on load |
+
+The mutation score is the share of planted bugs (a seeded sample of 60 operator swaps in covered code) that the kept tests catch. Most missed ones are in numerical code (`norm.go`, `ttest.go`) where tests check properties such as length or sign rather than exact values: coverage alone would not show that. The score is a lower bound, because each mutant runs only its own package's tests and a swap can leave behaviour unchanged.
+
+Run times vary between runs and with the key's rate limits: an independent reviewer's run with the same settings took 345 s.
 
 [docs/RESULTS.md](docs/RESULTS.md) has every other run, the comparisons behind the defaults (cap of 5 functions per target, reasoning effort, parallel writers, which roughly halved run time), and the issues I found in testing and fixed. Each comparison is a single run, so small differences are within normal variation.
 
@@ -141,7 +148,7 @@ Environment (`.env`; only the key is required). [`.env.example`](.env.example) d
 | `GROQ_PRICE_INPUT_PER_M` / `GROQ_PRICE_OUTPUT_PER_M` | (unset) | USD per 1M tokens; when both are set the AI summary shows an estimated cost. `.env.example` sets 0.15 / 0.60 |
 | Free-trial key: `DAILY_TOKEN_BUDGET` / `MAX_PROMPT_TOKENS` / `CALL_TOKEN_RESERVATION` | 2,000,000 / 12000 / 16000 | Set to 190000 / 4500 / 8000 |
 
-Advanced settings (Groq timeout and output cap, outage window, per-stage Go timeouts, upload limits, history size) are listed with their defaults in `.env.example`. `MIN_DAILY_TOKENS_TO_START` (20,000) and `MAX_OUTPUT_CHARS` (20,000 characters of command output kept) are also read, mainly for tests.
+Advanced settings (Groq timeout and output cap, outage window, per-stage Go timeouts, upload limits, history size, mutation test sample size and per-mutant timeout) are listed with their defaults in `.env.example`. `MIN_DAILY_TOKENS_TO_START` (20,000) and `MAX_OUTPUT_CHARS` (20,000 characters of command output kept) are also read, mainly for tests.
 
 ## Running the tests
 
@@ -173,13 +180,13 @@ cd frontend && npm ci && npm test && npm run lint && npx tsc --noEmit
 
 ## Why Groq instead of a local model
 
-Groq only was my decision; the brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` is an open-weight model (Ollama ships it as `gpt-oss:120b` and the smaller `gpt-oss:20b`), served fast on Groq: a stats run to 80% takes about 5 minutes. A run makes dozens of model calls, and I judged CPU-only inference of a model good enough for this loop far too slow for that; I did not measure it. The trade-off: you need a key (or the `.env` I send), and your code is sent to Groq (see [Limitations](#limitations)). What would change it is the first item on my [production list](#what-i-would-do-differently-in-production): an OpenAI-compatible base URL.
+The brief suggests an open-source model on LocalAI/Ollama, or Anthropic/OpenAI as hosted options; it does not name Groq, so this is a deliberate deviation. The model itself fits the brief: `openai/gpt-oss-120b` is OpenAI's open-source (open-weight) model, which Ollama ships as `gpt-oss:120b` and the smaller `gpt-oss:20b`. I chose to serve it from Groq instead of a local CPU because it is fast there: a stats run to 80% takes about 5 minutes. A run makes dozens of model calls, and I judged CPU-only inference of a model good enough for this loop far too slow for that; I did not measure it. The trade-off: you need a key (or the `.env` I send), and your code is sent to Groq (see [Limitations](#limitations)). What would change it is the first item on my [production list](#what-i-would-do-differently-in-production): an OpenAI-compatible base URL.
 
 ## Design decisions and trade-offs
 
 - **Deterministic loop; the LLM only writes and fixes tests and writes the end-of-run summary** (structured JSON, no tool calls, no shell). Why: reliability, token cost, testability, safety.
 - **Append-only test generation** through a small Go AST helper: accepted tests can't be lost, and the failing new tests are removed in one prune call. Pruning works on top-level `Test` functions, so passing subtests of a failing test go with it: simpler and safe, and each such failure is listed as a disagreement for review. Subtest-level pruning is the fix if those losses matter.
-- **Strict acceptance:** vet clean, every new test asserts, tests pass twice, covered blocks strictly grow, so coverage never regresses. The coverage gain is judged per batch (one answer's tests, after any failing or assertion-free ones are pruned), not per test, so a single test in a kept batch may reach nothing the others do not.
+- **Strict acceptance:** vet clean, every new test asserts, tests pass twice, covered blocks strictly grow, so coverage never regresses. Mutation testing is an opt-in report after the run, on a sample of mutants, not an acceptance gate: running it on every candidate would multiply validation time. The coverage gain is judged per batch (one answer's tests, after any failing or assertion-free ones are pruned), not per test, so a single test in a kept batch may reach nothing the others do not.
 - **Whole-module validation per candidate:** compile, vet and `go test -count=2` run over the whole module each time. At the size of these repos that is correct and simple; for a large module I would validate only the target's package and run a full check at the end of each round.
 - **The planner optimises uncovered statements**, biggest gaps first, because that aims to reach the target with as few calls as possible. The cost: small files can stay at 0% at the target (18 stats files in `e2de1ca387cb`). If breadth mattered more than the number, I would add an option that writes one smoke test per exported function first.
 - **Token economy:** mechanical errors (forgotten imports, reused names) are repaired without an LLM call, and the planner packs up to 5 functions / 100 uncovered statements of one file into each call (step 2 notes the one exception).
@@ -205,7 +212,7 @@ Groq only was my decision; the brief allows a hosted LLM as well as LocalAI/Olla
 - **What they still can do:** they run in the backend container as the same user (uid 1000) as the API server, so they could read `GROQ_API_KEY` via `/proc`, reach the network (outbound access is open), and write to the app's data folders: `./repos` and `./output` (so a test could plant a file in a sample repo or alter saved run history), `/work` and the Go build cache, which is shared by all runs. The import guard is easy to bypass (string concatenation, reflection). The real fix is the per-run sandbox listed under production; I would add it before running code from anyone I don't trust.
 - **Resources:** `/work` (repo copies and Go's temp files) is a 2 GB in-memory filesystem; a module that fills it ends the run as `workspace_full` (raise the `/work` size and `mem_limit` together in `docker-compose.yml`). Running out of memory usually kills a single `go` process: that check fails and the run goes on.
 - **Privacy:** the functions under test and related declarations (your source code) are sent to Groq in each prompt. The New run flow does not show this notice; the How it works and Walkthrough pages describe it.
-- **Test quality:** expected values for floating-point code are partly characterization tests: the Fixer may adopt an observed value, so real bugs can be encoded rather than flagged. The rule against asserting a reported suspected bug is a prompt rule, not checked in code (an earlier 99.68% run asserted the `Float64Data.Midhinge` bug it reported; the two evidence runs lock in none of theirs). Review generated assertions before trusting them. The assertion check rejects tests that check nothing, but assertion strength is not measured: a mutation-testing pass is the next quality metric I would add.
+- **Test quality:** expected values for floating-point code are partly characterization tests: the Fixer may adopt an observed value, so real bugs can be encoded rather than flagged. The rule against asserting a reported suspected bug is a prompt rule, not checked in code (an earlier 99.68% run asserted the `Float64Data.Midhinge` bug it reported; the two evidence runs lock in none of theirs). Review generated assertions before trusting them. The assertion check rejects tests that check nothing; assertion strength is measured only by the opt-in **Run mutation test** report, which samples mutants (60 by default) and never rejects tests.
 - **Single-user by design:** no accounts, and history lives in `./output`.
 - **Measurements:** run time and final coverage vary between runs and with the key's rate limits. The comparisons in [docs/RESULTS.md](docs/RESULTS.md) are single runs (n=1) at temperature 0.2; multi-seed runs are what I would add next. Most cited runs live in the gitignored `./output`; committed are the two evidence runs in [docs/evidence](docs/evidence) and the events and reports of `e2de1ca387cb` and `fc080d7fc500` as backend test fixtures.
 - **Known simplifications:** a 429 whose Retry-After is over 90 s is treated as the daily budget being used up (the run stops), and prompt sizes are estimated as characters / 3.5, not with a tokenizer. Per-limit handling and a real tokenizer would come with a second provider.

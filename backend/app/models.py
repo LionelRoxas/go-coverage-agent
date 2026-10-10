@@ -111,6 +111,8 @@ class BusinessSummary(BaseModel):
     efficiency: str = Field(description="Short paragraph: time, tokens and, when given, cost for the gain")
     risks: list[str] = Field(description="Short plain-language risks or limits; empty if none")
     recommendation: str = Field(description="One or two sentences: what the stakeholder should do next")
+    test_quality: str = Field("", description="Only with a mutation result: one or two plain sentences on how many "
+                              "planted bugs the tests caught; empty without one")
 
 
 class SummaryGap(BaseModel):
@@ -127,6 +129,8 @@ class TechnicalSummary(BaseModel):
     rejected_or_failed: str = Field(description="Short paragraph: rejected targets, fixes, repairs and pruned tests")
     how_to_run: str = Field(description="The commands to run the tests")
     next_steps: list[str] = Field(description="Concrete next steps for the receiving team")
+    test_quality: str = Field("", description="Only with a mutation result: the mutation score, where the survivors "
+                              "cluster and what that suggests; empty without one")
 
 
 class RunSummary(BaseModel):

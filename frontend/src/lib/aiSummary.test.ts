@@ -87,6 +87,16 @@ _${EMPTY_PART}_
     expect(md.split(EMPTY_PART)).toHaveLength(2);
   });
 
+  it("adds the test-quality paragraphs after the cost and after what was tested, like the backend", () => {
+    const md = toMarkdown({ ...PAYLOAD, business: { ...PAYLOAD.business, test_quality: "The tests caught 43 of 60 planted bugs." },
+                            technical: { ...PAYLOAD.technical, test_quality: "Mutation score 71.7%." } },
+                          { repo: "stats", model: "m", generatedAt: 1791547516.4 });
+    expect(md).toContain("(input $0.0130, output $0.0558)\n\n**Test quality:** The tests caught 43 of 60 planted bugs.\n\n**Risks**");
+    expect(md).toContain("**What was tested:** Tests cover mean.go.\n\n**Test quality:** Mutation score 71.7%.\n\n**Where");
+    expect(toMarkdown({ ...PAYLOAD, technical: { ...PAYLOAD.technical, test_quality: "" } }, { repo: "stats", model: "m", generatedAt: 0 }))
+      .not.toContain("Test quality");
+  });
+
   it("formats dollars like the backend", () => {
     expect([0, 0.0005, 0.0232, 0.9999, 1, 12.345].map(usd)).toEqual(["$0.0000", "$0.0005", "$0.0232", "$0.9999", "$1.00", "$12.35"]);
   });

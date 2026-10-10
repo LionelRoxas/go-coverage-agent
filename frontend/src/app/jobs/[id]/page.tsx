@@ -8,6 +8,7 @@ import { CoverageChart } from "@/components/CoverageChart";
 import { CoverageMeter } from "@/components/CoverageMeter";
 import { Disagreements } from "@/components/Disagreements";
 import { FileTable } from "@/components/FileTable";
+import { MutationCard } from "@/components/MutationCard";
 import { GroqWait } from "@/components/GroqWait";
 import { SummaryCard } from "@/components/SummaryCard";
 import { TestFiles } from "@/components/TestFiles";
@@ -36,7 +37,7 @@ function useElapsed(startedAt?: number, running?: boolean) {
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
-  const { state, notFound, error, connection, summaryRequested } = useJobEvents(id);
+  const { state, notFound, error, connection, summaryRequested, mutationRequested } = useJobEvents(id);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   // "connecting" returns early below, so the clock and Cancel only ever see a known status.
@@ -100,6 +101,11 @@ export default function JobPage() {
   }
 
   const job = state.status; // narrowed: "connecting" returned above
+  // Run mutation test: a finished run (not a failed one) that kept at least one test file.
+  const keptTests = state.iterations.some((it) => it.items.some((i) => i.status === "accepted"));
+  const mutationCard = job !== "running" && job !== "failed" && (keptTests || state.mutation) && (
+    <MutationCard view={state.mutation} jobId={id} coverage={state.percent} onRequested={mutationRequested} />
+  );
   return (
     <div className="space-y-10">
       <AllRuns />
@@ -158,6 +164,7 @@ export default function JobPage() {
               <AiSummary view={state.aiSummary} jobId={id} repo={state.repoPath ?? ""} model={state.model ?? ""}
                          onRequested={summaryRequested} />
             )}
+            {mutationCard}
           </div>
           <section className="space-y-3">
             <SectionHeading>Coverage by iteration</SectionHeading>
@@ -182,6 +189,8 @@ export default function JobPage() {
           </section>
         </>
       )}
+
+      {!state.summary && mutationCard}
 
       <section className="space-y-3">
         <SectionHeading>Activity</SectionHeading>

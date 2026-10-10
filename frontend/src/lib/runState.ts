@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // Pure reducer: the same code handles live events and replay after a refresh or reconnect.
-import type { CoverageReport, JobEvent, Scenario, Summary, SummaryGenerated } from "./types";
+import type { CoverageReport, JobEvent, Mutant, MutationResult, Scenario, Summary, SummaryGenerated } from "./types";
 
 // "not_run": the run ended (goal reached, stopped or cancelled) before this planned item finished.
 // deferred: Groq was unreachable; the target is planned again in a later round (not a rejection).
@@ -50,6 +50,16 @@ export type AiSummaryView = {
   error?: { reason: string; message: string };
 };
 
+// "Run mutation test" on a finished run: running (mutants so far of `total`, unknown until mutation_started), done or
+// failed (reason "cancelled" when stopped).
+export type MutationView = {
+  status: "running" | "done" | "failed";
+  total?: number;
+  mutants: Mutant[];
+  result?: MutationResult;
+  error?: { reason: string; message: string; output?: string };
+};
+
 export type IterationView = { index: number; startPercent: number; endPercent?: number; items: ItemView[] };
 export type RunState = {
   lastSeq: number;
@@ -72,6 +82,7 @@ export type RunState = {
   summary?: Summary;
   writeSummary?: boolean; // job_started options.write_summary; older logs lack it
   aiSummary?: AiSummaryView;
+  mutation?: MutationView;
   failure?: { reason: string; message: string; output: string };
   // A rate-limit wait of one of several requests sent together (PARALLEL_WRITERS), until that item's next request
   rateLimited?: { file: string; seconds: number; reason: string };
@@ -165,11 +176,14 @@ function addCheck(i: ItemView, check: Check): ItemView {
 
 /** True while the event stream must stay open after the run ended: its summary is still to come. */
 export const summaryWaiting = (s: RunState) => s.aiSummary?.status === "waiting";
+/** True while the event stream must stay open for a mutation test's events. */
+export const mutationRunning = (s: RunState) => s.mutation?.status === "running";
 
 // "summary_requested": Write summary / Write again was accepted; its events follow on a reopened stream.
 // "stream_ended": the stream of a run that is not running (e.g. reloaded from ./output) replayed everything and ended;
 // `saved` is the status its snapshot reported.
-export type RunAction = JobEvent | { type: "reset" } | { type: "summary_requested" }
+// "mutation_requested": Run mutation test was accepted; its events follow on a reopened stream.
+export type RunAction = JobEvent | { type: "reset" } | { type: "summary_requested" } | { type: "mutation_requested" }
   | { type: "stream_ended"; saved?: string };
 
 // Nothing more will come: a run the backend reports as interrupted is marked so (never one it reports as finished),
@@ -181,12 +195,16 @@ function streamEnded(s: RunState, saved?: string): RunState {
   if (s.aiSummary?.status === "waiting")
     return { ...s, aiSummary: { ...s.aiSummary, status: "failed", pending: undefined,
                                 error: { reason: "interrupted", message: "The app stopped before the summary was written." } } };
+  if (s.mutation?.status === "running")
+    return { ...s, mutation: { ...s.mutation, status: "failed",
+                               error: { reason: "interrupted", message: "The app stopped before the mutation test finished." } } };
   return s;
 }
 
 export function reduce(state: RunState, ev: RunAction): RunState {
   if (ev.type === "summary_requested")
     return { ...state, aiSummary: { ...state.aiSummary, status: "waiting", pending: undefined, error: undefined } };
+  if (ev.type === "mutation_requested") return { ...state, mutation: { status: "running", mutants: [] } };
   if (ev.type === "stream_ended") return streamEnded(state, (ev as { saved?: string }).saved);
   if (!("seq" in ev)) return initialState; // "reset": a different job was opened
   if (ev.seq <= state.lastSeq) return state;
@@ -295,6 +313,17 @@ export function reduce(state: RunState, ev: RunAction): RunState {
     case "summary_failed":
       return { ...s, aiSummary: { ...s.aiSummary, status: "failed", pending: undefined,
                                   error: { reason: d.reason, message: d.message } } };
+    case "mutation_started": // a run still "running" here was interrupted: only a finished run is mutation-tested
+      return { ...(s.status === "running" ? { ...settleUnfinished(clearPending(s), "stopped"), status: "interrupted" as const } : s),
+               mutation: { status: "running", total: d.total, mutants: [] } };
+    case "mutant_result":
+      return { ...s, mutation: { status: "running", ...s.mutation, mutants: [...(s.mutation?.mutants ?? []), d as Mutant] } };
+    case "mutation_completed": // summary_follows: the AI summary is written again next, on the same stream
+      return { ...s, mutation: { status: "done", total: d.total, mutants: d.mutants, result: d as MutationResult },
+               ...(d.summary_follows ? { aiSummary: { ...s.aiSummary, status: "waiting" as const, pending: undefined, error: undefined } } : {}) };
+    case "mutation_failed":
+      return { ...s, mutation: { mutants: [], ...s.mutation, status: "failed",
+                                 error: { reason: d.reason, message: d.message, output: d.output } } };
     case "job_failed":
       // cancelled before the baseline finished: there is no Summary, so the backend reports it as a failure reason
       if (d.reason === "cancelled") return { ...settleUnfinished(clearPending(s), "stopped"), status: "cancelled", activity: "Cancelled." };

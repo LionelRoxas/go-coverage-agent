@@ -81,6 +81,8 @@ export const api = {
   cancel: (id: string) => request<JobSnapshot>(`/api/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
   /** Write the AI summary of a finished run (again); its events follow on the run's event stream. */
   writeSummary: (id: string) => request<JobSnapshot>(`/api/jobs/${encodeURIComponent(id)}/summary`, { method: "POST" }),
+  /** Mutation-test a finished run's kept tests; its events follow on the run's event stream. */
+  mutationTest: (id: string) => request<JobSnapshot>(`/api/jobs/${encodeURIComponent(id)}/mutation`, { method: "POST" }),
   file: (id: string, path: string) => request<string>(`/api/jobs/${encodeURIComponent(id)}/files/${encodePath(path)}`),
   eventsUrl: (id: string) => `${API_URL}/api/jobs/${encodeURIComponent(id)}/events`,
 };

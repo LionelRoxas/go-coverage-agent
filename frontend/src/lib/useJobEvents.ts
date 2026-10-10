@@ -2,7 +2,7 @@
 "use client";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, ApiError } from "./api";
-import { initialState, reduce, summaryWaiting } from "./runState";
+import { initialState, mutationRunning, reduce, summaryWaiting } from "./runState";
 
 const TERMINAL = new Set(["completed", "failed", "cancelled", "interrupted"]);
 const END_EVENTS = new Set(["job_completed", "job_cancelled", "job_failed"]);
@@ -34,7 +34,7 @@ export function useJobEvents(jobId: string) {
     api.job(jobId).then(
       (first) => {
         if (cancelled) return;
-        const isEnded = (j: typeof first | undefined) => !!j && TERMINAL.has(j.status) && !j.writing_summary;
+        const isEnded = (j: typeof first | undefined) => !!j && TERMINAL.has(j.status) && !j.writing_summary && !j.mutating;
         // Not running and not writing its summary (e.g. reloaded from ./output): the stream replays and then ends.
         // A live run can become one after a backend restart (it reloads as interrupted): a later snapshot says so.
         let job = first, ended = isEnded(first);
@@ -129,7 +129,7 @@ export function useJobEvents(jobId: string) {
   }, [jobId, reopened]);
 
   // The run has ended and nothing more is coming: its summary (if any) is written, failed or off.
-  const terminal = TERMINAL.has(state.status) && !summaryWaiting(state);
+  const terminal = TERMINAL.has(state.status) && !summaryWaiting(state) && !mutationRunning(state);
   useEffect(() => {
     if (terminal) source.current?.close(); // stop EventSource from reconnecting forever
   }, [terminal]);
@@ -141,5 +141,10 @@ export function useJobEvents(jobId: string) {
     dispatch({ type: "summary_requested" });
     setReopened((n) => n + 1);
   }, []);
-  return { state, notFound: cur.notFound, error: cur.error, connection, summaryRequested };
+  /** After POST /api/jobs/{id}/mutation succeeded: reopen the stream to receive the mutation test's events. */
+  const mutationRequested = useCallback(() => {
+    dispatch({ type: "mutation_requested" });
+    setReopened((n) => n + 1);
+  }, []);
+  return { state, notFound: cur.notFound, error: cur.error, connection, summaryRequested, mutationRequested };
 }

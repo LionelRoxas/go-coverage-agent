@@ -21,13 +21,14 @@ from app.engine.run import JobFailed, run_job
 from app.llm.client import (Emit, GroqLLM, LLMBudgetExhausted, LLMCancelled, LLMClient, LLMError, LLMFatal,
                             LLMTimeout)
 from app.llm.limits import RateLimiter, UsageLedger
+from app.mutation import MutationFailed, run_mutation, save as save_mutation
 from app.models import Event, JobRequest, JobStatus, StopReason, Summary, TokenUsage
 from app.summary.facts import build_facts, cost_usd
 from app.summary.grounding import fill_empty, ground
 from app.summary.report import disagreement_line, save, to_markdown
 
 log = logging.getLogger(__name__)
-_JOB_ID = re.compile(r"[0-9a-f]{12}")  # uuid4().hex[:12], as start() makes them
+_JOB_ID = re.compile(r"[0-9a-f]{12}(?:-mutation)?")  # uuid4().hex[:12], as start() makes them; or a mutation test's
 
 
 class JobConflict(Exception):
@@ -74,6 +75,9 @@ class Job:
         self.summary_tokens = TokenUsage()  # every summary call so far; counts toward max_llm_tokens
         self.summary_cancel = asyncio.Event()  # Cancel while the summary is written (a new one per summary)
         self.ai_summary: str | None = None  # "generated" / "failed": the last summary event, if any
+        self.mutating = False  # "Run mutation test" is running on this finished run (its stream is open meanwhile)
+        self.mutation_task: asyncio.Task[None] | None = None
+        self.mutation_cancel = asyncio.Event()
         self._subscribers: list[asyncio.Queue[Event | None]] = []
         # A run reloaded from OUTPUT_DIR: its events.jsonl, and the count and accepted test files read from it at
         # startup. Its events are loaded into `events` only while its summary is written again.
@@ -215,16 +219,17 @@ class Job:
                 "created_at": self.created_at, "percent": self.percent,
                 "event_count": self.saved_event_count if self.on_disk else len(self.events),
                 "summary": self.summary.model_dump(mode="json") if self.summary else None,
-                "writing_summary": self.writing_summary, "ai_summary": self.ai_summary}
+                "writing_summary": self.writing_summary, "ai_summary": self.ai_summary, "mutating": self.mutating}
 
     @property
     def writing_summary(self) -> bool:
-        """The run has ended but its stream is still open: the summary is being written."""
-        return self.status is not JobStatus.RUNNING and not self.finished
+        """The run has ended but its stream is still open for its summary (not for a mutation test)."""
+        return self.status is not JobStatus.RUNNING and not self.finished and not self.mutating
 
 
 Runner = Callable[[Job, Emit, asyncio.Event], Awaitable[Summary]]
 LLMFactory = Callable[[Emit, asyncio.Event], LLMClient]  # (emit, cancel) -> the summary call's client
+MutationRunner = Callable[[Job, Emit, asyncio.Event], Awaitable[dict[str, Any]]]  # the mutation_completed payload
 
 
 class SummaryFailed(Exception):
@@ -243,7 +248,8 @@ def _failure(e: LLMError) -> tuple[str, str]:
 
 
 class JobManager:
-    def __init__(self, settings: Settings, runner: Runner | None = None, llm_factory: LLMFactory | None = None):
+    def __init__(self, settings: Settings, runner: Runner | None = None, llm_factory: LLMFactory | None = None,
+                 mutation_runner: MutationRunner | None = None):
         self.settings = settings
         self.ledger = UsageLedger(settings.output_dir / ".usage.json", settings.daily_token_budget)
         self.limiter = RateLimiter()
@@ -252,6 +258,8 @@ class JobManager:
         # The summary call: same pacing and daily ledger, with its own cancel event (a cancelled job's is set).
         self._llm_factory = llm_factory or (
             lambda emit, cancel: GroqLLM(settings, self.ledger, self.limiter, emit=emit, cancel=cancel))
+        self._mutation_runner = mutation_runner or (
+            lambda job, emit, cancel: run_mutation(job.id, job.request, settings, emit, cancel))
 
     async def _default_runner(self, job: Job, emit: Emit, cancel: asyncio.Event) -> Summary:
         llm = GroqLLM(self.settings, self.ledger, self.limiter, emit=emit, cancel=cancel)
@@ -263,7 +271,7 @@ class JobManager:
         return 2 * self.settings.groq_timeout_s + 30
 
     def running(self) -> Job | None:
-        """The busy job: running, or writing its summary. One job uses Groq at a time."""
+        """The busy job: running, writing its summary or running a mutation test. One at a time."""
         return next((j for j in self.jobs.values() if j.status is JobStatus.RUNNING or not j.finished), None)
 
     def load_history(self) -> None:
@@ -318,6 +326,8 @@ class JobManager:
             raise JobRejected(409, "job_not_running", "This run is not running; it was reloaded from ./output.")
         if job is not None and job.status is JobStatus.RUNNING:
             job.cancel.set()
+        elif job is not None and job.mutating:
+            job.mutation_cancel.set()  # the run keeps its result; the mutation test fails as "cancelled"
         elif job is not None and job.writing_summary:
             job.summary_cancel.set()  # the run keeps its result; the summary fails as "cancelled"
         return job
@@ -373,11 +383,7 @@ class JobManager:
         if not self.settings.llm_configured:
             raise JobRejected(400, "llm_not_configured", "Set GROQ_API_KEY in .env and restart the app.")
         if job.on_disk:
-            assert job.log_path is not None
-            job.events = saved_events if saved_events is not None else self.saved_events(job_id)
-            job.persist_to(job.log_path)
-            for event in job.saved_tail:  # the replayed terminal event joins the file, ahead of the summary events
-                job._persist(event)
+            self._reopen(job, saved_events if saved_events is not None else self.saved_events(job_id))
         job.finished = False
         job.summary_cancel = asyncio.Event()  # now, not in the task: a Cancel before it starts must count
         job.summary_task = asyncio.create_task(self._summary_again(job))
@@ -390,28 +396,110 @@ class JobManager:
         job = self.jobs[job_id]
         if not job.on_disk or job.summary is None:
             return None
-        assert job.log_path is not None
-        unreadable = JobRejected(409, "run_files_unreadable", f"This run's saved files in ./output/{job.id} can't be "
-                                 "read any more, so its summary can't be written again.")
         try:
-            events = [*read_events(job.log_path), *job.saved_tail]
+            events = self.saved_log(job_id)
+            assert events is not None
             build_facts(job.summary, events, repo=job.request.repo_path, model="", job_id=job.id)
-        except Exception as e:  # noqa: BLE001 — a missing file, or events older code can't use
+        except Exception as e:  # noqa: BLE001 — a missing or empty file, or events older code can't use
             log.info("cannot write the summary of saved run %s again", job.id, exc_info=True)
-            raise unreadable from e
-        if not events:
-            raise unreadable
+            raise JobRejected(409, "run_files_unreadable", f"This run's saved files in ./output/{job.id} can't be "
+                              "read any more, so its summary can't be written again.") from e
         return events
+
+    @staticmethod
+    def _reopen(job: Job, saved_events: list[Event] | None) -> None:
+        """A saved run's events back in memory, appended to its file again, while a post-run action adds to them."""
+        assert job.log_path is not None and saved_events is not None
+        job.events = saved_events
+        job.persist_to(job.log_path)
+        for event in job.saved_tail:  # the replayed terminal event joins the file, ahead of the new events
+            job._persist(event)
+
+    @staticmethod
+    def _back_to_disk(job: Job) -> None:
+        """The end of a post-run action (summary written again, mutation test): its stream ends."""
+        job.repair_log()  # only when an append failed; before a saved run's events leave memory
+        if job.log_path is not None:  # a saved run: back to disk, keeping the counts its snapshot shows
+            job.saved_event_count, job.saved_test_files = len(job.events), job.accepted_test_files()
+            job.events, job.saved_tail, job.persist_path = [], [], None  # the tail is in the file now
+        job.close()
 
     async def _summary_again(self, job: Job) -> None:
         try:
             await self._write_summary(job)
         finally:
-            job.repair_log()  # only when an append failed; before a saved run's events leave memory
-            if job.log_path is not None:  # a saved run: back to disk, keeping the counts its snapshot shows
-                job.saved_event_count, job.saved_test_files = len(job.events), job.accepted_test_files()
-                job.events, job.saved_tail, job.persist_path = [], [], None  # the tail is in the file now
-            job.close()
+            self._back_to_disk(job)
+
+    def saved_log(self, job_id: str) -> list[Event] | None:
+        """A saved run's events with its replayed tail (None for a job whose events are in memory); 409 when its file
+        can't be read. Blocking file I/O: the API calls it in a thread."""
+        job = self.jobs[job_id]
+        if not job.on_disk:
+            return None
+        assert job.log_path is not None
+        try:
+            events = [*read_events(job.log_path), *job.saved_tail]
+        except OSError:
+            log.info("cannot read the events of saved run %s", job.id, exc_info=True)
+            events = []
+        if not events:
+            raise JobRejected(409, "run_files_unreadable",
+                              f"This run's saved events in ./output/{job.id} can't be read any more.")
+        return events
+
+    def mutation_test(self, job_id: str, saved_events: list[Event] | None = None) -> Job:
+        """POST /api/jobs/{id}/mutation: mutation-test a finished run's kept tests; its events go to the job's stream,
+        which stays open until the test ends. The same busy rule as Write again."""
+        job = self.jobs[job_id]
+        if (busy := self.running()) is not None:
+            raise JobRejected(409, "job_running", f"Run {busy.id} is busy; run the mutation test when it ends.")
+        if job.status not in (JobStatus.COMPLETED, JobStatus.CANCELLED, JobStatus.INTERRUPTED) \
+                or not job.accepted_test_files():
+            raise JobRejected(409, "no_tests", "This run kept no test files, so there is nothing to mutation-test.")
+        if job.on_disk:
+            self._reopen(job, saved_events if saved_events is not None else self.saved_log(job_id))
+        job.finished, job.mutating = False, True
+        job.mutation_cancel = asyncio.Event()  # now, not in the task: a Cancel before it starts must count
+        job.mutation_task = asyncio.create_task(self._mutation(job))
+        return job
+
+    async def _mutation(self, job: Job) -> None:
+        """Emit mutation_completed (and save it in report.json) or mutation_failed; never raises. A completed test
+        is followed by the AI summary written again, as Write again does, when summary_follows (on the event) says
+        so; the job stays busy until it is written."""
+        try:
+            payload = await self._mutation_runner(job, job.emit, job.mutation_cancel)
+        except Exception as e:  # noqa: BLE001
+            if isinstance(e, MutationFailed):
+                failed = {"reason": e.reason, "message": e.message, "output": e.output[:4000]}
+            else:
+                log.exception("the mutation test of job %s crashed", job.id)
+                failed = {"reason": "internal_error", "message": str(e), "output": ""}
+            await job.emit("mutation_failed", failed)
+        else:
+            follows = self._summary_after_mutation(job)
+            if follows:  # from here on, Cancel stops the summary (as during Write again), never lost in between
+                job.summary_cancel = asyncio.Event()
+                job.mutating = False
+            await job.emit("mutation_completed", {**payload, "summary_follows": follows})
+            try:
+                save_mutation(self.settings.output_dir / job.id, payload, job.summary)
+            except Exception:  # noqa: BLE001
+                log.warning("could not save the mutation test of job %s", job.id, exc_info=True)
+            if follows:
+                await self._write_summary(job)
+        finally:
+            job.mutating = False
+            self._back_to_disk(job)
+
+    def _summary_after_mutation(self, job: Job) -> bool:
+        """Whether a completed mutation test writes the summary again: not when the run has no report or had the
+        summary turned off, when no Groq key is set, or when the run's or today's token budget is too low (then the
+        earlier summary, if any, is kept unchanged)."""
+        summary = job.summary
+        return (summary is not None and job.request.options.write_summary and self.settings.llm_configured
+                and summary.tokens.total + job.summary_tokens.total < job.request.options.max_llm_tokens
+                and self.ledger.remaining() >= self.settings.min_daily_tokens_to_start)
 
     def _model(self, job: Job) -> str:
         started = next((e for e in job.events if e.type == "job_started"), None)

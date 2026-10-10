@@ -15,6 +15,7 @@ const usage = `usage:
   gohelper decls <dir>
   gohelper symbols <dir>
   gohelper asserts <go_file>
+  gohelper mutate <go_file>
   gohelper merge <test_file> <snippet_file>
   gohelper prune <test_file> <TestName>...`
 
@@ -50,6 +51,12 @@ func run(args []string, stdout io.Writer) error {
 		return json.NewEncoder(stdout).Encode(out)
 	case "asserts":
 		out, err := AssertionFree(args[1])
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(out)
+	case "mutate":
+		out, err := Mutate(args[1])
 		if err != nil {
 			return err
 		}
