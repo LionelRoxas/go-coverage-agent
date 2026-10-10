@@ -29,6 +29,13 @@ describe("SummaryCard", () => {
     expect(screen.getByText("./output/j1/tests")).toBeInTheDocument();
   });
 
+  it("shows the run's tokens alone, or the total with the summary call broken out", () => {
+    const { rerender } = render(<SummaryCard summary={summary} jobId="j1" />);
+    expect(screen.getByText("Tokens").nextSibling).toHaveTextContent(/^1\.5k$/);
+    rerender(<SummaryCard summary={summary} jobId="j1" summaryTokens={500} summaryCalls={1} />);
+    expect(screen.getByText("Tokens").nextSibling).toHaveTextContent("2.0k1.5k run + 500 summary");
+  });
+
   it("copies the output path and confirms", async () => {
     const user = userEvent.setup();
     render(<SummaryCard summary={summary} jobId="j1" />);

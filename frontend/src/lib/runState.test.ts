@@ -444,7 +444,7 @@ describe("the end-of-run AI summary", () => {
     s = reduce(s, ev("summary_generated", generated, 2010));
     expect(s.aiSummary).toEqual({ status: "done", result: generated, generatedAt: 2010 });
     expect(summaryWaiting(s)).toBe(false);
-    expect(s.tokens).toBe(5430);
+    expect([s.tokens, s.summaryTokens, s.summaryCalls]).toEqual([1000, 4430, 1]); // the summary call is kept apart
   });
 
   it("records a failure and keeps an earlier summary", () => {

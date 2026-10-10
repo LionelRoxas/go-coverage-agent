@@ -16,8 +16,8 @@ import {
   backLinkClass, Button, buttonClass, Card, codeBlockClass, LoadingStatus, pageTitleClass, SectionHeading, Skeleton, StatusChip, StatusPanel,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import { duration, tokens } from "@/lib/format";
-import { waitingAll } from "@/lib/runState";
+import { duration, tokenLabel } from "@/lib/format";
+import { runTokens, waitingAll } from "@/lib/runState";
 import { useJobEvents } from "@/lib/useJobEvents";
 
 function AllRuns() {
@@ -109,7 +109,7 @@ export default function JobPage() {
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
             <StatusChip status={job} />
             <span>
-              {state.model}{running && ` · ${duration(state.summary?.duration_s ?? elapsed)}`} · {tokens(state.tokens)} tokens
+              {state.model}{running && ` · ${duration(state.summary?.duration_s ?? elapsed)}`} · {tokenLabel(runTokens(state), state.summaryTokens, state.summaryCalls)}
               {connection === "reconnecting" && running && " · reconnecting…"}
             </span>
           </p>
@@ -153,7 +153,7 @@ export default function JobPage() {
       {state.summary && (
         <>
           <div className="space-y-4">
-            <SummaryCard summary={state.summary} jobId={id} />
+            <SummaryCard summary={state.summary} jobId={id} summaryTokens={state.summaryTokens} summaryCalls={state.summaryCalls} />
             {state.aiSummary && (
               <AiSummary view={state.aiSummary} jobId={id} repo={state.repoPath ?? ""} model={state.model ?? ""}
                          onRequested={summaryRequested} />

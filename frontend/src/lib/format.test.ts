@@ -1,8 +1,15 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import { describe, expect, it } from "vitest";
-import { ATTEMPT_LABEL, REJECTION_LABEL, STOP_REASON_LABEL, checkLabel, circled, delta, duration, parseTestFailures, pct, tokens } from "./format";
+import { ATTEMPT_LABEL, REJECTION_LABEL, STOP_REASON_LABEL, checkLabel, circled, delta, duration, parseTestFailures, pct, tokenBreakdown, tokenLabel, tokens } from "./format";
 
 describe("format", () => {
+  it("labels a run's tokens with its summary calls broken out", () => {
+    expect(tokenLabel(337_700)).toBe("337.7k tokens");
+    expect(tokenLabel(337_700, 13_700)).toBe("351.4k tokens (337.7k run + 13.7k summary)");
+    expect(tokenLabel(337_700, 27_400, 2)).toBe("365.1k tokens (337.7k run + 27.4k across 2 summaries)");
+    expect(tokenBreakdown(337_700, 0)).toBeUndefined();
+  });
+
   it("formats numbers for humans", () => {
     expect(pct(81.234)).toBe("81.2%");
     expect(pct(undefined)).toBe("—");

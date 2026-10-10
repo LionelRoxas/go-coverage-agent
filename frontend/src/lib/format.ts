@@ -8,6 +8,18 @@ export const duration = (s: number) =>
 export const tokens = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 
+/** Every token a run spent: its own calls plus its AI summary calls, broken out once there is a summary call, e.g.
+ *  "351.4k tokens (337.7k run + 13.7k summary)". The header and the result card both use it. */
+export const tokenBreakdown = (run: number, summary = 0, summaryCalls = 1) =>
+  summary > 0
+    ? `${tokens(run)} run + ${tokens(summary)} ${summaryCalls > 1 ? `across ${summaryCalls} summaries` : "summary"}`
+    : undefined;
+
+export const tokenLabel = (run: number, summary = 0, summaryCalls = 1) => {
+  const parts = tokenBreakdown(run, summary, summaryCalls);
+  return `${tokens(run + summary)} tokens${parts ? ` (${parts})` : ""}`;
+};
+
 export const STOP_REASON_LABEL: Record<StopReason, string> = {
   target_reached: "Target reached",
   marginal_gains: "Diminishing returns",
