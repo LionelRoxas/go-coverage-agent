@@ -301,7 +301,7 @@ export default function HowItWorksPage() {
           </li>
         </ul>
         <p className="text-sm leading-relaxed text-muted">
-          The score is caught ÷ (caught + slipped through), over a fixed sample of 60 planted bugs in code the tests run.
+          The score is caught ÷ (caught + slipped through), over a fixed sample of up to 60 planted bugs in code the tests run.
           A planted bug that stops the code from building is skipped and not counted; a test run that takes too long counts as caught.
           The score is a lower bound: each planted bug is checked only by the tests of its own package, and a few swaps don’t change what the code does.
         </p>
@@ -312,7 +312,7 @@ export default function HowItWorksPage() {
         </p>
         <p className="text-sm leading-relaxed text-muted">
           It is optional: press <strong className="font-semibold text-text">Run mutation test</strong> on a finished run. The test itself uses no AI and no tokens.
-          When it finishes, the AI summary is written again (one AI call) with a short “Test quality” paragraph.
+          When it finishes, the AI summary is written again (one AI call) with a short “Test quality” paragraph, unless the summary is turned off or no AI budget is left.
         </p>
       </section>
 

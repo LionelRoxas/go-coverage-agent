@@ -354,6 +354,8 @@ def test_an_invented_mutation_score_or_file_is_dropped():
     s = summary(technical={"test_quality": "The mutation score is 85%. Most misses are in stats.go. It is a lower bound."})
     out, dropped = ground(s, facts(mutation=mutation()))
     assert dropped == 2 and out.technical.test_quality == "It is a lower bound."
+    for wrong_kind in ("The tests caught 43%.", "They missed 60%.", "The score was 71.7 bugs."):  # a count as a percent
+        assert ground(summary(technical={"test_quality": wrong_kind}), facts(mutation=mutation()))[1] == 1
 
 
 def test_without_a_mutation_result_test_quality_stays_empty():
@@ -371,7 +373,8 @@ def test_an_emptied_test_quality_is_filled_from_the_mutation_facts():
     assert filled == ["business.test_quality", "technical.test_quality"]
     assert out.technical.test_quality.startswith(
         "Mutation score 71.7%: of 60 sampled mutants, 43 were caught (1 by a timeout), 17 survived and 0 did not "
-        "build and were not counted. Most missed bugs are in norm.go (7), ttest.go (4):")
+        "build and were not counted. Missed bugs cluster in norm.go (7), ttest.go (4):")
+    assert out.technical.test_quality.count("lower bound") == 1 and "a few swaps don't change" in out.technical.test_quality
     assert "caught 43 of 60 (71.7%) and missed 17" in out.business.test_quality
     assert out.business.test_quality.endswith(FALLBACK_NOTE)
     again, dropped = ground(out, facts(mutation=mutation()))
@@ -379,3 +382,15 @@ def test_an_emptied_test_quality_is_filled_from_the_mutation_facts():
     none, _ = fill_empty(summary(), facts(mutation=mutation(score=None, killed=0, survived=0, counted=0, skipped=3,
                                                             most_survivors=[])))
     assert "no mutation score" in none.technical.test_quality
+
+
+def test_the_fallback_names_only_files_with_several_missed_bugs():
+    from app.summary.facts import SurvivorFile
+    def text(*survivors):
+        m = mutation(most_survivors=[SurvivorFile(file=f, survived=n) for f, n in survivors])
+        out, _ = fill_empty(summary(technical={"test_quality": ""}), facts(mutation=m))
+        return out.technical.test_quality
+    assert "Missed bugs cluster in norm.go (7), ttest.go (4):" in text(("norm.go", 7), ("ttest.go", 4), ("mean.go", 1))
+    assert "mean.go" not in text(("norm.go", 7), ("ttest.go", 4), ("mean.go", 1))
+    spread = text(("norm.go", 1), ("ttest.go", 1), ("mean.go", 1))
+    assert "spread out, with no more than one in any file" in spread and "norm.go" not in spread

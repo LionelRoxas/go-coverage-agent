@@ -122,11 +122,12 @@ describe("HowItWorksPage", () => {
     const compare = within(section).getByTestId("mutation-compare");
     expect(compare).toHaveTextContent("CaughtA test fails. For example, in histogram.go, width := (max - min) / float64(bins) was changed to * float64(bins)");
     expect(compare).toHaveTextContent("Slipped throughEvery test still passes. For example, in percentile.go, percentile = (1-f)*c[k] + f*c[k+1] was changed to (1+f)");
-    expect(section).toHaveTextContent("The score is caught ÷ (caught + slipped through), over a fixed sample of 60 planted bugs");
+    expect(section).toHaveTextContent("The score is caught ÷ (caught + slipped through), over a fixed sample of up to 60 planted bugs");
     expect(section).toHaveTextContent("skipped and not counted; a test run that takes too long counts as caught");
     expect(section).toHaveTextContent("lower bound");
     expect(section).toHaveTextContent("71.7% and 75.0%");
     expect(section).toHaveTextContent("The test itself uses no AI and no tokens");
+    expect(section).toHaveTextContent("unless the summary is turned off or no AI budget is left");
     expect(section).not.toHaveTextContent(/mutant|killed|survived/i);
     // the trust list only points to it now
     expect(screen.getByText("Coverage says code ran, not that a test would notice it breaking. The mutation score, below, measures that.")).toBeInTheDocument();

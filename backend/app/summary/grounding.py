@@ -301,16 +301,19 @@ def _fallbacks(f: RunFacts) -> dict[str, dict[str, str]]:
 
 def _test_quality(m: MutationFacts) -> tuple[str, str]:
     """Business and technical text on the mutation test, from its facts only."""
-    lower = "It is a lower bound from a sample: each planted bug runs only its own package's tests."
+    lower = ("It is a lower bound from a sample: each planted bug runs only its own package's tests, and a few swaps "
+             "don't change what the code does.")
     if m.score is None:
         none = (f"None of the {m.sample_size} small bugs planted in tested code could be judged, because none of "
                 "them built, so this run has no mutation score.")
         return none, none
     business = (f"When small bugs were planted one at a time in tested code, the tests caught {m.killed} of "
                 f"{m.counted} ({_pct(m.score)}) and missed {m.survived}. {lower}")
-    where = ", ".join(f"{s.file} ({s.survived})" for s in m.most_survivors)
-    cluster = (f" Most missed bugs are in {where}: the tests there likely check loose properties rather than exact "
-               "values." if where else "")
+    # only files with several missed bugs are a cluster; single ones (top 3 picked by name on ties) are not named
+    where = ", ".join(f"{s.file} ({s.survived})" for s in m.most_survivors if s.survived >= 2)
+    cluster = (f" Missed bugs cluster in {where}: the tests there likely check loose properties rather than exact "
+               "values." if where else " The missed bugs are spread out, with no more than one in any file."
+               if m.survived else "")
     technical = (f"Mutation score {_pct(m.score)}: of {m.sample_size} sampled mutants, {m.killed} were caught "
                  f"({m.timeouts} by a timeout), {m.survived} survived and {m.skipped} did not build and were not "
                  f"counted.{cluster} {lower}")
