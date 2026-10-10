@@ -1,0 +1,761 @@
+{
+  "stop_reason": "marginal_gains",
+  "message": "Stopped early: the last 2 iterations each added less than 0.5 percentage points.",
+  "target": 100.0,
+  "baseline_percent": 0.0,
+  "final_percent": 99.68,
+  "iterations": [
+    {
+      "index": 1,
+      "start_percent": 0.0,
+      "end_percent": 29.03,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 2,
+      "start_percent": 29.03,
+      "end_percent": 43.3,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 3,
+      "start_percent": 43.3,
+      "end_percent": 55.17,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 4,
+      "start_percent": 55.17,
+      "end_percent": 64.88,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 5,
+      "start_percent": 64.88,
+      "end_percent": 71.85,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 6,
+      "start_percent": 71.85,
+      "end_percent": 78.91,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 7,
+      "start_percent": 78.91,
+      "end_percent": 84.04,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 8,
+      "start_percent": 84.04,
+      "end_percent": 88.21,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 9,
+      "start_percent": 88.21,
+      "end_percent": 91.42,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 10,
+      "start_percent": 91.42,
+      "end_percent": 93.66,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 11,
+      "start_percent": 93.66,
+      "end_percent": 95.03,
+      "accepted": 4,
+      "rejected": 1,
+      "deferred": 0
+    },
+    {
+      "index": 12,
+      "start_percent": 95.03,
+      "end_percent": 96.47,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 13,
+      "start_percent": 96.47,
+      "end_percent": 97.59,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 14,
+      "start_percent": 97.59,
+      "end_percent": 98.4,
+      "accepted": 5,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 15,
+      "start_percent": 98.4,
+      "end_percent": 99.04,
+      "accepted": 4,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 16,
+      "start_percent": 99.04,
+      "end_percent": 99.36,
+      "accepted": 1,
+      "rejected": 0,
+      "deferred": 0
+    },
+    {
+      "index": 17,
+      "start_percent": 99.36,
+      "end_percent": 99.68,
+      "accepted": 1,
+      "rejected": 0,
+      "deferred": 0
+    }
+  ],
+  "test_files": [
+    "clip_test.go",
+    "coefficient_of_variation_test.go",
+    "correlation_test.go",
+    "cumulative_sum_test.go",
+    "cumulative_test.go",
+    "data_test.go",
+    "describe_test.go",
+    "deviation_test.go",
+    "diff_test.go",
+    "distances_test.go",
+    "entropy_test.go",
+    "errors_test.go",
+    "ewma_test.go",
+    "extremes_test.go",
+    "geometric_distribution_test.go",
+    "histogram_test.go",
+    "interp_test.go",
+    "kendall_test.go",
+    "kurtosis_test.go",
+    "legacy_test.go",
+    "load_test.go",
+    "mean_test.go",
+    "mode_test.go",
+    "moving_test.go",
+    "norm_test.go",
+    "outlier_test.go",
+    "percentile_of_score_test.go",
+    "percentile_test.go",
+    "percentile_weighted_test.go",
+    "product_test.go",
+    "quartile_test.go",
+    "rank_test.go",
+    "regression_test.go",
+    "rescale_test.go",
+    "rms_test.go",
+    "rolling_test.go",
+    "round_test.go",
+    "sample_test.go",
+    "sem_test.go",
+    "sigmoid_test.go",
+    "skewness_test.go",
+    "softmax_test.go",
+    "trimmed_mean_test.go",
+    "ttest_test.go",
+    "util_test.go",
+    "variance_test.go",
+    "weighted_mean_test.go",
+    "winsorize_test.go",
+    "zscore_test.go",
+    "ztest_test.go"
+  ],
+  "tests_added": [
+    "TestLoadRawData",
+    "TestNormPpf",
+    "TestNormMoment",
+    "TestNcr",
+    "TestNormBoxMullerRvs",
+    "TestNormStats",
+    "TestLogarithmicRegression",
+    "TestExponentialRegression",
+    "TestLinearRegression",
+    "TestTTest",
+    "TestRegIncBeta_EdgeCases",
+    "TestLgammaBeta",
+    "TestClampTiny",
+    "TestTSf",
+    "TestRankData",
+    "TestAutoCorrelation",
+    "TestCorrelation",
+    "TestSpearman",
+    "TestPearson",
+    "TestChebyshevDistance",
+    "TestMinkowskiDistance",
+    "TestEuclideanDistance",
+    "TestManhattanDistance",
+    "TestValidateData",
+    "TestMovingMax",
+    "TestMovingMedian",
+    "TestMovingMin",
+    "TestMovingSum",
+    "TestFloat64Data_MovingMax",
+    "TestLoadRawData_Uncovered",
+    "TestStableSample",
+    "TestPercentile",
+    "TestPercentileNearestRank",
+    "TestQuartile",
+    "TestInterQuartileRange",
+    "TestMidhinge",
+    "TestTrimean",
+    "TestPercentileWeighted_EdgeCases",
+    "TestDescribePercentileFunc_EmptyNoNaN",
+    "TestDescribePercentileFunc_EmptyAllowNaN_WithPercentiles",
+    "TestDescribePercentileFunc_NonEmpty_Mixed",
+    "TestDescriptionString",
+    "TestDescribe_Wrapper",
+    "TestPopulationSkewness",
+    "TestSampleSkewness",
+    "TestSkewness",
+    "TestCumulativeMax",
+    "TestCumulativeMin",
+    "TestCumulativeProduct",
+    "TestFloat64Data_CumulativeMax",
+    "TestFloat64Data_CumulativeMin",
+    "TestPopulationKurtosis_ErrorsAndValues",
+    "TestSampleKurtosis_ErrorsAndValues",
+    "TestKurtosis_Forward",
+    "TestFloat64Data_Kurtosis",
+    "TestFloat64Data_PopulationKurtosis",
+    "TestNormFit",
+    "TestNormPpfRvs",
+    "TestNormLogCdf",
+    "TestNormLogSf",
+    "TestNormLogTail",
+    "TestHistogram_Errors",
+    "TestHistogram_EqualValues",
+    "TestHistogram_Normal",
+    "TestFloat64Data_Histogram",
+    "TestMode",
+    "TestInterp_Uncovered",
+    "TestGeometricMean",
+    "TestKendallTau",
+    "TestFloat64Data_KendallTau",
+    "TestMovingAverage",
+    "TestMovingStdDev",
+    "TestFloat64Data_MovingAverage",
+    "TestFloat64Data_MovingStdDev",
+    "TestQuartileOutliers_Empty",
+    "TestQuartileOutliers_ExtremeOnly",
+    "TestCovariance_Uncovered",
+    "TestCovariancePopulation_Uncovered",
+    "TestPopulationVariance_Uncovered",
+    "TestSampleVariance_Uncovered",
+    "TestVariance_Uncovered",
+    "TestSample_EmptyInput",
+    "TestSample_WithReplacement",
+    "TestSample_WithoutReplacement",
+    "TestSample_BoundsError",
+    "TestEntropy_Normal",
+    "TestEntropy_ZeroValues",
+    "TestEntropy_EmptyInput",
+    "TestNormalize_Basic",
+    "TestNormalize_EmptyInput",
+    "TestArgMax",
+    "TestFloat64Data_ArgMax",
+    "TestFloat64Data_ArgMin",
+    "TestFloat64Data_Range",
+    "TestWinsorize",
+    "TestFloat64Data_Winsorize",
+    "TestZTest_EmptyInput",
+    "TestZTest_OneSample_BadStdDev",
+    "TestZTest_OneSample",
+    "TestZTest_TwoSample_BadStdDev",
+    "TestZTest_TwoSample",
+    "TestWeightedMean_EmptyInput",
+    "TestWeightedMean_SizeMismatch",
+    "TestWeightedMean_NegativeWeight",
+    "TestWeightedMean_ZeroWeight",
+    "TestWeightedMean_Correct",
+    "TestFloat64Data_WeightedMean_Method",
+    "TestDiff",
+    "TestPercentChange",
+    "TestFloat64Data_Diff",
+    "TestClip_ErrorsAndClamping",
+    "TestFloat64Data_Clip_ErrorsAndClamping",
+    "TestProbGeom_ErrorsAndValues",
+    "TestExpGeom_ErrorsAndValues",
+    "TestVarGeom_ErrorsAndValues",
+    "TestHarmonicMean",
+    "TestRescale_ErrorsAndNormal",
+    "TestFloat64Data_Rescale_Method",
+    "TestZScore_EmptyInput",
+    "TestZScore_ZeroStdDev",
+    "TestZScore_Normal",
+    "TestFloat64Data_ZScore_Method",
+    "TestEWMA_ErrorsAndValues",
+    "TestFloat64Data_EWMA_Delegates",
+    "TestPercentileOfScore_Empty",
+    "TestPercentileOfScore_Basic",
+    "TestFloat64Data_PercentileOfScore",
+    "TestSoftMax_EmptyInput",
+    "TestSoftMax_Basic",
+    "TestMedianAbsoluteDeviationPopulation",
+    "TestMedianAbsoluteDeviation",
+    "TestStandardDeviationSample",
+    "TestTrimmedMean_ErrorsAndValues",
+    "TestFloat64Data_TrimmedMean_Method",
+    "TestCoefficientOfVariation",
+    "TestFloat64Data_CoefficientOfVariation",
+    "TestCumulativeSum",
+    "TestNormInterval_Uncovered",
+    "TestNormLogPdf_Uncovered",
+    "TestNormLogTail_Uncovered",
+    "TestNormCdf_Uncovered",
+    "TestNormEntropy_Uncovered",
+    "TestProduct",
+    "TestFloat64Data_Product",
+    "TestRMS",
+    "TestFloat64Data_RMS",
+    "TestNormIsf",
+    "TestNormMean",
+    "TestNormMedian",
+    "TestNormPdf",
+    "TestSigmoid_EmptyInput",
+    "TestSigmoid_Basic",
+    "TestFloat64Data_AutoCorrelation",
+    "TestFloat64Data_Correlation",
+    "TestFloat64Data_Covariance",
+    "TestFloat64Data_CovariancePopulation",
+    "TestExpReg",
+    "TestLinReg",
+    "TestLogReg",
+    "TestStdDevP",
+    "TestStdDevS",
+    "TestNormLogTail_Branches",
+    "TestNormSample_Basic",
+    "TestNormStd_ReturnsScale",
+    "TestNormVar_ReturnsScaleSq",
+    "TestSEM",
+    "TestFloat64Data_SEM",
+    "TestRank_EmptyInput",
+    "TestRank_DistinctValues",
+    "TestRank_Ties",
+    "TestFloat64Data_Rank",
+    "TestFloat64Data_CumulativeSum_Method",
+    "TestFloat64Data_Entropy_Method",
+    "TestFloat64Data_GeometricMean_Method",
+    "TestFloat64Data_HarmonicMean_Method",
+    "TestFloat64Data_InterQuartileRange_Method",
+    "TestRound_Coverage",
+    "TestTTest_OneSample_Uncovered",
+    "TestFloat64Data_MovingSum",
+    "TestFloat64Data_MovingMin",
+    "TestFloat64Data_MovingMedian",
+    "TestSpearman_EmptyInput",
+    "TestSpearman_SizeMismatch",
+    "TestSpearman_PerfectCorrelation",
+    "TestFloat64Data_Less",
+    "TestFloat64Data_Max",
+    "TestFloat64Data_Mean",
+    "TestFloat64Data_Median",
+    "TestFloat64Data_MedianAbsoluteDeviation",
+    "TestError_Method",
+    "TestString_Method",
+    "TestKendallTau_TiedYAndDiscordant",
+    "TestKendallTau_AllTiedBothVariables",
+    "TestVarP",
+    "TestVarS",
+    "TestNormLogTail_UncoveredLines",
+    "TestFloat64Data_MedianAbsoluteDeviationPopulation_Method",
+    "TestFloat64Data_Midhinge_Method",
+    "TestFloat64Data_Min_Method",
+    "TestFloat64Data_Mode_Method",
+    "TestFloat64Data_Pearson_Method",
+    "TestQuartileOutliers_MildOutlier",
+    "TestFloat64ToInt_Rounding",
+    "TestFloat64ToInt_NaNInf_NoPanic",
+    "TestFloat64Data_CumulativeProduct",
+    "TestFloat64Data_PercentChange",
+    "TestFloat64Data_Percentile_Method",
+    "TestFloat64Data_PercentileNearestRank_Method",
+    "TestFloat64Data_PopulationVariance_Method",
+    "TestFloat64Data_Quartile_Method",
+    "TestFloat64Data_QuartileOutliers_Method",
+    "TestFloat64Data_SampleKurtosis",
+    "TestQuartileOutliers_SmallInputs",
+    "TestLogarithmicRegression_NonPositiveX",
+    "TestLogarithmicRegression_VarianceZero",
+    "TestLogarithmicRegression_Valid",
+    "TestFloat64Data_Quartiles_Method",
+    "TestFloat64Data_SampleVariance_Method",
+    "TestFloat64Data_Sigmoid_Method",
+    "TestFloat64Data_SoftMax_Method",
+    "TestFloat64Data_Spearman",
+    "TestFloat64Data_StandardDeviation",
+    "TestFloat64Data_StandardDeviationPopulation",
+    "TestFloat64Data_StandardDeviationSample"
+  ],
+  "suspected_bugs": [
+    {
+      "function": "Float64Data.Midhinge",
+      "description": "Method ignores the receiver and forwards only the argument, contradicting the documentation that it should operate on the receiver data"
+    }
+  ],
+  "per_file": [
+    {
+      "file": "clip.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "coefficient_of_variation.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "correlation.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "cumulative.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "cumulative_sum.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "describe.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "deviation.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "diff.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "distances.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "entropy.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "errors.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "ewma.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "extremes.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "geometric_distribution.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "histogram.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "interp.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "kendall.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "kurtosis.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "legacy.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "load.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "max.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "mean.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "median.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "min.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "mode.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "moving.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "norm.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "outlier.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "percentile.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "percentile_of_score.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "percentile_weighted.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "product.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "quartile.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "rank.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "regression.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "rescale.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "rms.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "rolling.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "round.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "sample.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "sem.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "sigmoid.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "skewness.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "softmax.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "sum.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "trimmed_mean.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "ttest.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "util.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "variance.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "weighted_mean.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "winsorize.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "zscore.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "ztest.go",
+      "before": 0.0,
+      "after": 100.0
+    },
+    {
+      "file": "data.go",
+      "before": 0.0,
+      "after": 89.74
+    }
+  ],
+  "tokens": {
+    "prompt_tokens": 281498,
+    "completion_tokens": 224350
+  },
+  "duration_s": 376.6,
+  "ai_summary": {
+    "business": {
+      "headline": "The share of the code tested rose from 0.0% to 99.68%, just short of the 100% goal.",
+      "outcome": "In 17 rounds the tool added 224 new tests across 50 test files, raising coverage from 0.0% to 99.68%. The run stopped early because the last two iterations each added less than 0.5 percentage points, indicating marginal gains.",
+      "efficiency": "The run took 6.3 minutes and used 505,848 tokens, at a cost of $0.1768. Tokens per percentage point were reported as 5,075, matching the large gain in coverage.",
+      "risks": [
+        "The file data.go still has four statements uncovered, leaving 0.32% of the code untested.",
+        "Generated tests capture the current behavior; they should be reviewed to ensure they do not lock in incorrect logic.",
+        "A suspected bug was reported for Float64Data.Midhinge, which may need attention before relying on the tests."
+      ],
+      "recommendation": "Review the new tests, especially the uncovered parts of data.go and the reported Midhinge issue, then merge them into the repository and add them to the CI pipeline."
+    },
+    "technical": {
+      "headline": "Coverage increased from 0.0% to 99.68% and 224 tests were added in 50 new test files.",
+      "what_was_tested": "The new tests exercise virtually every source file, bringing files such as clip.go, correlation.go, cumulative.go, deviation.go, diff.go, distances.go, entropy.go, errors.go, ewma.go, extremes.go, geometric_distribution.go, histogram.go, interp.go, kendall.go, kurtosis.go, legacy.go, load.go, max.go, mean.go, median.go, min.go, mode.go, moving.go, norm.go, outlier.go, percentile.go, percentile_of_score.go, percentile_weighted.go, product.go, quartile.go, rank.go, regression.go, rescale.go, rms.go, rolling.go, round.go, sample.go, sem.go, sigmoid.go, skewness.go, softmax.go, sum.go, trimmed_mean.go, ttest.go, util.go, variance.go, weighted_mean.go, winsorize.go, zscore.go, ztest.go, and data.go (partial).",
+      "where_tests_live": "The generated test files are in output/73d630a6dd05/tests. Copy the entire contents of that directory into the module root of the repo, preserving the sub\u2011folders so each test file sits next to its source file.",
+      "gaps": [
+        {
+          "file": "data.go",
+          "detail": "4 statements remain uncovered, coverage 89.74%"
+        }
+      ],
+      "suspected_bugs": [
+        "Float64Data.Midhinge: Method ignores the receiver and forwards only the argument, contradicting the documentation that it should operate on the receiver data"
+      ],
+      "rejected_or_failed": "One target was rejected due to a compile error. The process performed one mechanical repair and pruned ten tests. Sixteen fixes were applied by the fixer. No LLM timeouts or rate\u2011limit waits occurred.",
+      "how_to_run": "Copy the contents of output/73d630a6dd05/tests into the module root (keeping sub\u2011folders), then run `go test ./...` and `go test -cover ./...`.",
+      "next_steps": [
+        "Review the generated tests for correctness, especially the uncovered parts of data.go.",
+        "Investigate the reported Float64Data.Midhinge bug.",
+        "Add missing tests to reach full coverage.",
+        "Commit the tests and ensure they run in the CI pipeline."
+      ]
+    },
+    "dropped_sentences": 0,
+    "tokens": {
+      "prompt_tokens": 4697,
+      "completion_tokens": 2525,
+      "total_tokens": 7222
+    },
+    "cost_usd": {
+      "run": 0.1768,
+      "summary": 0.0022,
+      "input": 0.0429,
+      "output": 0.1361,
+      "total": 0.1791
+    },
+    "model": "openai/gpt-oss-120b",
+    "generated_at": 1791628021.7794695
+  },
+  "summary_tokens": {
+    "prompt_tokens": 4697,
+    "completion_tokens": 2525,
+    "total_tokens": 7222
+  }
+}
