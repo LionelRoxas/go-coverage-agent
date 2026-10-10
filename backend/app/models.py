@@ -165,6 +165,7 @@ class JobStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    INTERRUPTED = "interrupted"  # a run reloaded from ./output with no terminal event: the app stopped mid-run
 
 
 class Event(BaseModel):

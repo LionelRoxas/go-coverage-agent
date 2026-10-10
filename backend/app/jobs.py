@@ -1,12 +1,16 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-"""In-memory job registry (one running job at a time) with replayable event streams."""
+"""In-memory job registry (one running job at a time) with replayable event streams. Runs saved in OUTPUT_DIR are
+reloaded on startup (app.saved_runs); their events stay on disk until a client asks for them."""
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
 import uuid
-from typing import Any, AsyncIterator, Awaitable, Callable
+from pathlib import Path
+from typing import Any, AsyncIterator, Awaitable, Callable, Iterator
+
+from pydantic import ValidationError
 
 from app.agents.llm_agents import Agents
 from app.config import Settings
@@ -34,6 +38,22 @@ class JobRejected(Exception):
         self.status, self.code, self.message = status, code, message
 
 
+def iter_events(path: Path) -> Iterator[Event]:
+    """The events of an events.jsonl, skipping a line that does not parse (a truncated last line: a partial write)."""
+    with path.open(encoding="utf-8") as f:
+        for n, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                yield Event.model_validate_json(line)
+            except ValidationError:
+                log.debug("%s: line %d is not a complete event; ignored", path, n)
+
+
+def read_events(path: Path) -> list[Event]:
+    return list(iter_events(path))
+
+
 class Job:
     def __init__(self, job_id: str, request: JobRequest):
         self.id, self.request = job_id, request
@@ -48,15 +68,28 @@ class Job:
         self.summary_task: asyncio.Task[None] | None = None  # a summary written again on request
         self.summary_tokens = TokenUsage()  # every summary call so far; counts toward max_llm_tokens
         self.summary_cancel = asyncio.Event()  # Cancel while the summary is written (a new one per summary)
+        self.ai_summary: str | None = None  # "generated" / "failed": the last summary event, if any
         self._subscribers: list[asyncio.Queue[Event | None]] = []
+        # A run reloaded from OUTPUT_DIR: its events.jsonl, and the count and accepted test files read from it at
+        # startup. Its events are loaded into `events` only while its summary is written again.
+        self.log_path: Path | None = None
+        self.saved_event_count = 0
+        self.saved_test_files: list[str] = []
+
+    @property
+    def on_disk(self) -> bool:
+        """A saved run whose events are not in memory."""
+        return self.log_path is not None and not self.events
 
     async def emit(self, type_: str, data: dict[str, Any]) -> None:
-        event = Event(seq=len(self.events), ts=time.time(), type=type_, data=data)
+        event = Event(seq=self.events[-1].seq + 1 if self.events else 0, ts=time.time(), type=type_, data=data)
         self.events.append(event)
         if type_ == "baseline_measured":
             self.percent = data["report"]["percent"]
         elif type_ == "candidate_accepted":
             self.percent = data["percent"]
+        elif type_ in ("summary_generated", "summary_failed"):
+            self.ai_summary = "generated" if type_ == "summary_generated" else "failed"
         for q in self._subscribers:
             q.put_nowait(event)
 
@@ -66,6 +99,16 @@ class Job:
             q.put_nowait(None)
 
     async def stream(self) -> AsyncIterator[Event]:
+        if self.on_disk:  # a saved run: replay its file, then end
+            assert self.log_path is not None
+            try:
+                events = await asyncio.to_thread(read_events, self.log_path)
+            except OSError:
+                log.warning("could not read %s", self.log_path, exc_info=True)
+                return
+            for event in events:
+                yield event
+            return
         queue: asyncio.Queue[Event | None] = asyncio.Queue()
         self._subscribers.append(queue)
         done_at_subscribe = self.finished  # decide before replay: the job may finish while we yield
@@ -84,13 +127,16 @@ class Job:
             self._subscribers.remove(queue)
 
     def accepted_test_files(self) -> list[str]:
+        if self.on_disk:
+            return self.saved_test_files
         return sorted({e.data["test_file"] for e in self.events if e.type == "candidate_accepted"})
 
     def snapshot(self) -> dict[str, Any]:
         return {"id": self.id, "status": self.status.value, "request": self.request.model_dump(mode="json"),
-                "created_at": self.created_at, "percent": self.percent, "event_count": len(self.events),
+                "created_at": self.created_at, "percent": self.percent,
+                "event_count": self.saved_event_count if self.on_disk else len(self.events),
                 "summary": self.summary.model_dump(mode="json") if self.summary else None,
-                "writing_summary": self.writing_summary}
+                "writing_summary": self.writing_summary, "ai_summary": self.ai_summary}
 
     @property
     def writing_summary(self) -> bool:
@@ -141,6 +187,12 @@ class JobManager:
         """The busy job: running, or writing its summary. One job uses Groq at a time."""
         return next((j for j in self.jobs.values() if j.status is JobStatus.RUNNING or not j.finished), None)
 
+    def load_history(self) -> None:
+        """Startup: add the most recent HISTORY_MAX_RUNS runs saved in OUTPUT_DIR (never raises)."""
+        from app.saved_runs import load_runs  # it builds Jobs, so it imports this module
+        for job in load_runs(self.settings.output_dir, self.settings.history_max_runs):
+            self.jobs.setdefault(job.id, job)
+
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)
 
@@ -156,13 +208,17 @@ class JobManager:
                               f"Only ~{remaining:,} Groq tokens are left today; the budget resets at 00:00 UTC.")
         if (running := self.running()) is not None:
             raise JobConflict(running.id)
-        job = Job(uuid.uuid4().hex[:12], request)
+        while (job_id := uuid.uuid4().hex[:12]) in self.jobs or (self.settings.output_dir / job_id).exists():
+            pass  # never reuse the id of a loaded or saved run
+        job = Job(job_id, request)
         self.jobs[job.id] = job
         job.task = asyncio.create_task(self._run(job))
         return job
 
     def cancel(self, job_id: str) -> Job | None:
         job = self.jobs.get(job_id)
+        if job is not None and job.log_path is not None and job.finished:
+            raise JobRejected(409, "job_not_running", "This run is not running; it was reloaded from ./output.")
         if job is not None and job.status is JobStatus.RUNNING:
             job.cancel.set()
         elif job is not None and job.writing_summary:
@@ -211,15 +267,36 @@ class JobManager:
             raise JobRejected(409, "job_running", "This run is still running or writing its summary.")
         if (busy := self.running()) is not None:
             raise JobRejected(409, "job_running", f"Run {busy.id} is still running; write the summary when it ends.")
+        if job.status is JobStatus.INTERRUPTED:
+            raise JobRejected(409, "no_report",
+                              "This run stopped before it finished, so there is no report to summarize.")
         if job.summary is None:
             raise JobRejected(409, "no_report",
                               "This run ended before its baseline was measured, so there is nothing to summarize.")
         if not self.settings.llm_configured:
             raise JobRejected(400, "llm_not_configured", "Set GROQ_API_KEY in .env and restart the app.")
+        if job.on_disk:
+            self._load_saved_events(job)
         job.finished = False
         job.summary_cancel = asyncio.Event()  # now, not in the task: a Cancel before it starts must count
         job.summary_task = asyncio.create_task(self._summary_again(job))
         return job
+
+    def _load_saved_events(self, job: Job) -> None:
+        """A saved run's events, in memory while its summary is written again; 409 when its files no longer give
+        the facts the summary needs."""
+        assert job.log_path is not None and job.summary is not None
+        unreadable = JobRejected(409, "run_files_unreadable", f"This run's saved files in ./output/{job.id} can't be "
+                                 "read any more, so its summary can't be written again.")
+        try:
+            events = read_events(job.log_path)
+            build_facts(job.summary, events, repo=job.request.repo_path, model="", job_id=job.id)
+        except Exception as e:  # noqa: BLE001 — a missing file, or events older code can't use
+            log.info("cannot write the summary of saved run %s again", job.id, exc_info=True)
+            raise unreadable from e
+        if not events:
+            raise unreadable
+        job.events = events
 
     async def _summary_again(self, job: Job) -> None:
         try:
@@ -228,6 +305,9 @@ class JobManager:
             try:
                 self._save_events(job)
             finally:
+                if job.log_path is not None:  # a saved run: back to disk, keeping the counts its snapshot shows
+                    job.saved_event_count, job.saved_test_files = len(job.events), job.accepted_test_files()
+                    job.events = []
                 job.close()
 
     def _model(self, job: Job) -> str:

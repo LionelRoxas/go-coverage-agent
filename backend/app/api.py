@@ -127,7 +127,10 @@ async def events(job_id: str, request: Request) -> EventSourceResponse:
 @router.post("/jobs/{job_id}/cancel")
 async def cancel(job_id: str, request: Request) -> dict:
     _job(request, job_id)
-    return _manager(request).cancel(job_id).snapshot()
+    try:
+        return _manager(request).cancel(job_id).snapshot()
+    except JobRejected as e:
+        raise ApiError(e.status, e.code, e.message) from e
 
 
 @router.post("/jobs/{job_id}/summary", status_code=202)
@@ -145,7 +148,10 @@ async def file(job_id: str, path: str, request: Request) -> PlainTextResponse:
     job = _job(request, job_id)
     if path not in job.accepted_test_files():
         raise ApiError(404, "file_not_found", "Not a generated test file of this job.")
-    target = request.app.state.settings.work_dir / job_id / "repo" / path
+    settings = request.app.state.settings
+    target = settings.work_dir / job_id / "repo" / path
+    if not target.is_file():  # e.g. a run reloaded after a restart: its working copy is gone, its export is not
+        target = settings.output_dir / job_id / "tests" / path
     if not target.is_file():
         raise ApiError(404, "file_not_found", "File no longer exists.")
     return PlainTextResponse(target.read_text(encoding="utf-8"))

@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     upload_max_files: int = Field(3000, gt=0)  # UPLOAD_MAX_FILES
     upload_max_file_bytes: int = Field(1024 * 1024, gt=0)  # UPLOAD_MAX_FILE_BYTES: larger files are skipped
 
+    history_max_runs: int = Field(500, ge=0)  # HISTORY_MAX_RUNS: the most recent runs in ./output reloaded on startup
+
     @property
     def llm_configured(self) -> bool:
         return bool(self.groq_api_key.strip())
