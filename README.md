@@ -119,7 +119,9 @@ The last two runs needed one LLM fix each (12.8 s at `medium`, 9.6 s at `low`), 
 
 With the cap of 5 more targets passed on the first check and fewer LLM fixes were needed; semver used 34% fewer tokens, stats about the same. These are single runs, so a few seconds or a percentage point is within normal variation.
 
-**Parallel writers (2026-10-10)** (stats, same settings, cap of 5; only `PARALLEL_WRITERS` changed):
+**Parallel writers (2026-10-10)** (stats, cap of 5; within each comparison only `PARALLEL_WRITERS` changed).
+
+Goal 80%, default options:
 
 | | Sequential | Parallel |
 |---|---|---|
@@ -135,7 +137,23 @@ With the cap of 5 more targets passed on the first check and fewer LLM fixes wer
 | Rate-limit waits | 0 | 0 |
 | Tokens | 175K | 187K |
 
-These are single runs: the time halved with no loss of quality, for about 7% more tokens. `PARALLEL_WRITERS` is off by default and meant to be turned on for paid keys.
+Goal 100%, long run (30 rounds max, minimum gain 0.5 pp, 5 targets per round, 3 fix attempts):
+
+| | Sequential | Parallel |
+|---|---|---|
+| Run | `979b912d00b4` | `73d630a6dd05` |
+| Coverage | 0% → 99.84% | 0% → 99.68% |
+| Rounds | 17 (stopped on small gains) | 17 (stopped on small gains) |
+| Time | 681 s | 377 s (−45%) |
+| Targets accepted / rejected | 78 / 0 | 75 / 1 |
+| Passed on the first check | 61 | 55 |
+| LLM fixes | 14 | 16 |
+| Duplicate-name errors | 2 | 1 |
+| `no_gain` rejections | 2 | 0 |
+| Rate-limit waits | 0 | 0 |
+| Tokens | 493K | 506K |
+
+These are single runs: parallel writers cut the time roughly in half on both a short and a long run, with the same rounds and coverage within 0.8 pp, for 3–7% more tokens. `PARALLEL_WRITERS` is off by default and meant to be turned on for paid keys.
 
 ### Issues I found in testing and fixed
 
