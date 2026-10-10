@@ -6,7 +6,7 @@ import { type SectionId, walkthroughHref } from "../walkthrough/sections";
 
 export const metadata: Metadata = {
   title: "How it works",
-  description: "What the Go Coverage Agent does in a run, in plain words, and how far it got on real projects.",
+  description: "What the Go Coverage Agent does in a run, how it decides a test adds coverage, and what it flags for a person to check, in plain words.",
 };
 
 type Step = { title: string; plain: string; more: SectionId };
@@ -47,12 +47,6 @@ const STOPS = [
   { rule: "It used up its AI budget", why: "A run may spend 1M tokens and the app 2M a day (both configurable)." },
   { rule: "Nothing is left that it can work on", why: "Every remaining gap was tried twice without success, or is too big to send in one go." },
   { rule: "The AI service could not be reached", why: "Groq, the AI service, did not answer for 10 minutes in a row. Until then it keeps waiting a little longer each time and tries the same gaps again; they never count as failed. The tests kept so far are saved." },
-];
-
-const RESULTS = [
-  { id: "stats", name: "stats", what: "a statistics library", goal: 80, from: 0, to: 81.07, label: "0% → 81.1%", detail: "11 rounds, about 5 minutes" },
-  { id: "stats-100", name: "stats", what: "a statistics library", goal: 100, from: 0, to: 100, label: "0% → 100%", detail: "22 rounds, about 10 minutes (round limit raised to 30)" },
-  { id: "btree", name: "btree", what: "a data-structure library", goal: 100, from: 0, to: 87.09, label: "0% → 87.1%", detail: "stopped when new rounds added very little, under 0.5 points each, a setting lowered from 1 (11 rounds, about 6 minutes)" },
 ];
 
 // The two things a run flags for a person: one points at the generated tests' results, the other at the project's code.
@@ -274,30 +268,6 @@ export default function HowItWorksPage() {
             </article>
           ))}
         </div>
-      </section>
-
-      <section aria-labelledby="result-heading" className="space-y-4">
-        <div className="space-y-2">
-          <h2 id="result-heading" className={h2}>Measured results</h2>
-          <p className="leading-relaxed text-muted">Real open-source Go projects with their own tests removed first, so each starts at 0%.</p>
-        </div>
-        <ul className={`divide-y divide-border ${cardClass({ padded: false })}`}>
-          {RESULTS.map((r) => (
-            <li key={r.id} data-testid={`result-${r.id}`} className="grid gap-x-6 gap-y-2 p-4 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center">
-              <div className="min-w-0">
-                <p className="font-mono text-sm">{r.name} <span className="font-sans text-muted">({r.what}), goal {r.goal}%</span></p>
-                <p className="text-sm text-muted">{r.detail}</p>
-              </div>
-              <div className="space-y-1.5">
-                <p className="font-mono font-semibold tabular-nums sm:text-right">{r.label}</p>
-                <div aria-hidden className="relative h-1.5 rounded-full bg-border">
-                  <span className="absolute inset-y-0 rounded-full bg-accent" style={{ left: `${r.from}%`, width: `${r.to - r.from}%` }} />
-                  <span className="absolute -inset-y-1 w-0.5 bg-text" style={{ left: `${r.goal}%` }} title={`${r.goal}% goal`} />
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
       </section>
 
       <footer className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-border pt-6">
