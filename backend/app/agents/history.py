@@ -29,6 +29,7 @@ class AttemptRecord:
     failed_tests: tuple[str, ...] = ()
     lines: tuple[str, ...] = ()
     pruned: tuple[str, ...] = ()
+    pruned_reason: str = ""  # "no_assertions" when `pruned` were removed for checking nothing, else they failed
     assertions: bool = False  # `lines` are per-test assertion or panic lines, each naming its test
 
     @property
@@ -97,10 +98,11 @@ def _key_lines(result: ValidationResult) -> tuple[list[str], bool]:
     return meaningful[:limit], False
 
 
-def attempt_record(source: str, result: ValidationResult, pruned: Sequence[str] = ()) -> AttemptRecord:
+def attempt_record(source: str, result: ValidationResult, pruned: Sequence[str] = (),
+                   pruned_reason: str = "") -> AttemptRecord:
     lines, assertions = _key_lines(result)
     return AttemptRecord(source=source, kind=result.kind.value, failed_tests=tuple(result.failed_tests),
-                         lines=tuple(lines), pruned=tuple(pruned), assertions=assertions)
+                         lines=tuple(lines), pruned=tuple(pruned), pruned_reason=pruned_reason, assertions=assertions)
 
 
 def render_history(records: Sequence[AttemptRecord], max_tokens: int = HISTORY_TOKENS, minimal: bool = False) -> str:

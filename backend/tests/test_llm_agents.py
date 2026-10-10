@@ -242,3 +242,17 @@ def test_writer_and_fixer_prompts_require_an_assertion_in_every_test(name):
     sent = load_prompt(name)
     assert "Every Test function must check" in sent and "t.Error" in sent and "t.Fatal" in sent
     assert "does not panic" in sent and "also asserts something" in sent
+
+
+async def test_fix_after_pruned_assertion_free_tests_says_to_keep_them_and_assert():
+    from app.agents.llm_agents import PRUNED_NO_GAIN, PRUNED_SILENT_NO_GAIN
+    silent = ValidationResult(ValidationKind.NO_ASSERTIONS, "tests that check nothing (TestFail)",
+                              new_tests=["TestFail", "TestOther"], no_assertions=["TestFail"])
+    history = [attempt_record("writer", silent),
+               attempt_record("prune of [TestFail] (no assertions)", NO_GAIN, pruned=["TestFail"],
+                              pruned_reason="no_assertions")]
+    llm = FakeLLM([snippet("func TestFail(t *testing.T) {}")])
+    await Agents(llm, max_prompt_tokens=4000).fix(ITEM, INPUTS, _two_tests(), NO_GAIN, history)
+    user = llm.calls[0]["user"]
+    assert PRUNED_SILENT_NO_GAIN.format(names="TestFail") in user
+    assert "make each check its results with t.Error/t.Fatal" in user and PRUNED_NO_GAIN not in user

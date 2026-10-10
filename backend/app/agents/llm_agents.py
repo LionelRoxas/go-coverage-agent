@@ -20,6 +20,8 @@ _DECL_NAME = re.compile(r"^(?:func\s+(?:\([^)]*\)\s*)?|type\s+|var\s+|const\s+)(
 _WORD = re.compile(r"\w+")
 PRUNED_NO_GAIN = ("Removing the failing tests left no new coverage: the tests that reached the uncovered lines were the "
                   "ones that failed. Keep them and correct their expected values (observed values are in the history).")
+PRUNED_SILENT_NO_GAIN = ("Removing the tests without assertions ({names}) left no new coverage: they were the ones that "
+                         "reached the uncovered lines. Keep them and make each check its results with t.Error/t.Fatal.")
 
 
 _HEADER = re.compile(r"\A<!--.*?-->\s*", re.S)
@@ -138,6 +140,9 @@ class Agents:
         if result.kind is ValidationKind.NO_GAIN and pruned and any(
                 r.kind == ValidationKind.TEST_FAILURE.value and set(r.failed_tests) & set(pruned) for r in earlier):
             goal += f" {PRUNED_NO_GAIN}"
+        elif result.kind is ValidationKind.NO_GAIN and pruned and current is not None \
+                and current.pruned_reason == ValidationKind.NO_ASSERTIONS.value:
+            goal += f" {PRUNED_SILENT_NO_GAIN.format(names=', '.join(pruned))}"
         full_history, short_history = render_history(earlier), render_history(earlier, minimal=True)
 
         def task(code: str | None, output: str, past: str, with_plan: bool = True) -> str:

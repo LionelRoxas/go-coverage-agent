@@ -374,7 +374,7 @@ class Orchestrator:
                         result = await self._validate(
                             base, validator.prune_and_check(test_file, free, self.report, result.new_tests))
                         history.append(attempt_record(f"prune of [{', '.join(free)}] (no assertions)", result,
-                                                      pruned=free))
+                                                      pruned=free, pruned_reason=ValidationKind.NO_ASSERTIONS.value))
                         if result.accepted:
                             break
                     if result.kind is ValidationKind.TEST_FAILURE:

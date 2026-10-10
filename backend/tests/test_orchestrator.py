@@ -721,3 +721,15 @@ async def test_all_assertion_free_is_rejected_when_the_fixer_cannot_help(ws):
     await orch.run(report(set(), funcs=(("a.go", "A"),)))
     assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "no_assertions"}) in events
     assert ws.read("a_test.go") is None  # rolled back
+
+
+async def test_assertion_free_prune_that_leaves_no_gain_goes_to_the_fixer_marked_as_such(ws):
+    v = FakeValidator(ws, [assertion_free(["TestNoCheck"], ["TestGood", "TestNoCheck"]), accepted({"A:1"})],
+                      prune_results=[NO_GAIN])
+    agents = FakeAgents([GOOD], fixes=[GOOD])
+    orch, _ = run(ws, v, agents, target=25, max_fix_attempts=1)
+    await orch.run(report(set()))
+    [history] = agents.histories
+    assert history[-1].source == "prune of [TestNoCheck] (no assertions)"
+    assert history[-1].pruned == ("TestNoCheck",) and history[-1].pruned_reason == "no_assertions"
+    assert agents.fix_kinds == [ValidationKind.NO_GAIN]

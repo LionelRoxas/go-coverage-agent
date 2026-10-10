@@ -235,3 +235,15 @@ def test_an_ambiguous_older_claim_is_kept():
         {"file": "a.go", "functions": ["F"], "uncovered_statements": 1}]})
     assert drop_refuted_bugs([bug("F")], first) == []  # one accepted answer for F: it carried the claim
     assert drop_refuted_bugs([bug("F")], first + second) == [bug("F")]  # two, neither plan names a bug: keep
+
+
+def test_assertion_free_removals_are_counted_apart_from_failing_prunes():
+    summary, events = load()
+    seq = max(e.seq for e in events)
+    extra = [Event(seq=seq + 1, ts=1.0, type="tests_pruned",
+                   data={"index": 1, "file": "mean.go", "tests": ["TestA", "TestB"], "reason": "no_assertions"})]
+    end = next(i for i, e in enumerate(events) if e.type == "job_completed")
+    run = events[:end] + extra + events[end:]
+    f = build_facts(summary, run, repo="stats", model="openai/gpt-oss-120b", job_id="e2de1ca387cb")
+    assert (f.pruned_tests, f.pruned_no_assertions) == (3, 2)
+    assert facts().pruned_no_assertions == 0  # older runs have no such prunes

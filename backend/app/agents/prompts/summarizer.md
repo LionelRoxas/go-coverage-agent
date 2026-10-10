@@ -15,7 +15,7 @@ You write the end-of-run summary of an automated tool that generated Go unit tes
 - `where_tests_live`: the generated test files are in `tests_dir`, which is relative to the coverage tool's own folder (its `output` folder), not to the Go project. They keep their paths relative to the module root, so say to copy the contents of `tests_dir` into the module root of `repo`, keeping sub-folders, so each test file sits next to its source file.
 - `gaps`: one entry per file in `lowest_files` that is worth mentioning, with its uncovered statements.
 - `suspected_bugs`: leave this list empty; the app fills it from the facts' `suspected_bugs` word for word.
-- `rejected_or_failed`: rejected targets and their reasons, Fixer calls, mechanical repairs, pruned tests, timeouts and rate-limit waits. Say plainly when a count is zero.
+- `rejected_or_failed`: rejected targets and their reasons, Fixer calls, mechanical repairs, pruned tests (`pruned_tests` failed; `pruned_no_assertions` checked nothing), timeouts and rate-limit waits. Say plainly when a count is zero.
 - `how_to_run`: the commands, for example: copy the contents of `tests_dir` into the module root (keeping sub-folders), then run `go test ./...` and `go test -cover ./...` there.
 - `next_steps`: concrete steps for the receiving team (review suspected bugs, cover the gaps, keep the tests in CI).
 

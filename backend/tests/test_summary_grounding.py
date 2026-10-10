@@ -256,3 +256,11 @@ def test_the_live_summary_is_grounded_and_tidied():
     assert dropped == 0
     assert out.business.headline == "Coverage rose from 1.43% to 83.33%, exceeding the 80% goal."
     assert "\u202f%" not in out.model_dump_json()
+
+
+def test_assertion_free_removals_are_a_grounded_count():
+    text = "7 tests without assertions were removed."
+    out, dropped = ground(summary(technical={"rejected_or_failed": text}), facts(pruned_no_assertions=7))
+    assert dropped == 0 and out.technical.rejected_or_failed == text
+    _, dropped = ground(summary(technical={"rejected_or_failed": text}), facts())
+    assert dropped == 1
