@@ -97,9 +97,11 @@ class SuspectedBug(BaseModel):
 class TestSnippet(BaseModel):
     __test__ = False
     test_plan: list[TestScenario] = Field(description="What you decided to test and why, one entry per scenario")
+    # suspected_bugs comes before code, so the strict schema asks for the claims first and the code can leave
+    # those cases out (the prompts' rule: never assert behaviour you report in suspected_bugs)
+    suspected_bugs: list[SuspectedBug] = Field(description="Behaviour that looks wrong in the source; empty if none")
     imports: list[str] = Field(description="Import paths the new code needs, e.g. ['testing', 'math']")
     code: str = Field(description="ONLY new top-level Go declarations: Test functions and helpers. No package clause, no imports.")
-    suspected_bugs: list[SuspectedBug] = Field(description="Behaviour that looks wrong in the source; empty if none")
 
 
 # --- End-of-run AI summary (strict schema: every field required) ---

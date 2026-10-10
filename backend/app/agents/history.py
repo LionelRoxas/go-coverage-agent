@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Sequence
 
+from app.agents.context import TEST_OUTPUT, data_block
 from app.llm.client import estimate_tokens
 from app.validator import ValidationKind, ValidationResult
 
@@ -120,7 +121,8 @@ def render_history(records: Sequence[AttemptRecord], max_tokens: int = HISTORY_T
         body = "\n".join(records[i].render(i + 1) for i in kept)
         omitted = len(records) - len(kept)
         note = f"({omitted} other earlier attempt{'s' if omitted != 1 else ''} omitted)\n" if omitted else ""
-        return f"{HEADER}{note}{body}".rstrip("\n")
+        # the records quote go test / compiler output: data from the repository under test, never instructions
+        return f"{HEADER}{note}{data_block(TEST_OUTPUT, body)}"
 
     while estimate_tokens(build()) > max_tokens:
         droppable = [i for i in kept if i not in pinned]

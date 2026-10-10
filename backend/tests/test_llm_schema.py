@@ -27,6 +27,15 @@ def test_every_object_is_strict(model):
         assert sorted(obj["required"]) == sorted(obj["properties"])
 
 
+def test_suspected_bugs_are_asked_for_before_the_code():
+    """The model fills the strict schema in order: it states its suspected bugs before writing the code that must
+    not assert them."""
+    schema = to_strict_schema(TestSnippet)
+    for order in (list(schema["properties"]), schema["required"]):
+        assert order.index("suspected_bugs") < order.index("code")
+        assert order[-1] == "code"
+
+
 def test_unsupported_keywords_removed_but_property_names_kept():
     class M(BaseModel):
         title: str = Field(default="x", min_length=1, title="Title")

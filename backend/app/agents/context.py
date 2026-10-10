@@ -14,6 +14,19 @@ from app.workspace import Workspace, test_path_for
 
 _IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
 _SIGNATURE = re.compile(r"^(func \w+\([^)]*\)[^{\n]*)", re.M)
+# Delimiters around repository-derived text in prompts: it is data from the repository under test, and the prompts
+# tell the model never to follow instructions found inside it (code comments included).
+REPO_SOURCE, TEST_OUTPUT = "repository_source", "test_output"
+
+
+def defuse(tag: str, text: str) -> str:
+    """`text` with any `</tag>` of its own made harmless (`<\\/tag>`), so the data cannot end its block early."""
+    return re.sub(rf"</(\s*{tag}\s*)>", r"<\\/\1>", text, flags=re.I)
+
+
+def data_block(tag: str, text: str) -> str:
+    """Repository-derived `text` between a `<tag>` line and a `</tag>` line."""
+    return f"<{tag}>\n{defuse(tag, text)}\n</{tag}>"
 
 
 class ContextTooLarge(Exception):
@@ -80,7 +93,8 @@ def _declared(inp: ContextInputs) -> str:
 
 def _targets(inp: ContextInputs) -> str:
     blocks = [f"### {label} ({inp.source_file})\n```go\n{src}\n```" for label, src in inp.targets]
-    return "## Functions to test (lines ending in `// UNCOVERED` are not executed by any test yet)\n" + "\n\n".join(blocks)
+    return ("## Functions to test (lines ending in `// UNCOVERED` are not executed by any test yet)\n"
+            + data_block(REPO_SOURCE, "\n\n".join(blocks)))
 
 
 def _fit(text: str, title: str, items: list[str], budget: int, prefix: str = "", suffix: str = "") -> str:
@@ -101,9 +115,12 @@ def render_context(inp: ContextInputs, budget_tokens: int) -> str:
         raise ContextTooLarge(f"targets need ~{estimate_tokens(text)} tokens; budget is {budget_tokens}")
     # Existing test names go before the optional related declarations so they are not crowded out;
     # when only some fit, the most recent (last in the file) are kept.
+    # Repository-derived sections sit in <repository_source> blocks; _fit counts the delimiters toward the budget.
     text = _fit(text, f"## Tests already in {inp.test_file} (signatures only; do not duplicate)",
-                [f"- {s}" for s in reversed(inp.existing_tests)], budget_tokens)
-    text = _fit(text, "## Related declarations in this package", inp.referenced, budget_tokens, "```go\n", "\n```")
+                [defuse(REPO_SOURCE, f"- {s}") for s in reversed(inp.existing_tests)], budget_tokens,
+                f"<{REPO_SOURCE}>\n", f"\n</{REPO_SOURCE}>")
+    text = _fit(text, "## Related declarations in this package", [defuse(REPO_SOURCE, r) for r in inp.referenced],
+                budget_tokens, f"<{REPO_SOURCE}>\n```go\n", f"\n```\n</{REPO_SOURCE}>")
     return text
 
 
