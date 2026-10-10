@@ -22,6 +22,8 @@ cp .env.example .env          # and paste your Groq key (https://console.groq.co
 make up                       # or: docker compose up --build
 ```
 
+Both containers use `restart: unless-stopped`: started with `docker compose up -d`, they come back after a crash or a Docker restart until you run `docker compose down` (Ctrl+C on `make up` stops them for good).
+
 Open http://localhost:3000, click the **montanaflynn/stats** card under **Sample repos** (the assignment's evaluation repo), press **Next** to set a target (80% by default), **Skip (use defaults)** past the advanced options, then **Start**.
 
 - **Model:** `openai/gpt-oss-120b` on Groq (fallback `openai/gpt-oss-20b` via `GROQ_MODEL`). `GET /api/health` and the UI show it.
@@ -50,7 +52,7 @@ Step 1 of the setup page has two tabs. **Sample repos** (the example data): six 
 - **Upload:** press **Choose a folder…** (or drop the folder that contains `go.mod`). The files are saved under `./repos/uploads/<name>`. `.git`, `vendor`, `node_modules`, hidden files, binaries and files over 1 MB are skipped; at most 3,000 files and 25 MB (`UPLOAD_MAX_FILES`, `UPLOAD_MAX_BYTES`). An upload only replaces a folder an earlier upload created.
 - **Host folder:** every Go module (up to two levels deep) in `HOST_REPOS_DIR` (default `./my-repos`) is listed as `host/<path>`. It is mounted **read-only** at `/host-repos`. Copy a project into `./my-repos` and press Refresh, or set `HOST_REPOS_DIR` to an absolute path (`C:\Users\you\code`, `/Users/you/code`; compose does not expand `~`) and run `make up`.
 
-Your code is never modified. A run copies the module into the container's `/work/<job-id>` (deleted when the run ends), deletes the copy's existing `_test.go` files, works only on that copy, and writes the generated tests to `./output/<job-id>/tests/` for you to review. Every run is saved in `./output/<job-id>` as it goes: each event is appended to `events.jsonl` when it happens, each accepted test file is copied to `tests/` when accepted. Run history reloads it on restart; a run stopped mid-way, even by `docker kill` or running out of memory, shows as Interrupted with every test it had accepted. Delete the folder to remove a run.
+Your code is never modified. A run copies the module into the container's `/work/<job-id>` (deleted when the run ends), deletes the copy's existing `_test.go` files, works only on that copy, and writes the generated tests to `./output/<job-id>/tests/` for you to review. Every run is saved in `./output/<job-id>` as it goes: each event is appended to `events.jsonl` when it happens, each accepted test file is copied to `tests/` when accepted. Run history reloads it on restart; a run stopped mid-way, even by `docker kill` or a crash of the app process, shows as Interrupted with every test it had accepted. Running out of memory (the container's 4 GB limit) usually kills a `go` build or test process rather than the app: that check fails, the target is rejected and the run goes on (a test run cut short like this is never counted as a prediction disagreement). Only an out-of-memory kill of the app process itself restarts the container and reloads the run as Interrupted. Delete the folder to remove a run.
 
 ## How it works
 
@@ -233,9 +235,10 @@ export MSYS_NO_PATHCONV=1
 docker run --rm -v "$PWD/tools/gohelper:/src" -w /src golang:1.27-bookworm sh -c "go vet ./... && go test ./..."
 docker build -f backend/Dockerfile --build-arg GO_IMAGE=golang:1.27-bookworm --target test -t gca-backend-test .
 docker run --rm gca-backend-test pytest
-docker run --rm --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 512 --memory 4g --read-only \
-  --tmpfs /tmp:exec,size=512m --tmpfs /work:exec,uid=1000,gid=1000,size=1536m --tmpfs /home/app/.cache:exec,uid=1000,gid=1000 \
+docker run --rm --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 4096 --memory 4g --read-only \
+  --tmpfs /tmp:exec,size=512m --tmpfs /work:exec,uid=1000,gid=1000,size=2g -v gca-it-gocache:/home/app/.cache \
   --env-file .env.example -v "$PWD/backend/tests/fixtures:/host-repos:ro" gca-backend-test pytest -m integration
+docker volume rm gca-it-gocache
 docker run --rm gca-backend-test ruff check --no-cache .
 cd frontend && npm ci && npm test && npm run lint && npx tsc --noEmit
 ```
@@ -272,7 +275,7 @@ Groq only was my decision; the brief allows a hosted LLM as well as LocalAI/Olla
 
 ## Limitations
 
-- Generated tests run inside the backend container as the same user (uid 1000) as the API server. They cannot modify your code (`HOST_REPOS_DIR` is read-only) or the app itself: the app code and its Python environment are owned by root and the root filesystem is read-only, compose drops all capabilities, sets no-new-privileges and limits the container to 512 processes and 4 GB of memory. They could still read the backend's environment (including `GROQ_API_KEY`, via `/proc`), write to the app's data folders (`/repos`, `/output`, `/work`, the Go cache), start processes within those limits, and reach the network (outbound access is open). The real fix is the per-run sandbox listed under production (above); I would add it before running code from anyone I don't trust. The import guard is easy to bypass (string concatenation, reflection). The Go build cache is a volume shared by all runs and writable by that user, so a generated test could tamper with cache entries a later run reuses.
+- Generated tests run inside the backend container as the same user (uid 1000) as the API server. They cannot modify your code (`HOST_REPOS_DIR` is read-only) or the app itself: the app code and its Python environment are owned by root and the root filesystem is read-only, compose drops all capabilities, sets no-new-privileges and limits the container to 4,096 tasks (threads count too; Go runs one compiler or test binary per CPU at once) and 4 GB of memory. `/work` (the repo copies and Go's temp files) is a 2 GB tmpfs that uses that memory; a module that fills it ends the run as `workspace_full` (raise the `/work` size and `mem_limit` together in `docker-compose.yml`). They could still read the backend's environment (including `GROQ_API_KEY`, via `/proc`), write to the app's data folders (`/repos`, `/output`, `/work`, the Go cache), start processes within those limits, and reach the network (outbound access is open). The real fix is the per-run sandbox listed under production (above); I would add it before running code from anyone I don't trust. The import guard is easy to bypass (string concatenation, reflection). The Go build cache is a volume shared by all runs and writable by that user, so a generated test could tamper with cache entries a later run reuses.
 - **Privacy:** the functions under test and related declarations (your source code) are sent to Groq in each prompt. The New run flow does not show this notice; the How it works and Walkthrough pages describe it.
 - Expected values for floating-point code are partly characterization tests: the Fixer may adopt an observed value, so real bugs can be encoded rather than flagged. Review generated assertions before trusting them. The assertion check rejects tests that check nothing, but assertion strength is not measured: there is no mutation testing, and a mutation pass is the next quality metric I would add.
 - Single-user by design: no accounts, and history lives in `./output`.

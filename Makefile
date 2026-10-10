@@ -8,7 +8,9 @@ GO_IMAGE := golang:$(GO_VERSION)
 BACKEND_IMAGE ?= gca-backend
 BACKEND_TEST_IMAGE ?= gca-backend-test
 # The backend hardening from docker-compose.yml (keep the two in sync), so CI proves the hardened container still runs Go.
-HARDENING := --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 512 --memory 4g --read-only --tmpfs /tmp:exec,size=512m --tmpfs /work:exec,uid=1000,gid=1000,size=1536m --tmpfs /home/app/.cache:exec,uid=1000,gid=1000
+# The Go cache is a fresh named volume, as compose's `gocache` (created from the image, owned by app), removed afterwards.
+IT_CACHE_VOLUME ?= gca-it-gocache
+HARDENING := --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 4096 --memory 4g --read-only --tmpfs /tmp:exec,size=512m --tmpfs /work:exec,uid=1000,gid=1000,size=2g -v $(IT_CACHE_VOLUME):/home/app/.cache
 .PHONY: up backend-image backend-test-image test test-go test-backend test-integration frontend-deps test-frontend build-frontend lint lint-backend lint-frontend verify-evidence
 # Frontend targets install dependencies only when node_modules is missing (CI runs `make frontend-deps` once first);
 # `npm ci` would delete node_modules, which fails while a local Next server holds files in it.
@@ -25,7 +27,9 @@ test-go:
 test-backend: backend-test-image
 	docker run --rm $(BACKEND_TEST_IMAGE) pytest
 test-integration: backend-test-image
-	docker run --rm $(HARDENING) --env-file .env.example -v "$(CURDIR)/backend/tests/fixtures:/host-repos:ro" $(BACKEND_TEST_IMAGE) pytest -m integration
+	docker volume rm -f $(IT_CACHE_VOLUME) >/dev/null; \
+	docker run --rm $(HARDENING) --env-file .env.example -v "$(CURDIR)/backend/tests/fixtures:/host-repos:ro" $(BACKEND_TEST_IMAGE) pytest -m integration; \
+	status=$$?; docker volume rm -f $(IT_CACHE_VOLUME) >/dev/null; exit $$status
 frontend-deps:
 	cd frontend && npm ci
 test-frontend:
