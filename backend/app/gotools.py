@@ -249,3 +249,7 @@ class GoTools:
 
     async def prune(self, test_file: str, names: list[str]) -> CommandResult:
         return await self._run(["gohelper", "prune", test_file, *names])
+
+    async def asserts(self, go_file: Path) -> CommandResult:
+        """`gohelper asserts`: a JSON list of the file's Test functions that never check a result."""
+        return await self._run(["gohelper", "asserts", str(go_file)])

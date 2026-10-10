@@ -668,3 +668,56 @@ async def test_cancel_during_an_outage_backoff_wakes_at_once(ws):
     orch = Orchestrator(deps, req, emit, cancel)  # the real, cancellable wait
     summary = await asyncio.wait_for(orch.run(report(set(), funcs=ONE)), timeout=5)
     assert summary.stop_reason is StopReason.CANCELLED
+
+
+def assertion_free(free, new_tests):
+    from app.validator import no_assertions_message
+    return ValidationResult(ValidationKind.NO_ASSERTIONS, no_assertions_message(list(free), len(new_tests)),
+                            new_tests=list(new_tests), no_assertions=list(free))
+
+
+async def test_prunes_assertion_free_new_tests_and_records_why(ws):
+    v = FakeValidator(ws, [assertion_free(["TestNoCheck"], ["TestGood", "TestNoCheck"])],
+                      prune_results=[accepted({"A:1"}, tests=["TestGood"])])
+    agents = FakeAgents([GOOD])
+    orch, events = run(ws, v, agents, target=25)
+    summary = await orch.run(report(set()))
+    assert v.pruned == [["TestNoCheck"]] and agents.fix_kinds == []
+    assert summary.tests_added == ["TestGood"]
+    assert ("tests_pruned", {"index": 1, "file": "a.go", "tests": ["TestNoCheck"], "reason": "no_assertions"}) in events
+    [first, _] = [d for t, d in events if t == "validation_result"]
+    assert first["kind"] == "no_assertions" and first["no_assertions"] == ["TestNoCheck"]
+
+
+async def test_assertion_free_prune_then_failing_prune_in_one_round(ws):
+    failing = ValidationResult(ValidationKind.TEST_FAILURE, "--- FAIL: TestBad", failed_tests=["TestBad"],
+                               new_tests=["TestGood", "TestBad"])
+    v = FakeValidator(ws, [assertion_free(["TestNoCheck"], ["TestGood", "TestBad", "TestNoCheck"])],
+                      prune_results=[failing, accepted({"A:1"}, tests=["TestGood"])])
+    agents = FakeAgents([GOOD])
+    orch, events = run(ws, v, agents, target=25)
+    summary = await orch.run(report(set()))
+    assert v.pruned == [["TestNoCheck"], ["TestBad"]] and agents.fix_kinds == []
+    assert summary.tests_added == ["TestGood"]
+    pruned = [d for t, d in events if t == "tests_pruned"]
+    assert [p.get("reason") for p in pruned] == ["no_assertions", None]  # failing-test prunes keep their old shape
+
+
+async def test_all_assertion_free_goes_to_the_fixer_with_the_rule(ws):
+    v = FakeValidator(ws, [assertion_free(["TestA"], ["TestA"]), accepted({"A:1"}, tests=["TestA"])])
+    agents = FakeAgents([GOOD], fixes=[GOOD])
+    orch, events = run(ws, v, agents, target=25, max_fix_attempts=1)
+    summary = await orch.run(report(set()))
+    assert v.pruned == [] and agents.fix_kinds == [ValidationKind.NO_ASSERTIONS]
+    assert summary.tests_added == ["TestA"]
+    assert "tests_pruned" not in [t for t, _ in events]
+    [history] = agents.histories
+    assert history[0].kind == "no_assertions" and "Every Test function must check its result" in history[0].lines[0]
+
+
+async def test_all_assertion_free_is_rejected_when_the_fixer_cannot_help(ws):
+    v = FakeValidator(ws, [assertion_free(["TestA"], ["TestA"])])
+    orch, events = run(ws, v, FakeAgents([GOOD]), target=25, max_fix_attempts=0, max_iterations=1)
+    await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "no_assertions"}) in events
+    assert ws.read("a_test.go") is None  # rolled back

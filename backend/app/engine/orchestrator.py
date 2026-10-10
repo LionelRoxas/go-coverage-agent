@@ -368,6 +368,15 @@ class Orchestrator:
                 attempts = repairs = 0
                 while not result.accepted:
                     self._check()
+                    free = result.no_assertions if result.kind is ValidationKind.NO_ASSERTIONS else []
+                    if free and len(free) < len(result.new_tests):  # all of them: the Fixer is told to assert
+                        await self.emit("tests_pruned", {**base, "tests": free, "reason": "no_assertions"})
+                        result = await self._validate(
+                            base, validator.prune_and_check(test_file, free, self.report, result.new_tests))
+                        history.append(attempt_record(f"prune of [{', '.join(free)}] (no assertions)", result,
+                                                      pruned=free))
+                        if result.accepted:
+                            break
                     if result.kind is ValidationKind.TEST_FAILURE:
                         doomed = [n for n in result.failed_tests if n in result.new_tests]
                         if doomed and len(doomed) == len(result.failed_tests) and len(doomed) < len(result.new_tests):

@@ -1,7 +1,8 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-"""Decides whether a candidate test snippet is kept: guard → merge → compile → vet → test → coverage."""
+"""Decides whether a candidate test snippet is kept: guard → merge → compile → vet → assertions → test → coverage."""
 from __future__ import annotations
 
+import json
 import posixpath
 import re
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ class ValidationKind(StrEnum):
     TEST_FAILURE = "test_failure"
     NO_GAIN = "no_gain"
     GUARD_REJECTED = "guard_rejected"
+    NO_ASSERTIONS = "no_assertions"  # new Test functions that call no t.Error*/t.Fatal* and pass t to no helper
     LLM_ERROR = "llm_error"
     LLM_TIMEOUT = "llm_timeout"  # Groq did not answer within GROQ_TIMEOUT_S
     LLM_UNAVAILABLE = "llm_unavailable"  # Groq unreachable (connection errors / 5xx) after the network retries
@@ -39,13 +41,17 @@ class ValidationResult:
     report: CoverageReport | None = None
     new_tests: list[str] = field(default_factory=list)
     error_decls: list[str] = field(default_factory=list)  # top-level declarations that compile/vet error lines point at
+    no_assertions: list[str] = field(default_factory=list)  # new Test functions that check nothing (NO_ASSERTIONS)
 
     @property
     def accepted(self) -> bool:
         return self.kind is ValidationKind.ACCEPTED
 
     def event(self) -> dict[str, Any]:
-        return {"kind": self.kind.value, "output": self.output[:4000], "failed_tests": self.failed_tests}
+        event: dict[str, Any] = {"kind": self.kind.value, "output": self.output[:4000], "failed_tests": self.failed_tests}
+        if self.no_assertions:
+            event["no_assertions"] = self.no_assertions
+        return event
 
 
 @dataclass
@@ -61,6 +67,19 @@ def parse_failed_tests(output: str) -> list[str]:
         if top not in names:
             names.append(top)
     return names
+
+
+ASSERTION_RULE = ("Every Test function must check its result with t.Error/t.Errorf/t.Fatal/t.Fatalf (or pass t to a "
+                  "helper that does); an input tested only for \"does not panic\" goes in a test that also asserts "
+                  "something, such as the returned error or a property of the result.")
+
+
+def no_assertions_message(free: list[str], total: int) -> str:
+    """What the trace and the Fixer are told about new Test functions (`free` of `total`) that check nothing."""
+    what = f"{', '.join(free)}: no t.Error*/t.Fatal* call and t passed to no helper"
+    if len(free) < total:
+        return f"tests that check nothing ({what}); they are removed and the remaining tests are checked again"
+    return f"no new Test function checks its result ({what}). {ASSERTION_RULE}"
 
 
 def error_lines(output: str, filename: str) -> list[int]:
@@ -104,7 +123,11 @@ class Validator:
         if r.exit_code != 0:
             return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests,
                                     error_decls=decls_at(rendered, error_lines(r.combined, "snippet.go")))
-        result = await self.check(prev, new_tests)
+        r = await self.tools.asserts(snippet_path)
+        if r.exit_code != 0:
+            return ValidationResult(ValidationKind.COMPILE_ERROR, r.combined, new_tests=new_tests)
+        free = set(json.loads(r.stdout))
+        result = await self.check(prev, new_tests, [n for n in new_tests if n in free])
         if result.kind in (ValidationKind.COMPILE_ERROR, ValidationKind.VET_ERROR):
             merged = self.ws.read(test_file) or ""
             result.error_decls = decls_at(merged, error_lines(result.output, posixpath.basename(test_file)))
@@ -121,13 +144,19 @@ class Validator:
         """The command's output, after a line naming the stage when it was killed at its timeout."""
         return f"{timeout_message(self.tools.settings, stage)}\n{r.combined}" if r.timed_out else r.combined
 
-    async def check(self, prev: CoverageReport, new_tests: list[str]) -> ValidationResult:
+    async def check(self, prev: CoverageReport, new_tests: list[str],
+                    no_assertions: list[str] | None = None) -> ValidationResult:
+        """`no_assertions`: new tests that check nothing; once the code compiles and vets, they reject it before it
+        runs (the orchestrator prunes them when other new tests remain, else hands the result to the Fixer)."""
         r = await self.tools.compile(self.packages)
         if r.exit_code != 0:
             return ValidationResult(ValidationKind.COMPILE_ERROR, self._output(r, "compile"), new_tests=new_tests)
         r = await self.tools.vet(self.packages)
         if r.exit_code != 0:
             return ValidationResult(ValidationKind.VET_ERROR, self._output(r, "vet"), new_tests=new_tests)
+        if no_assertions:
+            return ValidationResult(ValidationKind.NO_ASSERTIONS, no_assertions_message(no_assertions, len(new_tests)),
+                                    new_tests=new_tests, no_assertions=list(no_assertions))
         m = await self.measure()
         if m.report is None:
             output = self._output(m.result, "test")

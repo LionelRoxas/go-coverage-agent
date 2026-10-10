@@ -1,9 +1,10 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+import json
 from pathlib import Path
 
 from app.gotools import CommandResult, GoPackage
 from app.models import CoverageReport, FuncInfo, FuncKey, TestSnippet
-from app.validator import ValidationKind, Validator, parse_failed_tests
+from app.validator import ValidationKind, ValidationResult, Validator, parse_failed_tests
 from app.workspace import Workspace
 
 MOD = "example.com/m"
@@ -20,12 +21,15 @@ def fail(out: str) -> CommandResult:
 
 
 class FakeTools:
-    def __init__(self, compile_r=None, vet_r=None, test_r=None, profile="mode: set\n", merge_r=None):
+    def __init__(self, compile_r=None, vet_r=None, test_r=None, profile="mode: set\n", merge_r=None, free=()):
         self.compile_r, self.vet_r, self.test_r = compile_r or ok(), vet_r or ok(), test_r or ok()
         self.merge_r, self.profile = merge_r or ok(), profile
+        self.asserts_r = ok(json.dumps(list(free)))  # gohelper asserts: the assertion-free test names
         self.pruned: list[str] = []
+        self.ran_tests = False
 
     async def merge(self, test_file, snippet): return self.merge_r
+    async def asserts(self, go_file): return self.asserts_r
     async def prune(self, test_file, names):
         self.pruned = names
         return ok()
@@ -33,6 +37,7 @@ class FakeTools:
     async def vet(self, pkgs): return self.vet_r
 
     async def test(self, pkgs, profile: Path):
+        self.ran_tests = True
         profile.write_text(self.profile)
         return self.test_r
 
@@ -127,3 +132,33 @@ async def test_snippet_parse_errors_name_the_snippet_declaration(tmp_path):
     tools = FakeTools(merge_r=fail("gohelper: snippet: snippet.go:8:30: expected ';', found 'EOF'"))
     r = await make(tmp_path, tools).validate("a_test.go", "m", SNIP, prev())
     assert r.kind is ValidationKind.COMPILE_ERROR and r.error_decls == ["TestB"]
+
+
+async def test_assertion_free_tests_are_reported_after_vet_and_before_running(tmp_path):
+    tools = FakeTools(free=["TestB"])
+    r = await make(tmp_path, tools).validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.NO_ASSERTIONS and r.no_assertions == ["TestB"] and r.new_tests == ["TestA", "TestB"]
+    assert not tools.ran_tests and "they are removed" in r.output
+    assert r.event()["no_assertions"] == ["TestB"]
+    assert "no_assertions" not in ValidationResult(ValidationKind.ACCEPTED).event()  # older events stay unchanged
+
+
+async def test_all_assertion_free_tells_the_fixer_to_assert(tmp_path):
+    r = await make(tmp_path, FakeTools(free=["TestA", "TestB"])).validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.NO_ASSERTIONS and r.no_assertions == ["TestA", "TestB"]
+    assert "Every Test function must check its result with t.Error" in r.output and "does not panic" in r.output
+
+
+async def test_compile_errors_come_before_the_assertion_check(tmp_path):
+    tools = FakeTools(compile_r=fail("undefined: Foo"), free=["TestA", "TestB"])
+    r = await make(tmp_path, tools).validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.COMPILE_ERROR and r.no_assertions == []
+
+
+async def test_pruning_the_assertion_free_tests_checks_the_rest(tmp_path):
+    profile = "mode: set\nexample.com/m/a.go:1.1,2.2 1 1\n"
+    tools = FakeTools(profile=profile, free=["TestB"])
+    v = make(tmp_path, tools)
+    first = await v.validate("a_test.go", "m", SNIP, prev())
+    r = await v.prune_and_check("a_test.go", first.no_assertions, prev(), first.new_tests)
+    assert tools.pruned == ["TestB"] and r.accepted and r.new_tests == ["TestA"]
