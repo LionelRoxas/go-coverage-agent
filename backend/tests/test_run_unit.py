@@ -23,7 +23,7 @@ async def test_prepare_rejects_bad_repo_path(tmp_path):
     assert exc.value.reason == "invalid_repo"
 
 
-def test_write_artifacts_exports_tests_report_and_events(tmp_path):
+def test_write_artifacts_exports_tests_and_report_but_not_events(tmp_path):
     (tmp_path / "repo").mkdir()
     (tmp_path / "scratch").mkdir()
     ws = Workspace(tmp_path / "repo", tmp_path / "scratch")
@@ -32,13 +32,12 @@ def test_write_artifacts_exports_tests_report_and_events(tmp_path):
     summary = Summary(stop_reason=StopReason.TARGET_REACHED, message="ok", target=80, baseline_percent=0,
                       final_percent=81, iterations=[], test_files=["mean_test.go"], tests_added=["TestMean"],
                       suspected_bugs=[], per_file=[], tokens=TokenUsage(), duration_s=1.0)
-    events = [Event(seq=0, ts=1.0, type="job_started", data={})]
     dest = tmp_path / "out" / "j1"
-    write_artifacts(dest, ws, summary, events)
+    write_artifacts(dest, ws, summary)
     assert (dest / "tests" / "mean_test.go").read_text() == "package stats\n"
     assert not (dest / "tests" / SEED_FILE).exists()
     assert json.loads((dest / "report.json").read_text())["final_percent"] == 81
-    assert (dest / "events.jsonl").read_text().count("\n") == 1
+    assert not (dest / "events.jsonl").exists()  # the job appends it as events are emitted (app.jobs)
 
 
 def test_write_artifacts_without_summary_exports_tests_but_not_seed(tmp_path):
@@ -48,7 +47,7 @@ def test_write_artifacts_without_summary_exports_tests_but_not_seed(tmp_path):
     ws.write_test("mean_test.go", "package stats\n")
     ws.write_test(SEED_FILE, "package stats\n")
     dest = tmp_path / "out"
-    write_artifacts(dest, ws, None, [])
+    write_artifacts(dest, ws, None)
     assert (dest / "tests" / "mean_test.go").exists()
     assert not (dest / "tests" / SEED_FILE).exists()
     assert not (dest / "report.json").exists()
@@ -61,7 +60,7 @@ def test_write_artifacts_failure_path_exports_only_accepted_files(tmp_path):
     ws.write_test("mean_test.go", "package stats" + chr(10))
     ws.write_test("half_baked_test.go", "package stats" + chr(10))
     dest = tmp_path / "out"
-    write_artifacts(dest, ws, None, [], accepted=["mean_test.go"])
+    write_artifacts(dest, ws, None, accepted=["mean_test.go"])
     assert (dest / "tests" / "mean_test.go").exists()
     assert not (dest / "tests" / "half_baked_test.go").exists()
 

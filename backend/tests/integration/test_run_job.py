@@ -73,7 +73,7 @@ async def test_broken_repo_fails_fast(tmp_path):
         await run_job("j2", JobRequest(repo_path="broken"), settings, FakeLLM([]), emit, asyncio.Event(), lambda: [])
     assert exc.value.reason == "repo_does_not_build"
     assert "broken.go" in exc.value.output
-    assert (settings.output_dir / "j2" / "events.jsonl").exists()
+    assert (settings.output_dir / "j2").is_dir()  # its artifacts; JobManager appends events.jsonl there
 
 
 async def _fail_reason(tmp_path, fixture, **request):

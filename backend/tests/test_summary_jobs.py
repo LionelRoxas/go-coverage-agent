@@ -283,7 +283,7 @@ class CancellableLLM(FakeLLM):
 
 
 async def test_the_terminal_event_is_saved_before_the_summary_is_written(tmp_path):
-    """A restart while the summary is written must reload the run as completed, so its file ends with job_completed."""
+    """A restart while the summary is written must reload the run as completed, so its file holds job_completed."""
     m, _ = setup(tmp_path)
     llms = []
     m._llm_factory = lambda emit, cancel: llms.append(CancellableLLM(cancel)) or llms[-1]
@@ -292,7 +292,7 @@ async def test_the_terminal_event_is_saved_before_the_summary_is_written(tmp_pat
         await asyncio.sleep(0)
     await llms[0].started.wait()
     saved = [json.loads(line)["type"] for line in (tmp_path / job.id / "events.jsonl").read_text("utf-8").splitlines()]
-    assert saved[-1] == "job_completed" and job.writing_summary
+    assert saved[-2:] == ["job_completed", "llm_request"] and job.writing_summary
     m.cancel(job.id)
     await asyncio.wait_for(job.task, 1)
     saved = [json.loads(line)["type"] for line in (tmp_path / job.id / "events.jsonl").read_text("utf-8").splitlines()]

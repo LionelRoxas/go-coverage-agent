@@ -83,6 +83,9 @@ class Job:
         # Replayed after the file, never written: the job_completed / job_cancelled of a saved run whose file lacks it
         # (the app stopped while its summary was written) but whose report.json holds the Summary.
         self.saved_tail: list[Event] = []
+        # The events.jsonl each event is appended to as it is emitted (None: kept in memory only).
+        self.persist_path: Path | None = None
+        self._persist_failed = False
 
     @property
     def on_disk(self) -> bool:
@@ -92,6 +95,7 @@ class Job:
     async def emit(self, type_: str, data: dict[str, Any]) -> None:
         event = Event(seq=self.events[-1].seq + 1 if self.events else 0, ts=time.time(), type=type_, data=data)
         self.events.append(event)
+        self._persist(event)
         if type_ == "baseline_measured":
             self.percent = data["report"]["percent"]
         elif type_ == "candidate_accepted":
@@ -100,6 +104,37 @@ class Job:
             self.ai_summary = "generated" if type_ == "summary_generated" else "failed"
         for q in self._subscribers:
             q.put_nowait(event)
+
+    def persist_to(self, path: Path) -> None:
+        """Append every event emitted from now on to `path` (one JSON line each). A file whose last line was cut by a
+        kill gets a line break first, so the next event starts a line of its own."""
+        self.persist_path, self._persist_failed = path, False
+        try:
+            with path.open("rb") as f:
+                f.seek(-1, os.SEEK_END)
+                cut = f.read(1) != b"\n"
+        except OSError:  # missing or empty: nothing to finish
+            return
+        if cut:
+            self._write_line(b"\n")
+
+    def _persist(self, event: Event) -> None:
+        if self.persist_path is not None:
+            self._write_line(event.model_dump_json().encode("utf-8") + b"\n")
+
+    def _write_line(self, data: bytes) -> None:
+        """Append and close (which flushes): a run killed outright keeps every event emitted before. A write that fails
+        is logged once per job; the event stays in memory and on the stream."""
+        assert self.persist_path is not None
+        try:
+            self.persist_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.persist_path.open("ab") as f:
+                f.write(data)
+        except Exception:  # noqa: BLE001 — saving an event must never stop the job or its stream
+            if not self._persist_failed:
+                self._persist_failed = True
+                log.warning("could not append to %s; events are kept in memory only", self.persist_path,
+                            exc_info=True)
 
     def close(self) -> None:
         self.finished = True
@@ -235,6 +270,8 @@ class JobManager:
         request = request.model_copy(update={"options": request.options.model_copy(
             update={"parallel_writers": self.settings.parallel_writers})})  # a server setting, not a client choice
         job = Job(job_id, request)
+        # From job_started on, every event is on disk as it is emitted: a run killed outright reloads as interrupted.
+        job.persist_to(self.settings.output_dir / job_id / "events.jsonl")
         self.jobs[job.id] = job
         job.task = asyncio.create_task(self._run(job))
         return job
@@ -272,19 +309,15 @@ class JobManager:
             job.status = JobStatus.FAILED
             await job.emit("job_failed", {"reason": "internal_error", "message": str(e), "output": ""})
         else:
-            # The terminal event is on disk before the summary call, which can take minutes: a restart meanwhile
-            # reloads the run as completed / cancelled, not interrupted.
-            self._save_events(job)
+            # The terminal event is already on disk (appended when emitted), before the summary call, which can take
+            # minutes: a restart meanwhile reloads the run as completed / cancelled, not interrupted.
             # After job_completed / job_cancelled, so the result shows at once; the stream stays open meanwhile.
             # Setup failures have no Summary and get no summary.
             if job.request.options.write_summary:
                 job.summary_cancel = asyncio.Event()  # before the summary starts, so no Cancel is lost
                 await self._write_summary(job, automatic=True)
         finally:
-            try:
-                self._save_events(job)
-            finally:
-                job.close()
+            job.close()
 
     def write_summary_again(self, job_id: str, saved_events: list[Event] | None = None) -> Job:
         """POST /api/jobs/{id}/summary: (re)write the summary of a finished job; its events go to the job's stream,
@@ -303,7 +336,11 @@ class JobManager:
         if not self.settings.llm_configured:
             raise JobRejected(400, "llm_not_configured", "Set GROQ_API_KEY in .env and restart the app.")
         if job.on_disk:
+            assert job.log_path is not None
             job.events = saved_events if saved_events is not None else self.saved_events(job_id)
+            job.persist_to(job.log_path)
+            for event in job.saved_tail:  # the replayed terminal event joins the file, ahead of the summary events
+                job._persist(event)
         job.finished = False
         job.summary_cancel = asyncio.Event()  # now, not in the task: a Cancel before it starts must count
         job.summary_task = asyncio.create_task(self._summary_again(job))
@@ -333,13 +370,10 @@ class JobManager:
         try:
             await self._write_summary(job)
         finally:
-            try:
-                self._save_events(job)
-            finally:
-                if job.log_path is not None:  # a saved run: back to disk, keeping the counts its snapshot shows
-                    job.saved_event_count, job.saved_test_files = len(job.events), job.accepted_test_files()
-                    job.events, job.saved_tail = [], []  # the tail is in the file now
-                job.close()
+            if job.log_path is not None:  # a saved run: back to disk, keeping the counts its snapshot shows
+                job.saved_event_count, job.saved_test_files = len(job.events), job.accepted_test_files()
+                job.events, job.saved_tail, job.persist_path = [], [], None  # the tail is in the file now
+            job.close()
 
     def _model(self, job: Job) -> str:
         started = next((e for e in job.events if e.type == "job_started"), None)
@@ -418,14 +452,3 @@ class JobManager:
                  summary_tokens=job.summary_tokens)
         except Exception:  # noqa: BLE001
             log.warning("could not save the summary of job %s", job.id, exc_info=True)
-
-    def _save_events(self, job: Job) -> None:
-        """Rewrite events.jsonl so it includes the terminal and summary events (run_job wrote it earlier)."""
-        try:
-            out = self.settings.output_dir / job.id
-            out.mkdir(parents=True, exist_ok=True)
-            tmp = out / "events.jsonl.tmp"  # replace, never truncate: a kill mid-write keeps the earlier file
-            tmp.write_text("".join(e.model_dump_json() + "\n" for e in job.events), encoding="utf-8")
-            os.replace(tmp, out / "events.jsonl")
-        except Exception:  # noqa: BLE001 — never let artifact writing block close()
-            log.warning("could not write events.jsonl for job %s", job.id, exc_info=True)
