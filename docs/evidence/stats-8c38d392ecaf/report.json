@@ -691,5 +691,809 @@
     "prompt_tokens": 4145,
     "completion_tokens": 2015,
     "total_tokens": 6160
+  },
+  "mutation": {
+    "total": 60,
+    "killed": 43,
+    "survived": 17,
+    "invalid": 0,
+    "timeouts": 0,
+    "score": 71.7,
+    "per_file": [
+      {
+        "file": "correlation.go",
+        "killed": 2,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "cumulative.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "distances.go",
+        "killed": 3,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "extremes.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "histogram.go",
+        "killed": 3,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "kendall.go",
+        "killed": 1,
+        "survived": 1,
+        "score": 50.0
+      },
+      {
+        "file": "kurtosis.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "mean.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "mode.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "moving.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "norm.go",
+        "killed": 5,
+        "survived": 9,
+        "score": 35.7
+      },
+      {
+        "file": "outlier.go",
+        "killed": 2,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "percentile.go",
+        "killed": 2,
+        "survived": 1,
+        "score": 66.7
+      },
+      {
+        "file": "quartile.go",
+        "killed": 2,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "regression.go",
+        "killed": 6,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "rolling.go",
+        "killed": 1,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "sample.go",
+        "killed": 0,
+        "survived": 1,
+        "score": 0.0
+      },
+      {
+        "file": "skewness.go",
+        "killed": 2,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "ttest.go",
+        "killed": 3,
+        "survived": 4,
+        "score": 42.9
+      },
+      {
+        "file": "variance.go",
+        "killed": 2,
+        "survived": 0,
+        "score": 100.0
+      },
+      {
+        "file": "winsorize.go",
+        "killed": 0,
+        "survived": 1,
+        "score": 0.0
+      },
+      {
+        "file": "ztest.go",
+        "killed": 3,
+        "survived": 0,
+        "score": 100.0
+      }
+    ],
+    "mutants": [
+      {
+        "index": 1,
+        "file": "correlation.go",
+        "line": 14,
+        "original": "||",
+        "mutated": "&&",
+        "op": "logical",
+        "status": "killed",
+        "before": "if l1 == 0 || l2 == 0 {",
+        "after": "if l1 == 0 && l2 == 0 {"
+      },
+      {
+        "index": 2,
+        "file": "correlation.go",
+        "line": 83,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "killed",
+        "before": "for i := 0; i < n; {",
+        "after": "for i := 0; i <= n; {"
+      },
+      {
+        "index": 3,
+        "file": "cumulative.go",
+        "line": 33,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if i == 0 || val > cumMax[i-1] {",
+        "after": "if i != 0 || val > cumMax[i-1] {"
+      },
+      {
+        "index": 4,
+        "file": "distances.go",
+        "line": 22,
+        "original": "!=",
+        "mutated": "==",
+        "op": "equality",
+        "status": "killed",
+        "before": "if err != nil {",
+        "after": "if err == nil {"
+      },
+      {
+        "index": 5,
+        "file": "distances.go",
+        "line": 26,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "killed",
+        "before": "for i := 0; i < len(dataPointY); i++ {",
+        "after": "for i := 0; i <= len(dataPointY); i++ {"
+      },
+      {
+        "index": 6,
+        "file": "distances.go",
+        "line": 57,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "distance = distance + math.Abs(dataPointX[i]-dataPointY[i])",
+        "after": "distance = distance - math.Abs(dataPointX[i]-dataPointY[i])"
+      },
+      {
+        "index": 7,
+        "file": "extremes.go",
+        "line": 55,
+        "original": "!=",
+        "mutated": "==",
+        "op": "equality",
+        "status": "killed",
+        "before": "if err != nil {",
+        "after": "if err == nil {"
+      },
+      {
+        "index": 8,
+        "file": "histogram.go",
+        "line": 12,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if input.Len() == 0 {",
+        "after": "if input.Len() != 0 {"
+      },
+      {
+        "index": 9,
+        "file": "histogram.go",
+        "line": 32,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "width := (max - min) / float64(bins)",
+        "after": "width := (max - min) * float64(bins)"
+      },
+      {
+        "index": 10,
+        "file": "histogram.go",
+        "line": 35,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "edges[i] = min + width*float64(i)",
+        "after": "edges[i] = min - width*float64(i)"
+      },
+      {
+        "index": 11,
+        "file": "kendall.go",
+        "line": 45,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "denominator := math.Sqrt((concordant + discordant + tiedX) * (concordant + discordant + tiedY))",
+        "after": "denominator := math.Sqrt((concordant + discordant + tiedX) / (concordant + discordant + tiedY))"
+      },
+      {
+        "index": 12,
+        "file": "kendall.go",
+        "line": 45,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "denominator := math.Sqrt((concordant + discordant + tiedX) * (concordant + discordant + tiedY))",
+        "after": "denominator := math.Sqrt((concordant + discordant + tiedX) * (concordant - discordant + tiedY))"
+      },
+      {
+        "index": 13,
+        "file": "kurtosis.go",
+        "line": 24,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "d2 := d * d",
+        "after": "d2 := d / d"
+      },
+      {
+        "index": 14,
+        "file": "mean.go",
+        "line": 54,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "} else if n == 0 {",
+        "after": "} else if n != 0 {"
+      },
+      {
+        "index": 15,
+        "file": "mode.go",
+        "line": 9,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "} else if l == 0 {",
+        "after": "} else if l != 0 {"
+      },
+      {
+        "index": 16,
+        "file": "moving.go",
+        "line": 14,
+        "original": "||",
+        "mutated": "&&",
+        "op": "logical",
+        "status": "killed",
+        "before": "if window < 1 || window > input.Len() {",
+        "after": "if window < 1 && window > input.Len() {"
+      },
+      {
+        "index": 17,
+        "file": "norm.go",
+        "line": 21,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "killed",
+        "before": "for i := 0; i < size; i++ {",
+        "after": "for i := 0; i <= size; i++ {"
+      },
+      {
+        "index": 18,
+        "file": "norm.go",
+        "line": 37,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "x1 := loc + (scale * (math.Sqrt(-2*math.Log(u1)) * math.Cos(2*math.Pi*u2)))",
+        "after": "x1 := loc + (scale * (math.Sqrt(-2*math.Log(u1)) / math.Cos(2*math.Pi*u2)))"
+      },
+      {
+        "index": 19,
+        "file": "norm.go",
+        "line": 40,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "x2 := loc + (scale * (math.Sqrt(-2*math.Log(u1)) * math.Sin(2*math.Pi*u2)))",
+        "after": "x2 := loc + (scale * (math.Sqrt(-2*math.Log(u1)) / math.Sin(2*math.Pi*u2)))"
+      },
+      {
+        "index": 20,
+        "file": "norm.go",
+        "line": 40,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "x2 := loc + (scale * (math.Sqrt(-2*math.Log(u1)) * math.Sin(2*math.Pi*u2)))",
+        "after": "x2 := loc + (scale * (math.Sqrt(-2*math.Log(u1)) * math.Sin(2/math.Pi*u2)))"
+      },
+      {
+        "index": 21,
+        "file": "norm.go",
+        "line": 138,
+        "original": ">",
+        "mutated": ">=",
+        "op": "boundary",
+        "status": "killed",
+        "before": "if p < 0 || p > 1 {",
+        "after": "if p < 0 || p >= 1 {"
+      },
+      {
+        "index": 22,
+        "file": "norm.go",
+        "line": 149,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "((((d1*q+d2)*q+d3)*q+d4)*q + 1)",
+        "after": "((((d1*q+d2)*q+d3)*q+d4)/q + 1)"
+      },
+      {
+        "index": 23,
+        "file": "norm.go",
+        "line": 152,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "x = -(((((c1*q+c2)*q+c3)*q+c4)*q+c5)*q + c6) /",
+        "after": "x = -(((((c1*q+c2)/q+c3)*q+c4)*q+c5)*q + c6) /"
+      },
+      {
+        "index": 24,
+        "file": "norm.go",
+        "line": 152,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "x = -(((((c1*q+c2)*q+c3)*q+c4)*q+c5)*q + c6) /",
+        "after": "x = -(((((c1*q+c2)*q+c3)*q+c4)*q+c5)/q + c6) /"
+      },
+      {
+        "index": 25,
+        "file": "norm.go",
+        "line": 153,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "((((d1*q+d2)*q+d3)*q+d4)*q + 1)",
+        "after": "((((d1*q+d2)*q+d3)*q+d4)*q - 1)"
+      },
+      {
+        "index": 26,
+        "file": "norm.go",
+        "line": 157,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "x = (((((a1*r+a2)*r+a3)*r+a4)*r+a5)*r + a6) * q /",
+        "after": "x = (((((a1*r+a2)/r+a3)*r+a4)*r+a5)*r + a6) * q /"
+      },
+      {
+        "index": 27,
+        "file": "norm.go",
+        "line": 157,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "x = (((((a1*r+a2)*r+a3)*r+a4)*r+a5)*r + a6) * q /",
+        "after": "x = (((((a1*r+a2)*r+a3)*r-a4)*r+a5)*r + a6) * q /"
+      },
+      {
+        "index": 28,
+        "file": "norm.go",
+        "line": 166,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "e = (1 - p) - 0.5*math.Erfc(x/math.Sqrt2)",
+        "after": "e = (1 - p) - 0.5*math.Erfc(x*math.Sqrt2)"
+      },
+      {
+        "index": 29,
+        "file": "norm.go",
+        "line": 170,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "u := e * math.Sqrt(2*math.Pi) * math.Exp(x*x/2)",
+        "after": "u := e / math.Sqrt(2*math.Pi) * math.Exp(x*x/2)"
+      },
+      {
+        "index": 30,
+        "file": "norm.go",
+        "line": 299,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "killed",
+        "before": "if r < 0 || r > n {",
+        "after": "if r <= 0 || r > n {"
+      },
+      {
+        "index": 31,
+        "file": "outlier.go",
+        "line": 11,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if input.Len() == 0 {",
+        "after": "if input.Len() != 0 {"
+      },
+      {
+        "index": 32,
+        "file": "outlier.go",
+        "line": 27,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "uif := qs.Q3 + (1.5 * iqr)",
+        "after": "uif := qs.Q3 + (1.5 / iqr)"
+      },
+      {
+        "index": 33,
+        "file": "percentile.go",
+        "line": 41,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if length == 1 {",
+        "after": "if length != 1 {"
+      },
+      {
+        "index": 34,
+        "file": "percentile.go",
+        "line": 61,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "percentile = (1-f)*c[k] + f*c[k+1]",
+        "after": "percentile = (1+f)*c[k] + f*c[k+1]"
+      },
+      {
+        "index": 35,
+        "file": "percentile.go",
+        "line": 85,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "killed",
+        "before": "if math.IsNaN(percent) || percent < 0 || percent > 100 {",
+        "after": "if math.IsNaN(percent) || percent <= 0 || percent > 100 {"
+      },
+      {
+        "index": 36,
+        "file": "quartile.go",
+        "line": 35,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "c2 = c1 + 1",
+        "after": "c2 = c1 - 1"
+      },
+      {
+        "index": 37,
+        "file": "quartile.go",
+        "line": 64,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "mh := (qs.Q1 + qs.Q3) / 2",
+        "after": "mh := (qs.Q1 + qs.Q3) * 2"
+      },
+      {
+        "index": 38,
+        "file": "regression.go",
+        "line": 31,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "dx := coordinate.X - meanX",
+        "after": "dx := coordinate.X + meanX"
+      },
+      {
+        "index": 39,
+        "file": "regression.go",
+        "line": 44,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "Y: meanY + gradient*(s[j].X-meanX),",
+        "after": "Y: meanY + gradient/(s[j].X-meanX),"
+      },
+      {
+        "index": 40,
+        "file": "regression.go",
+        "line": 76,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "dx := coordinate.X - referenceX - meanDeltaX",
+        "after": "dx := coordinate.X - referenceX + meanDeltaX"
+      },
+      {
+        "index": 41,
+        "file": "regression.go",
+        "line": 83,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "b := covariance / variance",
+        "after": "b := covariance * variance"
+      },
+      {
+        "index": 42,
+        "file": "regression.go",
+        "line": 116,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "sumDeltaLogX += logX[i] - referenceLogX",
+        "after": "sumDeltaLogX += logX[i] + referenceLogX"
+      },
+      {
+        "index": 43,
+        "file": "regression.go",
+        "line": 136,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "Y: meanY + a*(logX[j]-referenceLogX-meanDeltaLogX),",
+        "after": "Y: meanY + a/(logX[j]-referenceLogX-meanDeltaLogX),"
+      },
+      {
+        "index": 44,
+        "file": "rolling.go",
+        "line": 50,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "sdev, _ := StandardDeviationSample(input[i : i+window])",
+        "after": "sdev, _ := StandardDeviationSample(input[i : i-window])"
+      },
+      {
+        "index": 45,
+        "file": "sample.go",
+        "line": 29,
+        "original": "<=",
+        "mutated": "<",
+        "op": "boundary",
+        "status": "survived",
+        "before": "} else if !replacement && takenum <= length {",
+        "after": "} else if !replacement && takenum < length {"
+      },
+      {
+        "index": 46,
+        "file": "skewness.go",
+        "line": 27,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if sumOfSquares == 0 {",
+        "after": "if sumOfSquares != 0 {"
+      },
+      {
+        "index": 47,
+        "file": "skewness.go",
+        "line": 55,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if g1 == 0 {",
+        "after": "if g1 != 0 {"
+      },
+      {
+        "index": 48,
+        "file": "ttest.go",
+        "line": 38,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "pooledVar := (float64(n1-1)*var1 + float64(n2-1)*var2) / df",
+        "after": "pooledVar := (float64(n1-1)/var1 + float64(n2-1)*var2) / df"
+      },
+      {
+        "index": 49,
+        "file": "ttest.go",
+        "line": 68,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "return 0.5 * regIncBeta(df/2.0, 0.5, x)",
+        "after": "return 0.5 * regIncBeta(df*2.0, 0.5, x)"
+      },
+      {
+        "index": 50,
+        "file": "ttest.go",
+        "line": 79,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "front := math.Exp(math.Log(x)*a+math.Log(1-x)*b-lbeta) / a",
+        "after": "front := math.Exp(math.Log(x)*a+math.Log(1-x)*b-lbeta) * a"
+      },
+      {
+        "index": 51,
+        "file": "ttest.go",
+        "line": 84,
+        "original": "-",
+        "mutated": "+",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "d := clampTiny(1.0 - (a+b)*x/(a+1))",
+        "after": "d := clampTiny(1.0 + (a+b)*x/(a+1))"
+      },
+      {
+        "index": 52,
+        "file": "ttest.go",
+        "line": 91,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "num := m * (b - m) * x / ((a + 2*m - 1) * (a + 2*m))",
+        "after": "num := m / (b - m) * x / ((a + 2*m - 1) * (a + 2*m))"
+      },
+      {
+        "index": 53,
+        "file": "ttest.go",
+        "line": 91,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "num := m * (b - m) * x / ((a + 2*m - 1) * (a + 2*m))",
+        "after": "num := m * (b - m) * x / ((a + 2*m - 1) / (a + 2*m))"
+      },
+      {
+        "index": 54,
+        "file": "ttest.go",
+        "line": 98,
+        "original": "+",
+        "mutated": "-",
+        "op": "arithmetic",
+        "status": "survived",
+        "before": "num = -(a + m) * (a + b + m) * x / ((a + 2*m) * (a + 2*m + 1))",
+        "after": "num = -(a + m) * (a + b + m) * x / ((a - 2*m) * (a + 2*m + 1))"
+      },
+      {
+        "index": 55,
+        "file": "variance.go",
+        "line": 58,
+        "original": "||",
+        "mutated": "&&",
+        "op": "logical",
+        "status": "killed",
+        "before": "if l1 == 0 || l2 == 0 {",
+        "after": "if l1 == 0 && l2 == 0 {"
+      },
+      {
+        "index": 56,
+        "file": "variance.go",
+        "line": 90,
+        "original": "!=",
+        "mutated": "==",
+        "op": "equality",
+        "status": "killed",
+        "before": "if l1 != l2 {",
+        "after": "if l1 == l2 {"
+      },
+      {
+        "index": 57,
+        "file": "winsorize.go",
+        "line": 36,
+        "original": "<",
+        "mutated": "<=",
+        "op": "boundary",
+        "status": "survived",
+        "before": "if v < lower {",
+        "after": "if v <= lower {"
+      },
+      {
+        "index": 58,
+        "file": "ztest.go",
+        "line": 20,
+        "original": "==",
+        "mutated": "!=",
+        "op": "equality",
+        "status": "killed",
+        "before": "if n1 == 0 {",
+        "after": "if n1 != 0 {"
+      },
+      {
+        "index": 59,
+        "file": "ztest.go",
+        "line": 35,
+        "original": "*",
+        "mutated": "/",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "se := populationStdDev * math.Sqrt(1.0/float64(n1)+1.0/float64(n2))",
+        "after": "se := populationStdDev / math.Sqrt(1.0/float64(n1)+1.0/float64(n2))"
+      },
+      {
+        "index": 60,
+        "file": "ztest.go",
+        "line": 44,
+        "original": "/",
+        "mutated": "*",
+        "op": "arithmetic",
+        "status": "killed",
+        "before": "z = (mean1 - populationMean) / se",
+        "after": "z = (mean1 - populationMean) * se"
+      }
+    ]
   }
 }

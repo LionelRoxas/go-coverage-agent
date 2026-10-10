@@ -9,7 +9,7 @@ An autonomous agent that raises unit-test coverage for Go repositories. Give it 
 
 ## At a glance
 
-- **Result on the assignment's repo** (montanaflynn/stats, its own tests deleted): **0% → 81.15% in 146 s** at the default 80% goal, and **0% → 100.0% in 332 s** at a 100% goal. Both runs were made with this code; `make verify-evidence` re-measures their tests in a plain Go container and gets the same numbers ([evidence](docs/evidence)).
+- **Result on the assignment's repo** (montanaflynn/stats, its own tests deleted): **0% → 81.15% in 146 s** at the default 80% goal, and **0% → 100.0% in 332 s** at a 100% goal. Both runs were made with this code; `make verify-evidence` re-measures their tests in a plain Go container and gets the same numbers ([evidence](docs/evidence)). Test quality: the kept tests catch **72–75%** of planted bugs (mutation score).
 - **How:** a deterministic loop does the planning, checking and stopping; the LLM only writes and fixes tests (strict JSON, no tools, no shell). A batch of tests is kept only if it compiles, passes `go vet`, every test asserts something, it passes twice and it covers code that wasn't covered before.
 - **Stack:** FastAPI backend, Next.js frontend, a small Go AST helper, Docker Compose. **Model:** `openai/gpt-oss-120b` on Groq.
 - **Scope:** a single-user tool that runs locally. There are no accounts: whoever opens http://localhost:3000 sees every run, and run history is saved in `./output`.
@@ -82,11 +82,15 @@ The loop is plain, testable Python; the LLM is used only to write tests, fix the
 
 All on a Developer-plan Groq key, each repo's own tests deleted first.
 
-| Repo | Run | Goal | Coverage | Time | Notes |
-|---|---|---|---|---|---|
-| montanaflynn/stats | `8c38d392ecaf` | 80% | 0% → **81.15%** | 146 s | Default options, parallel writers; 30 targets kept, 0 rejected; 205K tokens. [Re-measurable](docs/evidence) |
-| montanaflynn/stats | `befcbd2b6ada` | 100% | 0% → **100.0%** | 332 s | 30 rounds max, 5 targets per round; 481K tokens. [Re-measurable](docs/evidence) |
-| Masterminds/semver | `736baa413b5d` | 80% | 1.4% → **84.6%** | 114 s | Starts at 1.4% because its `init()` functions run on load |
+| Repo | Run | Goal | Coverage | Mutation score | Time | Notes |
+|---|---|---|---|---|---|---|
+| montanaflynn/stats | `8c38d392ecaf` | 80% | 0% → **81.15%** | **71.7%** (43 of 60) | 146 s | Default options, parallel writers; 30 targets kept, 0 rejected; 205K tokens. [Re-measurable](docs/evidence) |
+| montanaflynn/stats | `befcbd2b6ada` | 100% | 0% → **100.0%** | **75.0%** (45 of 60) | 332 s | 30 rounds max, 5 targets per round; 481K tokens. [Re-measurable](docs/evidence) |
+| Masterminds/semver | `736baa413b5d` | 80% | 1.4% → **84.6%** | not run | 114 s | Starts at 1.4% because its `init()` functions run on load |
+
+The mutation score is the share of planted bugs (a seeded sample of 60 operator swaps in covered code) that the kept tests catch. Most missed ones are in numerical code (`norm.go`, `ttest.go`) where tests check properties such as length or sign rather than exact values: coverage alone would not show that. The score is a lower bound, because each mutant runs only its own package's tests and a swap can leave behaviour unchanged.
+
+Run times vary between runs and with the key's rate limits: an independent reviewer's run with the same settings took 345 s.
 
 [docs/RESULTS.md](docs/RESULTS.md) has every other run, the comparisons behind the defaults (cap of 5 functions per target, reasoning effort, parallel writers, which roughly halved run time), and the issues I found in testing and fixed. Each comparison is a single run, so small differences are within normal variation.
 
