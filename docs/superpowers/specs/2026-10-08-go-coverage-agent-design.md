@@ -310,17 +310,6 @@ Each has its own context and contract, so prompts stay small, failures are attri
 
 A fourth role, the **Summarizer** (§6.8), runs once after the loop and never touches code.
 
-### 6.8 End-of-run summary (Summarizer, LLM)
-
-After a run ends with a report (`job_completed`, or `job_cancelled` after the baseline; never after a setup failure), and when the job option `write_summary` is on (default), an LLM writes a two-part summary from measured facts only.
-
-- **Facts (deterministic, `app/summary/facts.py`):** `RunFacts` is built from the `Summary` and the run's events up to its terminal event: repo, module (from `workspace_ready` packages), model, goal, baseline → final %, gain in points, stop reason and message, rounds, duration (s and min), tokens (prompt/completion/total), tokens per percentage point, LLM calls by role and reasoning effort, targets accepted/rejected with reason counts, targets deferred by a Groq outage (`targets_deferred`, not rejections), LLM calls that ended in an error (`failed_llm_calls`, kept out of the per-role call counts; their billed tokens are in the token totals), first-check passes (Writer answers accepted on their first check), Fixer calls, mechanical repairs, pruned tests, timeouts, rate-limit waits (count and seconds), tests added (count and names), test files (count and names), the export folder `output/<id>/tests`, per-file before → after, the 5 lowest-covered files with uncovered statements (from the baseline's statement counts), the suspected bugs the Writer reported, and `cost_usd` (input/output/total, the run only) when both `GROQ_PRICE_*_PER_M` are set.
-- **Call:** `Agents.summarize(facts)` with role `summarizer` at `GROQ_WRITER_REASONING_EFFORT`, strict JSON schema `RunSummary` (`business: {headline, outcome, efficiency, risks[], recommendation}`, `technical: {headline, what_was_tested, where_tests_live, gaps[{file, detail}], suspected_bugs[], rejected_or_failed, how_to_run, next_steps[]}`) and prompt `agents/prompts/summarizer.md` (business: a senior business analyst for stakeholders, no jargon; technical: a senior tech lead handing over to other teams, with real files and `go test ./...`). Hard rule: only numbers, files and test names from the facts. When the facts JSON does not fit `MAX_PROMPT_TOKENS`, unchanged files and all but 30 test names are left out (their counts stay). Same client as every call: timeout and retry rules, pacing, the daily ledger. The summary's tokens count toward the job's `max_llm_tokens` (checked before the call) and the daily budget.
-- **Grounding check (deterministic, `app/summary/grounding.py`):** every number in the output must match a fact of the same kind after rounding to the precision shown: dollar amounts (`$0.07`) only the cost facts, so none pass without prices; percentages (`81%`, `81 percent`, `81 points`, `81 pp`, and the first number of a range such as `0 to 81%` or `zero to 81%`) only percentage facts, which include the exact share still untested (100 − final) and the margin over the goal (final − goal); durations (`5.2 minutes`, `310s`, `two hours`, `an hour`) only the run's durations; `175K` / `1.2M` only token facts; other numbers (digits with thousands separators, number words such as `eleven` or `twenty-nine`, ordinals such as `11th`, `175 thousand`) only the count fields (rounds, targets, reasons, first-check passes, fixes, repairs, pruned tests, timeouts, waits, tests, test files, lowest files and their uncovered statements, calls per role) and the token facts, so a zero count passes while a percentage or a duration never stands in for a count. Numbers inside fact strings count for their own kind. An integer of 1,000 or more is as precise as it is written: `175,000` covers 174,500–175,500 and `2,200` covers 2,150–2,250, like `175K` and `2.2K`. Multipliers (`3x`, `x3`, `3-fold`, `twice`, `doubled`, `half`) have no facts and always fail. Plain words (`each one`, `double-check`) and commands without numbers (`go test ./...`) are not numbers. Every `.go` path named must be a known file or a test file under `tests_dir` (`_test.go` and `*_test.go` name no file and are not checked), and every `Test…` name must be in `tests_added`. A paragraph loses the failing sentences; a list item or gap that fails is dropped whole. `dropped_sentences` counts them. `technical.suspected_bugs` is replaced by the facts' own `Function: description` list. Kept text is tidied: a space (also a no-break space) before `%` is removed (`83.33 %` → `83.33%`); `pp` is left as is.
-- **Order:** `job_completed` / `job_cancelled` first, so the result shows at once; then `llm_request` (summarizer) and `summary_generated` or `summary_failed`. The SSE stream stays open until the summary is written or has failed, and the job stays busy (no new job, no other summary) until then. Cancel during the summary sets the summary's own cancel event, created before the summary starts so no Cancel is lost: the call stops at once and `summary_failed` has reason `cancelled`. The whole call, retries and rate-limit waits included, has a deadline of 2 × `GROQ_TIMEOUT_S` + 30 s; past it, `summary_failed` has reason `timeout`. A failure never changes the job's status. Tokens Groq billed for a failed summary call still count toward the job.
-- **Files:** `report.json` gains `ai_summary` (the event payload plus `model` and `generated_at`) or `ai_summary_error`; `SUMMARY.md` holds both sections, the note "AI-written from this run's measured data.", the generation date and the model. A later failure keeps an earlier summary.
-- **Again:** `POST /api/jobs/{id}/summary` writes it again for a finished job, also one reloaded from disk (§5.8), whose events are then read into memory until the summary is done and written back to `events.jsonl` (§8); the events follow on the same stream, which reopens until the summary is done.
-
 ### 6.6 Idiomatic Go rules (Writer/Fixer system prompt)
 
 - Standard library `testing` only; no third-party imports; never touch `go.mod`.
@@ -362,6 +351,17 @@ After a run ends with a report (`job_completed`, or `job_cancelled` after the ba
   - *Bigger items are cheaper per point.* Tokens per pp by plan-item size: 3,702 (<=20 statements, 11 items), 2,738 (21-40, 11 items), 1,918 (>40, 7 items). The 60-statement cap left `load.go` (107 uncovered) needing three iterations and `norm.go` two. The cap is raised to 100 and the planner now ranks files by the statements it can pack into one prompt (not by their single biggest function), so each call buys as many statements as possible. The writer prompt asks for a few broad table-driven tests covering every `// UNCOVERED` branch (about 200 lines, was 150).
   - *Projection (not measured).* Removing the 10 mechanical fixer calls would have cut run 1 to about 135.6K tokens for the same 68.97 pp (1,966 tokens per pp). The last 11 pp costs 34-51K (iteration 9-10 writer-only rate of 3.1K per pp, up to the 4.6K per pp that iteration 10 cost including its fixer call), so a full run is projected at roughly 170-187K tokens, inside the 200K daily cap but with a thin margin. The larger item cap and planner ranking should lower this further but are not quantified until a new run.
 - **Fallback if day-1 measurements show 80% isn't reachable within one day's budget:** lower the default target in the README example to the measured reachable value, and say so honestly. Don't hide it.
+
+### 6.8 End-of-run summary (Summarizer, LLM)
+
+After a run ends with a report (`job_completed`, or `job_cancelled` after the baseline; never after a setup failure), and when the job option `write_summary` is on (default), an LLM writes a two-part summary from measured facts only.
+
+- **Facts (deterministic, `app/summary/facts.py`):** `RunFacts` is built from the `Summary` and the run's events up to its terminal event: repo, module (from `workspace_ready` packages), model, goal, baseline → final %, gain in points, stop reason and message, rounds, duration (s and min), tokens (prompt/completion/total), tokens per percentage point, LLM calls by role and reasoning effort, targets accepted/rejected with reason counts, targets deferred by a Groq outage (`targets_deferred`, not rejections), LLM calls that ended in an error (`failed_llm_calls`, kept out of the per-role call counts; their billed tokens are in the token totals), first-check passes (Writer answers accepted on their first check), Fixer calls, mechanical repairs, pruned tests, timeouts, rate-limit waits (count and seconds), tests added (count and names), test files (count and names), the export folder `output/<id>/tests`, per-file before → after, the 5 lowest-covered files with uncovered statements (from the baseline's statement counts), the suspected bugs the Writer reported, and `cost_usd` (input/output/total, the run only) when both `GROQ_PRICE_*_PER_M` are set.
+- **Call:** `Agents.summarize(facts)` with role `summarizer` at `GROQ_WRITER_REASONING_EFFORT`, strict JSON schema `RunSummary` (`business: {headline, outcome, efficiency, risks[], recommendation}`, `technical: {headline, what_was_tested, where_tests_live, gaps[{file, detail}], suspected_bugs[], rejected_or_failed, how_to_run, next_steps[]}`) and prompt `agents/prompts/summarizer.md` (business: a senior business analyst for stakeholders, no jargon; technical: a senior tech lead handing over to other teams, with real files and `go test ./...`). Hard rule: only numbers, files and test names from the facts. When the facts JSON does not fit `MAX_PROMPT_TOKENS`, unchanged files and all but 30 test names are left out (their counts stay). Same client as every call: timeout and retry rules, pacing, the daily ledger. The summary's tokens count toward the job's `max_llm_tokens` (checked before the call) and the daily budget.
+- **Grounding check (deterministic, `app/summary/grounding.py`):** every number in the output must match a fact of the same kind after rounding to the precision shown: dollar amounts (`$0.07`) only the cost facts, so none pass without prices; percentages (`81%`, `81 percent`, `81 points`, `81 pp`, and the first number of a range such as `0 to 81%` or `zero to 81%`) only percentage facts, which include the exact share still untested (100 − final) and the margin over the goal (final − goal); durations (`5.2 minutes`, `310s`, `two hours`, `an hour`) only the run's durations; `175K` / `1.2M` only token facts; other numbers (digits with thousands separators, number words such as `eleven` or `twenty-nine`, ordinals such as `11th`, `175 thousand`) only the count fields (rounds, targets, reasons, first-check passes, fixes, repairs, pruned tests, timeouts, waits, tests, test files, lowest files and their uncovered statements, calls per role) and the token facts, so a zero count passes while a percentage or a duration never stands in for a count. Numbers inside fact strings count for their own kind. An integer of 1,000 or more is as precise as it is written: `175,000` covers 174,500–175,500 and `2,200` covers 2,150–2,250, like `175K` and `2.2K`. Multipliers (`3x`, `x3`, `3-fold`, `twice`, `doubled`, `half`) have no facts and always fail. Plain words (`each one`, `double-check`) and commands without numbers (`go test ./...`) are not numbers. Every `.go` path named must be a known file or a test file under `tests_dir` (`_test.go` and `*_test.go` name no file and are not checked), and every `Test…` name must be in `tests_added`. A paragraph loses the failing sentences; a list item or gap that fails is dropped whole. `dropped_sentences` counts them. `technical.suspected_bugs` is replaced by the facts' own `Function: description` list. Kept text is tidied: a space (also a no-break space) before `%` is removed (`83.33 %` → `83.33%`); `pp` is left as is.
+- **Order:** `job_completed` / `job_cancelled` first, so the result shows at once; then `llm_request` (summarizer) and `summary_generated` or `summary_failed`. The SSE stream stays open until the summary is written or has failed, and the job stays busy (no new job, no other summary) until then. Cancel during the summary sets the summary's own cancel event, created before the summary starts so no Cancel is lost: the call stops at once and `summary_failed` has reason `cancelled`. The whole call, retries and rate-limit waits included, has a deadline of 2 × `GROQ_TIMEOUT_S` + 30 s; past it, `summary_failed` has reason `timeout`. A failure never changes the job's status. Tokens Groq billed for a failed summary call still count toward the job.
+- **Files:** `report.json` gains `ai_summary` (the event payload plus `model` and `generated_at`) or `ai_summary_error`; `SUMMARY.md` holds both sections, the note "AI-written from this run's measured data.", the generation date and the model. A later failure keeps an earlier summary.
+- **Again:** `POST /api/jobs/{id}/summary` writes it again for a finished job, also one reloaded from disk (§5.8), whose events are then read into memory until the summary is done and written back to `events.jsonl` (§8); the events follow on the same stream, which reopens until the summary is done.
 
 ---
 
@@ -458,7 +458,7 @@ This guarantees coverage never regresses, the suite is never redundant, and the 
 
 ### 7.5 Stop reasons
 
-`target_reached`, `marginal_gains`, `max_iterations`, `no_remaining_targets`, `budget_exhausted`, `cancelled`, `llm_unavailable` (Groq stayed unreachable for `LLM_UNAVAILABLE_AFTER_S`, default 600 s: "Stopped: Groq was unreachable for N minutes; tests kept so far are saved."; UI label "Groq unreachable"), `error`. Each maps to one plain-language sentence in the UI.
+`target_reached`, `marginal_gains`, `max_iterations`, `no_remaining_targets`, `budget_exhausted`, `cancelled`, `llm_unavailable` (Groq stayed unreachable for `LLM_UNAVAILABLE_AFTER_S`, default 600 s: "Stopped: Groq was unreachable for N minutes; tests kept so far are saved."; UI label "Groq unreachable"). A setup failure is not a stop reason: the job ends with `job_failed`. Each maps to one plain-language sentence in the UI.
 
 ---
 
@@ -496,11 +496,9 @@ Design intent: a calm, precise developer tool, not a generic dashboard. The visu
 
 1. **Run setup (`/`)**
    - Setup banner if `llm_configured=false`. Daily-budget hint (`tokens_left_today`).
-   - Repo picker + **"Use sample repo (montanaflynn/stats)"**.
-   - Target coverage (slider + number, default 80).
-   - "Advanced" disclosure (§7.4).
-   - Notices: "Existing `_test.go` files are removed from a working copy; your repo is never modified" and "Source code is sent to Groq".
-   - Start. Disabled while a job runs, with a link to the running job.
+   - A four-step wizard, one step at a time: (1) **Choose a repository**, with two tabs: *Sample repos* (six pinned Go libraries, montanaflynn/stats first) and *Your folders* (browser folder upload into `./repos/uploads/<name>`, plus the read-only modules under `HOST_REPOS_DIR`, listed as `host/<path>`); (2) target coverage (slider + number, default 80); (3) optional advanced options (§7.4), skippable; (4) review & Start.
+   - Beside it, **Run history**: a live card for the busy job (with Cancel) and saved runs with before → after coverage. Start is disabled while a job is busy.
+   - The "source code is sent to Groq" notice is README-only (Limitations / privacy) and is **not** shown in the New run flow: the author's decision (2026-10-10). The explanatory How it works and Walkthrough pages still describe what is sent, as part of explaining the loop; the fact that existing `_test.go` files are removed from a copy (never from the user's folder) is explained on the How it works page, the Walkthrough and in the README.
 2. **Live run (`/jobs/[id]`)**
    - Header: repo, model, status, elapsed time, tokens used, Cancel.
    - Coverage meter: current vs target marker, baseline.
@@ -510,7 +508,7 @@ Design intent: a calm, precise developer tool, not a generic dashboard. The visu
    - Summary: stop reason, baseline → final %, tests added, files, duration, tokens.
    - Coverage-over-iterations chart with a target reference line.
    - Per-file table: before → after, delta (static order: biggest delta first).
-   - Test file viewer: file list + highlighted Go, with test plan scenarios.
+   - Test file viewer: file list + highlighted Go. The test plan scenarios are shown per attempt in the Activity list.
    - Possible bugs found (if any).
    - Output location `./output/<job_id>` with a copy button.
    - Summary (§6.8), under the summary card: tabs "For stakeholders" and "For engineering teams", the label "AI-written from this run's measured data", the cost line "Run cost $X · summary $Y · total $Z (input …, output …)" when prices are set, every amount with one rule (4 decimals below $1, 2 from $1 up, e.g. "Run cost $0.0232 · summary $0.0012 · total $0.0243 (input $0.0047, output $0.0196)"), Copy as Markdown (the same Markdown as `SUMMARY.md`), and Write summary / Write again. States: writing (a Groq wait timer and Stop), done, failed (message and retry), stopped, off ("Summary was turned off for this run"). A part the grounding check emptied says so. Run history keeps the run among the busy ones with "Writing summary…" and Stop summary.
@@ -534,24 +532,28 @@ Purposeful typography and spacing, a restrained palette, no gratuitous gradients
 ```yaml
 services:
   backend:
-    build: ./backend
-    env_file: .env
+    build: { context: ., dockerfile: backend/Dockerfile, args: { GO_IMAGE: golang:1.27-bookworm } }
+    env_file: [{ path: .env, required: false }]        # the stack starts without .env; the UI then asks for a key
     environment:
-      CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}"]'
+      HOST_REPOS_DIR_DISPLAY: "${HOST_REPOS_DIR:-./my-repos}"   # shown in the UI only
+      CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}", "http://127.0.0.1:${FRONTEND_PORT:-3000}"]'
     ports: ["127.0.0.1:${BACKEND_PORT:-8000}:8000"]   # loopback only; host ports set in .env (defaults 8000/3000)
     volumes:
       - ./repos:/repos                                 # app-managed, rw: samples and uploads
       - ${HOST_REPOS_DIR:-./my-repos}:/host-repos:ro   # the user's own code, read-only
       - ./output:/output
       - gocache:/home/app/.cache
+    healthcheck: { test: [CMD, python, -c, "urllib.request.urlopen('http://localhost:8000/api/health')"] }  # abridged
   frontend:
     build:
       context: ./frontend
       args: { NEXT_PUBLIC_API_URL: "http://localhost:${BACKEND_PORT:-8000}" }   # baked at build time
     ports: ["127.0.0.1:${FRONTEND_PORT:-3000}:3000"]
-    depends_on: [backend]
+    depends_on: { backend: { condition: service_healthy } }
 volumes: { gocache: {} }
 ```
+
+(Abridged from `docker-compose.yml`, which is the source of truth.)
 
 `repos/.gitkeep`, `my-repos/.gitkeep` and `output/.gitkeep` are committed. Changing the API URL requires a rebuild, and the README says so.
 
@@ -566,7 +568,7 @@ volumes: { gocache: {} }
 
 - Runs inside the container as non-root, never on the host. Only the workspace copy is executed or modified.
 - **Environment allowlist:** the API key is not passed to test processes. Code running as the same container user could still read it via `/proc`, so the guard also rejects `StartProcess` and `/proc/` in generated code (cheap filters, bypassable via string concatenation or reflection; no further denylist rules will be added). The guard does not make generated code safe; the real control is a per-job sandbox with a separate uid and no network (§11, future work).
-- **Import/content guard (best-effort filter, not a sandbox):** the snippet may import only standard library packages and the module's own packages. These are denied: `os/exec`, `net`, `net/*`, `syscall`, `unsafe`, `plugin`, `runtime/debug`.
+- **Import/content guard (best-effort filter, not a sandbox):** the snippet may import only standard library packages and the module's own packages. These are denied: `C`, `os/exec`, `net`, `net/*`, `syscall`, `unsafe`, `plugin`, `runtime/cgo`, `runtime/debug`.
 - Timeouts at two levels (`-timeout=60s` per test binary; per process: compile 300 s, vet 180 s, test 300 s, other commands 120 s, §5.5), with process-group kill and output caps.
 - Only fixed commands run; the LLM can't choose commands.
 - Ports bound to loopback only.
@@ -575,7 +577,7 @@ volumes: { gocache: {} }
 
 ### 10.4 `.env.example`
 
-`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_WRITER_REASONING_EFFORT=medium`, `GROQ_FIXER_REASONING_EFFORT=medium`, `HOST_REPOS_DIR=./my-repos`, a commented `MAX_PROMPT_TOKENS=4500` for free-trial keys, and under Advanced the commented `GROQ_MAX_COMPLETION_TOKENS=65536`, `GROQ_TIMEOUT_S=240` and the upload limits `UPLOAD_MAX_FILES=3000`, `UPLOAD_MAX_BYTES=26214400`, `UPLOAD_MAX_FILE_BYTES=1048576`, and `HISTORY_MAX_RUNS=500`. Under Optional (whose header says the values are the defaults unless noted), the example prices `GROQ_PRICE_INPUT_PER_M=0.15` and `GROQ_PRICE_OUTPUT_PER_M=0.60` (openai/gpt-oss-120b on Groq at the time of writing; not code defaults).
+`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_WRITER_REASONING_EFFORT=medium`, `GROQ_FIXER_REASONING_EFFORT=medium`, `BACKEND_PORT=8000`, `FRONTEND_PORT=3000`, `HOST_REPOS_DIR=./my-repos`, `DAILY_TOKEN_BUDGET=2000000`, a commented free-trial block of three (`DAILY_TOKEN_BUDGET=190000`, `MAX_PROMPT_TOKENS=4500`, `CALL_TOKEN_RESERVATION=8000`), and under Advanced the commented `GROQ_MAX_COMPLETION_TOKENS=65536`, `GROQ_TIMEOUT_S=240`, the stage timeouts (`COMPILE_TIMEOUT_S`, `VET_TIMEOUT_S`, `TEST_TIMEOUT_S`, `COMMAND_TIMEOUT_S`, `TEST_TIMEOUT`), `LLM_UNAVAILABLE_AFTER_S=600` and the upload limits `UPLOAD_MAX_FILES=3000`, `UPLOAD_MAX_BYTES=26214400`, `UPLOAD_MAX_FILE_BYTES=1048576`, and `HISTORY_MAX_RUNS=500`. Under Optional (whose header says the values are the defaults unless noted), the example prices `GROQ_PRICE_INPUT_PER_M=0.15` and `GROQ_PRICE_OUTPUT_PER_M=0.60` (openai/gpt-oss-120b on Groq at the time of writing; not code defaults).
 
 ### 10.5 The user's code is mounted read-only
 
@@ -618,19 +620,19 @@ volumes: { gocache: {} }
 ### 13.1 README sections
 
 - Purpose and a demo screenshot.
-- Requirements: Docker; a Groq API key; Node 22 only if running the frontend outside Docker.
-- **Quick start:** copy `.env.example` → `.env`, add the key, `docker compose up --build`, open `http://localhost:3000`, click "Use sample repo", Start.
+- Requirements: Docker; a Groq API key (or the author's `.env`); Node 22 only for the frontend tests.
+- **Quick start:** copy `.env.example` → `.env`, add the key, `docker compose up --build`, open `http://localhost:3000`, click the montanaflynn/stats card under Sample repos, Next through the steps, Start.
 - **Expected run time and Groq limits.**
 - Using your own repo (`./my-repos` or an absolute `HOST_REPOS_DIR`, mounted read-only; or a browser upload).
 - **Model:** `openai/gpt-oss-120b` on Groq (fallback `openai/gpt-oss-20b`).
 - How it works (diagram + loop); configuration options; running the tests.
-- Design decisions and trade-offs; limitations (floating-point expectations, residual sandbox risk, source sent to Groq).
+- Why Groq instead of a local model; design decisions and trade-offs; what would change in production; limitations (floating-point expectations, residual sandbox risk, source sent to Groq).
 - Results on `stats`; AI usage disclosure.
 
 ### 13.2 AI usage disclosure
 
 - A README section on where AI was used (design discussion, scaffolding, specific modules) and where it wasn't (decisions, review, verification).
-- A short header comment in each source file, e.g. `// AI-assisted: initial draft generated with Claude; reviewed and modified by <name>`. It has to be accurate per file.
+- A one-line header comment in each source file: `AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.` The prompt files carry it as an HTML comment that is stripped before sending. Files that can't hold a comment (JSON, lock files, `.go-version`), `.gitkeep` markers and test fixtures are exempt; the README lists them.
 - The `docs/superpowers/` spec and plan are committed as evidence of the process.
 
 ---
