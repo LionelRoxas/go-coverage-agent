@@ -101,6 +101,30 @@ describe("HowItWorksPage", () => {
     expect(screen.queryByText(/semver/i)).toBeNull();
   });
 
+  it("explains in plain words how a new test is judged to add coverage", () => {
+    render(<HowItWorksPage />);
+    expect(screen.getByRole("heading", { name: "How it knows a new test adds coverage" })).toBeInTheDocument();
+    expect(screen.getByText(/The AI never decides this/)).toBeInTheDocument();
+    const compare = screen.getByTestId("coverage-compare");
+    expect(compare).toHaveTextContent(/KeptEverything that ran before still runs, and at least one piece that no test ran before now runs/);
+    expect(compare).toHaveTextContent(/Not keptThe new tests only ran pieces that were already checked/);
+    expect(screen.getByText(/a gain in one place can never hide a loss in another/)).toBeInTheDocument();
+  });
+
+  it("explains prediction disagreements and possible bugs, and what each one points at", () => {
+    render(<HowItWorksPage />);
+    expect(screen.getByRole("heading", { name: "What the run flags for a person to check" })).toBeInTheDocument();
+    const dis = screen.getByTestId("flag-disagreements");
+    expect(within(dis).getByRole("heading", { name: "Prediction disagreements" })).toBeInTheDocument();
+    expect(dis).toHaveTextContent(/Points atThe tests it wrote/);
+    expect(dis).toHaveTextContent(/either the AI’s prediction or the code is wrong/);
+    const bugs = screen.getByTestId("flag-bugs");
+    expect(within(bugs).getByRole("heading", { name: "Possible bugs found" })).toBeInTheDocument();
+    expect(bugs).toHaveTextContent(/Points atYour project’s code/);
+    expect(bugs).toHaveTextContent(/removed automatically/);
+    expect(screen.getByText(/Neither is a confirmed bug/)).toBeInTheDocument();
+  });
+
   it("ends with Start a run and an internal link to the full walkthrough, and no external artifact link", () => {
     const { container } = render(<HowItWorksPage />);
     expect(screen.getByRole("link", { name: /Start a run/ })).toHaveAttribute("href", "/");
