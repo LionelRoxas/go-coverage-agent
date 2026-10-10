@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from app.config import Settings
-from app.gotools import go_env, is_excluded, iter_json, read_module_info
+from app.gotools import GoTools, go_env, is_excluded, iter_json, read_module_info
 
 
 def test_iter_json_reads_concatenated_objects():
@@ -33,3 +33,10 @@ def test_go_env_is_an_allowlist(monkeypatch):
     assert env["GOTOOLCHAIN"] == "local"
     assert env["CGO_ENABLED"] == "0"
     assert env["PATH"] == "/usr/bin"
+
+
+def test_go_temp_dirs_go_to_the_jobs_folder_when_given(tmp_path):
+    assert "GOTMPDIR" not in GoTools(tmp_path, Settings())._env
+    tools = GoTools(tmp_path, Settings(), tmp_dir=tmp_path / "scratch" / "gotmp")
+    assert tools._env["GOTMPDIR"] == str(tmp_path / "scratch" / "gotmp")
+    assert (tmp_path / "scratch" / "gotmp").is_dir()

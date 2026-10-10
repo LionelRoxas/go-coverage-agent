@@ -224,7 +224,7 @@ make test   # everything: Go helper, backend unit + integration (in Docker), fro
 make lint   # ruff (backend, in Docker), eslint + tsc --noEmit (frontend); or lint-backend, lint-frontend
 ```
 
-CI (`.github/workflows/ci.yml`) runs these targets, the lint targets and `make build-frontend`. Backend tests run in the image's `test` stage (`gca-backend-test`: dev dependencies and tests); the default `runtime` stage that compose runs has neither. `test-integration` runs the container with the same hardening as compose (below). Without `make` (Git Bash; Go runs in Docker):
+CI (`.github/workflows/ci.yml`) runs these targets, the lint targets and `make build-frontend`; it installs frontend dependencies once with `make frontend-deps`, and the frontend targets run `npm ci` only when `frontend/node_modules` is missing. Backend tests run in the image's `test` stage (`gca-backend-test`: dev dependencies and tests); the default `runtime` stage that compose runs has neither. `test-integration` runs the container with the same hardening as compose (below). Without `make` (Git Bash; Go runs in Docker):
 
 ```bash
 export MSYS_NO_PATHCONV=1
@@ -232,7 +232,7 @@ docker run --rm -v "$PWD/tools/gohelper:/src" -w /src golang:1.27-bookworm sh -c
 docker build -f backend/Dockerfile --build-arg GO_IMAGE=golang:1.27-bookworm --target test -t gca-backend-test .
 docker run --rm gca-backend-test pytest
 docker run --rm --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 512 --memory 4g --read-only \
-  --tmpfs /tmp:exec --tmpfs /work:exec,uid=1000,gid=1000 --tmpfs /home/app/.cache:exec,uid=1000,gid=1000 \
+  --tmpfs /tmp:exec,size=512m --tmpfs /work:exec,uid=1000,gid=1000,size=1536m --tmpfs /home/app/.cache:exec,uid=1000,gid=1000 \
   --env-file .env.example -v "$PWD/backend/tests/fixtures:/host-repos:ro" gca-backend-test pytest -m integration
 docker run --rm gca-backend-test ruff check --no-cache .
 cd frontend && npm ci && npm test && npm run lint && npx tsc --noEmit
@@ -267,7 +267,7 @@ The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` i
 
 ## Limitations
 
-- Generated tests run inside the backend container as the same user (uid 1000) as the API server. They cannot modify your code (`HOST_REPOS_DIR` is read-only) or the app itself: the app code and its Python environment are owned by root and the root filesystem is read-only, compose drops all capabilities, sets no-new-privileges and limits the container to 512 processes and 4 GB of memory. They could still read the backend's environment (including `GROQ_API_KEY`, via `/proc`), write to the app's data folders (`/repos`, `/output`, `/work`, the Go cache), start processes within those limits, and reach the network (outbound access is open). A separate runner per test run, with no network and without the key, is production work (above). The import guard is easy to bypass (string concatenation, reflection).
+- Generated tests run inside the backend container as the same user (uid 1000) as the API server. They cannot modify your code (`HOST_REPOS_DIR` is read-only) or the app itself: the app code and its Python environment are owned by root and the root filesystem is read-only, compose drops all capabilities, sets no-new-privileges and limits the container to 512 processes and 4 GB of memory. They could still read the backend's environment (including `GROQ_API_KEY`, via `/proc`), write to the app's data folders (`/repos`, `/output`, `/work`, the Go cache), start processes within those limits, and reach the network (outbound access is open). A separate runner per test run, with no network and without the key, is production work (above). The import guard is easy to bypass (string concatenation, reflection). The Go build cache is a volume shared by all runs and writable by that user, so a generated test could tamper with cache entries a later run reuses.
 - **Privacy:** the functions under test and related declarations (your source code) are sent to Groq in each prompt. The New run flow does not show this notice; the How it works and Walkthrough pages describe it.
 - Expected values for floating-point code are partly characterization tests: the Fixer may adopt an observed value, so real bugs can be encoded rather than flagged. Review generated assertions before trusting them.
 - Single-user by design: no accounts, and history lives in `./output`.

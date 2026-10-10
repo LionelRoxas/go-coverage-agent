@@ -8,8 +8,11 @@ GO_IMAGE := golang:$(GO_VERSION)
 BACKEND_IMAGE ?= gca-backend
 BACKEND_TEST_IMAGE ?= gca-backend-test
 # The backend hardening from docker-compose.yml (keep the two in sync), so CI proves the hardened container still runs Go.
-HARDENING := --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 512 --memory 4g --read-only --tmpfs /tmp:exec --tmpfs /work:exec,uid=1000,gid=1000 --tmpfs /home/app/.cache:exec,uid=1000,gid=1000
-.PHONY: up backend-image backend-test-image test test-go test-backend test-integration test-frontend build-frontend lint lint-backend lint-frontend
+HARDENING := --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 512 --memory 4g --read-only --tmpfs /tmp:exec,size=512m --tmpfs /work:exec,uid=1000,gid=1000,size=1536m --tmpfs /home/app/.cache:exec,uid=1000,gid=1000
+.PHONY: up backend-image backend-test-image test test-go test-backend test-integration frontend-deps test-frontend build-frontend lint lint-backend lint-frontend
+# Frontend targets install dependencies only when node_modules is missing (CI runs `make frontend-deps` once first);
+# `npm ci` would delete node_modules, which fails while a local Next server holds files in it.
+FRONTEND_DEPS := [ -d node_modules ] || npm ci
 up:
 	docker compose up --build
 backend-image:
@@ -23,12 +26,14 @@ test-backend: backend-test-image
 	docker run --rm $(BACKEND_TEST_IMAGE) pytest
 test-integration: backend-test-image
 	docker run --rm $(HARDENING) --env-file .env.example -v "$(CURDIR)/backend/tests/fixtures:/host-repos:ro" $(BACKEND_TEST_IMAGE) pytest -m integration
+frontend-deps:
+	cd frontend && npm ci
 test-frontend:
-	cd frontend && npm ci && npm test
+	cd frontend && { $(FRONTEND_DEPS); } && npm test
 build-frontend:
-	cd frontend && npm ci && npm run build
+	cd frontend && { $(FRONTEND_DEPS); } && npm run build
 lint: lint-backend lint-frontend
 lint-backend: backend-test-image
 	docker run --rm $(BACKEND_TEST_IMAGE) ruff check --no-cache .
 lint-frontend:
-	cd frontend && npm ci && npm run lint && npx tsc --noEmit
+	cd frontend && { $(FRONTEND_DEPS); } && npm run lint && npx tsc --noEmit

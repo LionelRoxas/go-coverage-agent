@@ -25,9 +25,11 @@ services:
     pids_limit: 512                            # caps fork bombs; go build/test on small modules peaks near 100
     mem_limit: 4g                              # headroom for go build/test on a module like montanaflynn/stats
     read_only: true                            # read-only root filesystem: only the mounts above and below are writable
+    # tmpfs pages count against mem_limit: 0.5 + 1.5 GB at most, leaving about 2 GB for go build/test and the API.
     tmpfs:
-      - /tmp:exec                              # Go builds and runs test binaries here
-      - /work:exec,uid=1000,gid=1000           # per-run copies of the repo
+      - /tmp:exec,size=512m                    # uploads spool here; Go's temp dirs go to the job's folder (GOTMPDIR)
+      - /work:exec,uid=1000,gid=1000,size=1536m   # per-run copies of the repo, their scratch and Go temp dirs
+    restart: unless-stopped                    # comes back if the OOM killer or a crash ends it
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
@@ -43,6 +45,7 @@ services:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     cap_drop: [ALL]                            # no Linux capabilities are needed
     security_opt: ["no-new-privileges:true"]   # no privilege gain through setuid binaries
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
