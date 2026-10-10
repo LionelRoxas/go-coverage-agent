@@ -258,3 +258,30 @@ def test_prediction_disagreements_are_a_count_of_the_summarys_records():
     f = build_facts(with_two, events, repo="stats", model="openai/gpt-oss-120b", job_id="e2de1ca387cb")
     assert f.prediction_disagreements == 2
     assert "t statistic" not in f.model_dump_json()  # a count only: the model never sees the observed values
+
+
+MUTATION = {"total": 60, "killed": 43, "survived": 17, "invalid": 0, "timeouts": 1, "score": 71.7,
+            "per_file": [{"file": "mean.go", "killed": 5, "survived": 0, "score": 100.0},
+                         {"file": "norm.go", "killed": 6, "survived": 7, "score": 46.2},
+                         {"file": "ttest.go", "killed": 2, "survived": 4, "score": 33.3},
+                         {"file": "percentile.go", "killed": 4, "survived": 2, "score": 66.7},
+                         {"file": "quartile.go", "killed": 4, "survived": 2, "score": 66.7},
+                         {"file": "util.go", "killed": 3, "survived": 1, "score": 75.0}],
+            "mutants": []}
+
+
+def test_no_mutation_facts_without_a_mutation_test():
+    assert facts().mutation is None
+
+
+def test_mutation_facts_come_from_the_last_completed_mutation_test_after_the_run():
+    summary, events = load()
+    first = Event(seq=1000, ts=0, type="mutation_completed", data={**MUTATION, "score": 10.0})
+    last = Event(seq=1001, ts=0, type="mutation_completed", data={**MUTATION, "summary_follows": True})
+    failed = Event(seq=1002, ts=0, type="mutation_failed", data={"reason": "cancelled", "message": "m"})
+    m = build_facts(summary, [*events, first, last, failed], repo="stats", model="m", job_id="x").mutation
+    assert m is not None
+    assert (m.score, m.killed, m.survived, m.counted, m.skipped, m.timeouts, m.sample_size) == (
+        71.7, 43, 17, 60, 0, 1, 60)
+    # top 3 by survivors, ties by name
+    assert [(s.file, s.survived) for s in m.most_survivors] == [("norm.go", 7), ("ttest.go", 4), ("percentile.go", 2)]

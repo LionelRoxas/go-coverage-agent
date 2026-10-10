@@ -309,7 +309,7 @@ async def test_mutation_events_follow_on_the_stream_and_are_saved(tmp_path):
     assert job.mutating and not job.finished and m.running() is job and not job.writing_summary
     await job.mutation_task
     assert [e.type for e in job.events][-2:] == ["mutation_started", "mutation_completed"]
-    assert job.finished and not job.mutating and job.events[-1].data == PAYLOAD
+    assert job.finished and not job.mutating and job.events[-1].data == {**PAYLOAD, "summary_follows": False}
     report = json.loads((settings.output_dir / job.id / "report.json").read_text())
     assert report["mutation"] == PAYLOAD and report["final_percent"] == 80
     saved = [json.loads(line)["type"] for line in (settings.output_dir / job.id / "events.jsonl").open()]
@@ -396,3 +396,98 @@ async def test_mutation_endpoint(tmp_path):
         gate.set()
         await m.get(job_id).mutation_task
         assert (await client.get(f"/api/jobs/{job_id}")).json()["mutating"] is False
+
+
+# After a completed mutation test the AI summary is written again (as Write again does), with the mutation facts.
+def summarizing(tmp_path, gate=None, fail=None, llm=None):
+    from tests.fakes import FakeLLM, run_summary
+    m, settings, calls = manager(tmp_path, gate=gate, fail=fail)
+    llms: list = []
+    m._llm_factory = llm or (lambda emit, cancel: llms.append(FakeLLM([run_summary()])) or llms[-1])
+    return m, settings, llms
+
+
+async def summarized(m):
+    job = m.start(JobRequest(repo_path="stats"))  # write_summary on (the default)
+    await job.task
+    assert job.events[-1].type == "summary_generated"
+    return job
+
+
+def after_mutation(job):
+    types = [e.type for e in job.events]
+    return types[types.index("mutation_started"):]
+
+
+async def test_a_completed_mutation_test_writes_the_summary_again_with_its_facts(tmp_path):
+    m, settings, llms = summarizing(tmp_path)
+    job = await summarized(m)
+    m.mutation_test(job.id)
+    await job.mutation_task
+    assert after_mutation(job) == ["mutation_started", "mutation_completed", "llm_request", "summary_generated"]
+    assert job.events[-3].data["summary_follows"] is True and job.finished and m.running() is None
+    assert len(llms) == 2 and '"mutation":{"score":0.0,"killed":0,"survived":1' in llms[1].calls[0]["user"]
+    assert '"mutation":null' in llms[0].calls[0]["user"]
+    report = json.loads((settings.output_dir / job.id / "report.json").read_text())
+    assert report["mutation"] == PAYLOAD  # without the event's summary_follows
+    assert report["ai_summary"]["generated_at"] == job.events[-1].ts
+    assert (settings.output_dir / job.id / "SUMMARY.md").read_text(encoding="utf-8").startswith("# AI summary: stats")
+
+
+@pytest.mark.parametrize("fail", [MutationFailed("baseline_failed", "no"), MutationFailed("cancelled", "c")])
+async def test_no_summary_after_a_failed_or_cancelled_mutation_test(tmp_path, fail):
+    m, _, llms = summarizing(tmp_path, fail=fail)
+    job = await summarized(m)
+    m.mutation_test(job.id)
+    await job.mutation_task
+    assert after_mutation(job) == ["mutation_started", "mutation_failed"] and len(llms) == 1
+
+
+@pytest.mark.parametrize("why", ["write_summary_off", "no_key", "daily_budget_low", "run_budget_used"])
+async def test_no_summary_after_mutation_when_it_cannot_or_should_not_be_written(tmp_path, monkeypatch, why):
+    m, settings, llms = summarizing(tmp_path)
+    job = await (finished(m) if why == "write_summary_off" else summarized(m))
+    if why == "no_key":
+        monkeypatch.setattr(settings, "groq_api_key", "")
+    elif why == "daily_budget_low":
+        monkeypatch.setattr(m.ledger, "remaining", lambda: settings.min_daily_tokens_to_start - 1)
+    elif why == "run_budget_used":
+        monkeypatch.setattr(job.request.options, "max_llm_tokens", job.summary_tokens.total)
+    report = (settings.output_dir / job.id / "report.json").read_text()
+    m.mutation_test(job.id)
+    await job.mutation_task
+    assert after_mutation(job) == ["mutation_started", "mutation_completed"]
+    assert job.events[-1].data["summary_follows"] is False and job.finished
+    after = json.loads((settings.output_dir / job.id / "report.json").read_text())
+    assert after.pop("mutation") == PAYLOAD and after == json.loads(report)  # the summary is unchanged
+
+
+async def test_the_job_is_busy_until_the_summary_after_mutation_is_written_and_cancel_stops_it(tmp_path):
+    from tests.test_summary_jobs import CancellableLLM
+    from tests.fakes import FakeLLM, run_summary
+    llms: list = []
+
+    def factory(emit, cancel):  # the run's own summary answers at once; the one after the mutation test waits
+        llms.append(FakeLLM([run_summary()]) if not llms else CancellableLLM(cancel))
+        return llms[-1]
+
+    m, settings, _ = summarizing(tmp_path, llm=factory)
+    job = await summarized(m)
+    m.mutation_test(job.id)
+    while len(llms) < 2:
+        await asyncio.sleep(0)
+    await llms[1].started.wait()
+    assert m.running() is job and job.writing_summary and not job.mutating and not job.finished
+    with pytest.raises(JobConflict):
+        m.start(JobRequest(repo_path="stats"))
+    with pytest.raises(JobRejected):
+        m.mutation_test(job.id)
+    with pytest.raises(JobRejected):
+        m.write_summary_again(job.id)
+    m.cancel(job.id)
+    await asyncio.wait_for(job.mutation_task, 1)
+    assert after_mutation(job) == ["mutation_started", "mutation_completed", "llm_request", "summary_failed"]
+    assert job.events[-1].data["reason"] == "cancelled" and job.status is JobStatus.COMPLETED
+    assert job.finished and m.running() is None
+    report = json.loads((settings.output_dir / job.id / "report.json").read_text())
+    assert report["mutation"] == PAYLOAD and "ai_summary" in report  # the earlier summary is kept

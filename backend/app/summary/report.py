@@ -67,6 +67,7 @@ def to_markdown(ai: dict[str, Any], *, repo: str, model: str, generated_at: floa
     add(b["efficiency"])
     if ai.get("cost_usd"):
         blocks.append(cost_line(ai["cost_usd"]))
+    add(b.get("test_quality", ""), "**Test quality:** ")  # only after a mutation test (older payloads lack it)
     bullets("Risks", b["risks"])
     add(b["recommendation"], "**Recommendation:** ")
 
@@ -75,6 +76,7 @@ def to_markdown(ai: dict[str, Any], *, repo: str, model: str, generated_at: floa
         blocks.append(f"_{EMPTY}_")
     add(t["headline"], "### ")
     add(t["what_was_tested"], "**What was tested:** ")
+    add(t.get("test_quality", ""), "**Test quality:** ")
     add(t["where_tests_live"], "**Where the tests live:** ")
     bullets("Gaps", [f"`{g['file']}`: {g['detail']}" for g in t["gaps"]])
     bullets("Suspected bugs", t["suspected_bugs"])

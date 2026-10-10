@@ -99,3 +99,15 @@ def test_a_part_left_empty_by_the_grounding_check_says_so():
     md = to_markdown({**PAYLOAD, "business": empty_business, "cost_usd": None}, repo="stats", model="m", generated_at=0)
     assert f"## For stakeholders\n\n_{EMPTY}_\n\n## For engineering teams\n\n### 81.07% covered." in md
     assert md.count(EMPTY) == 1
+
+
+def test_test_quality_follows_the_cost_and_what_was_tested_only_when_written():
+    business = {**PAYLOAD["business"], "test_quality": "The tests caught 43 of 60 planted bugs."}
+    technical = {**PAYLOAD["technical"], "test_quality": "Mutation score 71.7%."}
+    md = to_markdown({**PAYLOAD, "business": business, "technical": technical}, repo="stats", model="m",
+                     generated_at=1791547516.4)
+    assert ("(input $0.0130, output $0.0558)\n\n**Test quality:** The tests caught 43 of 60 planted bugs.\n\n**Risks**"
+            in md)
+    assert "**What was tested:** Tests cover mean.go.\n\n**Test quality:** Mutation score 71.7%.\n\n**Where" in md
+    empty = {**PAYLOAD, "business": {**business, "test_quality": ""}, "technical": {**technical, "test_quality": ""}}
+    assert "Test quality" not in to_markdown(empty, repo="stats", model="m", generated_at=1791547516.4)

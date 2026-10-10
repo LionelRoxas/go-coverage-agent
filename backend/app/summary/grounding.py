@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Iterator, Literal
 
 from app.models import BusinessSummary, RunSummary, SummaryGap, TechnicalSummary
-from app.summary.facts import RunFacts
+from app.summary.facts import MutationFacts, RunFacts
 from app.summary.report import usd
 
 Kind = Literal["currency", "percent", "duration", "multiplier", "tokens", "count"]
@@ -168,6 +168,11 @@ class _Checker:
             f.pruned_tests, f.pruned_no_assertions, f.prediction_disagreements, f.llm_timeouts, f.rate_limit_waits, f.tests_added_count, f.test_files_count,
             len(f.lowest_files), *f.rejected_reasons.values(), *(c.calls for c in f.llm_calls),
             *(low.uncovered_statements for low in f.lowest_files))} | tokens
+        mut = f.mutation
+        if mut is not None:  # the mutation test's score, counts and the files with the most survivors
+            percents |= {mut.score} if mut.score is not None else set()
+            counts |= {float(n) for n in (mut.killed, mut.survived, mut.counted, mut.skipped, mut.timeouts,
+                                          mut.sample_size, *(s.survived for s in mut.most_survivors))}
         self.pools: dict[Kind, set[float]] = {
             "currency": set() if f.cost_usd is None else _numbers(f.cost_usd.model_dump(), set()),
             "percent": percents | in_text.get("percent", set()),
@@ -176,7 +181,8 @@ class _Checker:
             "tokens": tokens,
             "count": counts | in_text.get("count", set()),
         }
-        self.files = {p.file for p in f.per_file} | set(f.test_files) | {p.file for p in f.lowest_files}
+        self.files = ({p.file for p in f.per_file} | set(f.test_files) | {p.file for p in f.lowest_files}
+                      | {s.file for s in (mut.most_survivors if mut is not None else [])})
         self.exported = {f"{f.tests_dir}/{t}" for t in f.test_files}
         self.tests = set(f.tests_added)
 
@@ -237,13 +243,18 @@ def ground(summary: RunSummary, facts: RunFacts) -> tuple[RunSummary, int]:
     gaps = [SummaryGap(file=g.file, detail=tidy(g.detail)) for g in t.gaps]
     gaps = [g for g in gaps if check.file_ok(g.file) and check.ok(g.detail)]
     dropped += len(t.gaps) - len(gaps)
+    def quality(text: str) -> str:  # no mutation result: nothing to say, whatever the model wrote
+        return para(text) if facts.mutation is not None else ""
+
     business = BusinessSummary(headline=para(b.headline), outcome=para(b.outcome), efficiency=para(b.efficiency),
-                               risks=items(b.risks), recommendation=para(b.recommendation))
+                               risks=items(b.risks), recommendation=para(b.recommendation),
+                               test_quality=quality(b.test_quality))
     technical = TechnicalSummary(
         headline=para(t.headline), what_was_tested=para(t.what_was_tested), where_tests_live=para(t.where_tests_live),
         gaps=[SummaryGap(file=g.file, detail=g.detail) for g in gaps],
         suspected_bugs=[f"{bug.function}: {bug.description}" for bug in facts.suspected_bugs],
-        rejected_or_failed=para(t.rejected_or_failed), how_to_run=para(t.how_to_run), next_steps=items(t.next_steps))
+        rejected_or_failed=para(t.rejected_or_failed), how_to_run=para(t.how_to_run), next_steps=items(t.next_steps),
+        test_quality=quality(t.test_quality))
     return RunSummary(business=business, technical=technical), dropped
 
 
@@ -263,7 +274,7 @@ def _fallbacks(f: RunFacts) -> dict[str, dict[str, str]]:
               if improved else "No source file gained coverage.")
     copy = (f"Copy the contents of {f.tests_dir} into the module root of {f.repo}, keeping sub-folders, so each test "
             "file sits next to its source file.")
-    return {
+    fallbacks = {
         "business": {
             "headline": f"{change} against a goal of {_pct(f.goal_percent)}.",
             "outcome": f"The run stopped after {f.rounds} rounds: {f.stop_message}",
@@ -283,6 +294,27 @@ def _fallbacks(f: RunFacts) -> dict[str, dict[str, str]]:
             "how_to_run": f"{copy} Then run `go test ./...` and `go test -cover ./...` there.",
         },
     }
+    if (m := f.mutation) is not None:
+        fallbacks["business"]["test_quality"], fallbacks["technical"]["test_quality"] = _test_quality(m)
+    return fallbacks
+
+
+def _test_quality(m: MutationFacts) -> tuple[str, str]:
+    """Business and technical text on the mutation test, from its facts only."""
+    lower = "It is a lower bound from a sample: each planted bug runs only its own package's tests."
+    if m.score is None:
+        none = (f"None of the {m.sample_size} small bugs planted in tested code could be judged, because none of "
+                "them built, so this run has no mutation score.")
+        return none, none
+    business = (f"When small bugs were planted one at a time in tested code, the tests caught {m.killed} of "
+                f"{m.counted} ({_pct(m.score)}) and missed {m.survived}. {lower}")
+    where = ", ".join(f"{s.file} ({s.survived})" for s in m.most_survivors)
+    cluster = (f" Most missed bugs are in {where}: the tests there likely check loose properties rather than exact "
+               "values." if where else "")
+    technical = (f"Mutation score {_pct(m.score)}: of {m.sample_size} sampled mutants, {m.killed} were caught "
+                 f"({m.timeouts} by a timeout), {m.survived} survived and {m.skipped} did not build and were not "
+                 f"counted.{cluster} {lower}")
+    return business, technical
 
 
 def fill_empty(summary: RunSummary, facts: RunFacts) -> tuple[RunSummary, list[str]]:

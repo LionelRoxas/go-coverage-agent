@@ -464,7 +464,9 @@ class JobManager:
         return job
 
     async def _mutation(self, job: Job) -> None:
-        """Emit mutation_completed (and save it in report.json) or mutation_failed; never raises."""
+        """Emit mutation_completed (and save it in report.json) or mutation_failed; never raises. A completed test
+        is followed by the AI summary written again, as Write again does, when summary_follows (on the event) says
+        so; the job stays busy until it is written."""
         try:
             payload = await self._mutation_runner(job, job.emit, job.mutation_cancel)
         except Exception as e:  # noqa: BLE001
@@ -475,14 +477,29 @@ class JobManager:
                 failed = {"reason": "internal_error", "message": str(e), "output": ""}
             await job.emit("mutation_failed", failed)
         else:
-            await job.emit("mutation_completed", payload)
+            follows = self._summary_after_mutation(job)
+            if follows:  # from here on, Cancel stops the summary (as during Write again), never lost in between
+                job.summary_cancel = asyncio.Event()
+                job.mutating = False
+            await job.emit("mutation_completed", {**payload, "summary_follows": follows})
             try:
                 save_mutation(self.settings.output_dir / job.id, payload, job.summary)
             except Exception:  # noqa: BLE001
                 log.warning("could not save the mutation test of job %s", job.id, exc_info=True)
+            if follows:
+                await self._write_summary(job)
         finally:
             job.mutating = False
             self._back_to_disk(job)
+
+    def _summary_after_mutation(self, job: Job) -> bool:
+        """Whether a completed mutation test writes the summary again: not when the run has no report or had the
+        summary turned off, when no Groq key is set, or when the run's or today's token budget is too low (then the
+        earlier summary, if any, is kept unchanged)."""
+        summary = job.summary
+        return (summary is not None and job.request.options.write_summary and self.settings.llm_configured
+                and summary.tokens.total + job.summary_tokens.total < job.request.options.max_llm_tokens
+                and self.ledger.remaining() >= self.settings.min_daily_tokens_to_start)
 
     def _model(self, job: Job) -> str:
         started = next((e for e in job.events if e.type == "job_started"), None)
