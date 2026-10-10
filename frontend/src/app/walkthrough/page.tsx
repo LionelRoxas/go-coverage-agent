@@ -379,12 +379,14 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
                  (the seed file is left out)
   report.json    stop reason and message, baseline → final %, every round, per-file before/after,
                  tests added, possible bugs, prediction disagreements, tokens, duration,
-                 the AI summary (ai_summary)
+                 the AI summary (ai_summary), the last mutation test (mutation)
   SUMMARY.md     the AI summary as Markdown (when one was written)
   events.jsonl   every event, one JSON object per line, appended as it happens
                  (a run killed mid-way reloads as Interrupted, with its accepted tests)`}</Pre>
           <H3>The AI summary</H3>
           <p>After the result is shown, one more model call (the Summarizer) gets the run’s measured facts as JSON: coverage, rounds, time, tokens, an estimated cost when prices are set, rejected targets, the least-covered files and suspected bugs. It returns two summaries, one for stakeholders and one for engineering teams. A deterministic grounding check then drops any sentence whose numbers, files or test names are not in those facts; suspected bugs are copied from the facts, not written by the model. A required paragraph that the model left empty, or that the check emptied, gets plain text built from the facts, marked as such. The job stays busy until the summary is written, so a new run can’t start until then, and Cancel stops only the summary. It is skipped when Groq was unreachable at the end (<C>llm_unavailable</C>); Write again on the run page asks for a new one. Turn it off with <C>write_summary: false</C> or the checkbox in the advanced options.</p>
+          <H3>Run mutation test</H3>
+          <p>An opt-in check of the kept tests’ strength on a finished run (completed, cancelled or interrupted, with at least one kept test file); it never decides what is kept. <C>POST /api/jobs/{"{id}"}/mutation</C> copies the repo again into <C>/work/&lt;job&gt;-mutation</C>, prepares it as the run did, adds <C>output/&lt;job&gt;/tests</C> and runs the tests once with coverage; if they fail, it stops. <C>gohelper mutate</C> lists every arithmetic (<C>+ -</C>, <C>* /</C>), boundary (<C>&lt; &lt;=</C>, <C>&gt; &gt;=</C>), equality (<C>== !=</C>) and logical (<C>&& ||</C>) operator; only those inside covered blocks are kept, and up to <C>MUTATION_SAMPLE</C> (60) are drawn with a fixed seed. Each mutant swaps one operator, runs <C>go test -count=1 -timeout=MUTATION_TIMEOUT_S</C> (30 s) on its package and restores the file: a pass means the mutant survived, a failure or a timeout means it was killed, and a mutant that does not build is skipped. The score is killed ÷ (killed + survived). Same rule as Write again: the job is busy meanwhile and Cancel stops only the mutation test. The result is saved as <C>mutation</C> in <C>report.json</C>.</p>
           <H3>The job page</H3>
           <p>It renders entirely from the events: the coverage meter with the target marker, coverage per round as a chart, the Activity list with every numbered attempt and its errors, the generated test files with syntax highlighting, coverage by file, prediction disagreements, and possible bugs the model reported.</p>
           <H3>Prediction disagreements and possible bugs</H3>
@@ -430,7 +432,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
           </div>
           <p>The tests from run 89eb53b5907e were copied into a fresh clone of stats with its tests deleted; <C>go vet</C> was clean, every test passed, and plain Go measured 80.5%. An earlier run on a free-trial key (8K tokens per minute) reached 69.0% in about 28 minutes, mostly waiting on rate limits.</p>
           <p>Why the semver sample starts at 1.4% and not 0%: a package’s <C>init()</C> functions run when the package loads, so their statements (version.go:83 and constraints.go:206) count as covered before any test exists. That is true and measured, not an error. For this reason the results above use runs that started at exactly 0%.</p>
-          <Where code={["backend/app/engine/run.py", "backend/app/jobs.py", "backend/app/summary/grounding.py", "frontend/src/app/jobs/[id]/page.tsx", "README.md"]} events={["job_completed", "summary_generated"]} />
+          <Where code={["backend/app/engine/run.py", "backend/app/jobs.py", "backend/app/summary/grounding.py", "frontend/src/app/jobs/[id]/page.tsx", "README.md"]} events={["job_completed", "summary_generated", "mutation_started", "mutant_result", "mutation_completed", "mutation_failed"]} />
         </Section>
 
         <Section id="coverage">

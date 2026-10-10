@@ -236,6 +236,7 @@ export default function HowItWorksPage() {
             <li>Each new batch of tests also has to run at least one piece of code that no earlier test ran. A batch that only repeats what is already checked adds nothing, so it isn’t kept.</li>
             <li>A test that runs code but never checks the result is not kept either.</li>
             <li>A failing test is dropped or undone, so it never counts toward the number.</li>
+            <li>Coverage says code ran, not that a test would notice it breaking. On a finished run, <strong className="font-semibold text-text">Run mutation test</strong> plants small bugs (such as <code className="font-mono text-sm">&lt;</code> turned into <code className="font-mono text-sm">&lt;=</code>) in a fresh copy and reports how many the kept tests catch. No AI, no tokens.</li>
             <li>The result was also checked independently: an earlier stats run (which reached 80.51%) had its kept tests re-run in a fresh copy of the project. They all passed and measured 80.5%.</li>
           </ul>
         </section>
