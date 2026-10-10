@@ -36,6 +36,7 @@ class RateLimiter:
         self._paused_until = 0.0
         self.probing = False  # after a 429, until a request succeeds
         self.probe = asyncio.Lock()  # held by the one call sent while probing
+        self._changed = asyncio.Event()  # pulsed when a request ends or Groq reports new headroom
 
     def update(self, headers: Mapping[str, str]) -> None:
         limit = headers.get("x-ratelimit-limit-tokens")
@@ -54,6 +55,21 @@ class RateLimiter:
         self._rolled = False
         reset = headers.get("x-ratelimit-reset-tokens")
         self._reset_at = self._clock() + (parse_duration(reset) if reset else 60.0)
+        self._pulse()
+
+    def _pulse(self) -> None:
+        self._changed.set()
+        self._changed = asyncio.Event()
+
+    def changed(self) -> asyncio.Event:
+        """Set the next time a request ends or the headroom is updated (a waiter checks again then)."""
+        return self._changed
+
+    def held_by_inflight(self, tokens: int) -> bool:
+        """The known headroom would fit `tokens` if the requests in flight were not counted: their answers will
+        report the real headroom, so waiting for them beats sleeping a whole window."""
+        return (not self.paused() and self._inflight > 0 and self._remaining is not None
+                and self._remaining >= tokens > self._remaining - self._inflight)
 
     def now(self) -> float:
         return self._clock()
@@ -91,6 +107,7 @@ class RateLimiter:
 
     def end(self, tokens: int) -> None:
         self._inflight -= tokens
+        self._pulse()
 
     def paused(self) -> bool:
         return self._paused_until > 0 and self._paused_until > self._clock()

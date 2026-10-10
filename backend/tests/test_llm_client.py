@@ -513,3 +513,30 @@ async def test_a_caller_already_waiting_respects_a_429_pause_set_while_it_slept(
     await asyncio.wait_for(asyncio.gather(first, second), timeout=5)
     assert len(sent) == 3
     assert all(t - start >= 0.3 for t in sent[1:])  # nobody sent again before the Retry-After ended
+
+
+async def test_a_caller_held_back_by_requests_in_flight_wakes_when_they_answer(tmp_path):
+    """Room for two 16K reservations and four callers: the last two wait for the first answers (which report the
+    real headroom), not for a whole window."""
+    import asyncio
+    now = [100.0]
+
+    async def sleep(s):  # 1 virtual second = 1 real ms; the clock moves only when a sleep runs to its end
+        await asyncio.sleep(s / 1000)
+        now[0] += s
+
+    limiter = RateLimiter(clock=lambda: now[0])
+    limiter.update({"x-ratelimit-limit-tokens": "40000", "x-ratelimit-remaining-tokens": "40000",
+                    "x-ratelimit-reset-tokens": "100s"})
+    headers = {"x-ratelimit-limit-tokens": "40000", "x-ratelimit-remaining-tokens": "38000",
+               "x-ratelimit-reset-tokens": "2s"}
+    fake = SlowGroq([Raw(Completion('{"answer": "ok"}', "stop"), headers) for _ in range(4)], delay=0.02)
+    events = []
+    async def emit(t, d): events.append((t, d))
+    llm = GroqLLM(Settings(groq_api_key="k"), UsageLedger(tmp_path / "u.json", 1_000_000), limiter,
+                  emit=emit, client=fake, sleep=sleep)
+    results = await asyncio.wait_for(asyncio.gather(*(call(llm) for _ in range(4))), timeout=5)
+    assert [r[0].answer for r in results] == ["ok"] * 4
+    assert max(fake.seen) <= 1  # never more than two in flight: the pacing still holds
+    assert now[0] == 100.0  # no window was slept through: the waiters woke when the first answers came
+    assert limiter._inflight == 0

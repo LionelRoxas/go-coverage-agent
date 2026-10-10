@@ -121,6 +121,28 @@ class GroqLLM:
             await self._emit("rate_limited", {"seconds": round(seconds, 1), "reason": reason, **(LLM_CALL.get() or {})})
         await self._sleep_cancellable(seconds)
 
+    async def _wait_for_inflight(self, seconds: float) -> None:
+        """Wait for the requests in flight (PARALLEL_WRITERS) to free the headroom: until one ends or new headers
+        arrive, or at most `seconds` (the window). Cancel wakes it at once."""
+        until = self.limiter.now() + seconds
+        if self._emit:
+            await self._emit("rate_limited", {"seconds": round(seconds, 1), "reason": "tpm", **(LLM_CALL.get() or {})})
+        changed = asyncio.ensure_future(self.limiter.changed().wait())
+        timer = asyncio.ensure_future(self._sleep(seconds))
+        stop = asyncio.ensure_future(self._cancel.wait()) if self._cancel is not None else None
+        waits = {t for t in (changed, timer, stop) if t is not None}
+        try:
+            await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in waits:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*waits, return_exceptions=True)
+        if stop is not None and stop.done() and not stop.cancelled():
+            raise LLMCancelled("cancelled while waiting")
+        if timer.done() and not timer.cancelled():  # the whole window passed
+            self.limiter.waited(until)
+
     async def _sleep_cancellable(self, seconds: float) -> None:
         if self._cancel is None:
             await self._sleep(seconds)
@@ -293,6 +315,9 @@ class GroqLLM:
                 if probe is not None:  # never hold the probe while sleeping
                     probe.release()
                     probe = None
+                if self.limiter.held_by_inflight(reservation):  # wake as soon as one of them answers
+                    await self._wait_for_inflight(wait)
+                    continue
                 until = self.limiter.now() + wait
                 await self._wait(wait, "429" if self.limiter.paused() else "tpm")
                 self.limiter.waited(until)
