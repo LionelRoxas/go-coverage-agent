@@ -163,3 +163,25 @@ async def test_early_stream_close_removes_subscriber(tmp_path):
     assert job._subscribers == []
     gate.set()
     await finish(job)
+
+
+def test_clean_work_dir_removes_stale_job_workspaces_but_not_a_running_one(tmp_path):
+    from app.config import Settings
+    from app.jobs import Job, JobManager
+    from app.models import JobRequest
+    work = tmp_path / "work"
+    stale, running, other = work / "0123456789ab", work / "ba9876543210", work / "keep-me"
+    for d in (stale / "repo", running / "repo", other):
+        d.mkdir(parents=True)
+    (work / "abcdefabcdef").write_text("a file, not a workspace")
+    manager = JobManager(Settings(work_dir=work, output_dir=tmp_path / "out"))
+    manager.jobs["ba9876543210"] = Job("ba9876543210", JobRequest(repo_path="x"))  # status running
+    manager.clean_work_dir()
+    assert not stale.exists()
+    assert running.is_dir() and other.is_dir() and (work / "abcdefabcdef").is_file()
+
+
+def test_clean_work_dir_without_work_dir_is_a_no_op(tmp_path):
+    from app.config import Settings
+    from app.jobs import JobManager
+    JobManager(Settings(work_dir=tmp_path / "missing", output_dir=tmp_path / "out")).clean_work_dir()

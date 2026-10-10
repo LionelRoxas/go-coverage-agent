@@ -110,3 +110,56 @@ async def test_artifact_failure_does_not_mask_job_failure(monkeypatch, tmp_path)
     with pytest.raises(JobFailed) as exc:
         await run_job("j1", JobRequest(repo_path="x"), settings, None, emit, asyncio.Event(), lambda: [])
     assert exc.value.reason == "llm_auth"
+
+
+def _summary(test_files):
+    return Summary(stop_reason=StopReason.TARGET_REACHED, message="ok", target=80, baseline_percent=0,
+                   final_percent=81, iterations=[], test_files=test_files, tests_added=["TestMean"],
+                   suspected_bugs=[], per_file=[], tokens=TokenUsage(), duration_s=1.0)
+
+
+def _patch_with_workspace(monkeypatch, tmp_path):
+    source = tmp_path / "repos" / "stats"
+    source.mkdir(parents=True)
+    (source / "go.mod").write_text("module m\n")
+    ws = Workspace.create(tmp_path / "work", "j1", source)
+    ws.write_test("mean_test.go", "package stats\n")
+
+    async def fake_prepare(*a, **k):
+        prepared = _Prepared()
+        prepared.deps = type("deps", (), {"ws": ws})
+        return prepared
+
+    class FakeOrchestrator:
+        def __init__(self, *a): pass
+
+        async def run(self, baseline):
+            return _summary(["mean_test.go"])
+
+    monkeypatch.setattr(run_module, "prepare", fake_prepare)
+    monkeypatch.setattr(run_module, "Orchestrator", FakeOrchestrator)
+    return Settings(repos_dir=tmp_path / "repos", work_dir=tmp_path / "work", output_dir=tmp_path / "out")
+
+
+async def test_workspace_is_deleted_once_the_tests_are_exported(monkeypatch, tmp_path):
+    settings = _patch_with_workspace(monkeypatch, tmp_path)
+
+    async def emit(t, d): pass
+
+    await run_job("j1", JobRequest(repo_path="stats"), settings, None, emit, asyncio.Event(), lambda: [])
+    assert (settings.output_dir / "j1" / "tests" / "mean_test.go").read_text() == "package stats\n"
+    assert not (settings.work_dir / "j1").exists()
+
+
+async def test_workspace_is_kept_when_the_export_fails(monkeypatch, tmp_path):
+    settings = _patch_with_workspace(monkeypatch, tmp_path)
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(run_module, "write_artifacts", boom)
+
+    async def emit(t, d): pass
+
+    await run_job("j1", JobRequest(repo_path="stats"), settings, None, emit, asyncio.Event(), lambda: [])
+    assert (settings.work_dir / "j1" / "repo" / "mean_test.go").is_file()

@@ -82,7 +82,7 @@ The tab also lists your own Go projects: every Go module (a folder with a `go.mo
 
 The two folders are kept apart. `./repos` is the app's own folder, mounted read-write at `/repos`: downloaded samples and browser uploads live there. `HOST_REPOS_DIR` is your code, mounted **read-only** at `/host-repos`.
 
-Your code is never modified. `HOST_REPOS_DIR` is mounted read-only, so nothing in the container can write to it: not the app, and not the generated tests it compiles and runs. A run reads your module once to copy it into the container's `/work/<job-id>`, works only on that copy, and writes the generated tests to `./output/<job-id>/tests/` for you to review and copy over yourself. An uploaded folder is a copy from the start: the browser sends its files and your original folder is not touched.
+Your code is never modified. `HOST_REPOS_DIR` is mounted read-only, so nothing in the container can write to it: not the app, and not the generated tests it compiles and runs. A run reads your module once to copy it into the container's `/work/<job-id>` (deleted when the run ends; leftovers from a restart are removed on startup), works only on that copy, and writes the generated tests to `./output/<job-id>/tests/` for you to review and copy over yourself. An uploaded folder is a copy from the start: the browser sends its files and your original folder is not touched.
 
 **Upgrading from an earlier version:** samples and uploads stay in `./repos` (same path) and keep working. If your `.env` still has `HOST_REPOS_DIR=./repos` (the old default), point it at your own code folder or remove the line; otherwise the samples are listed a second time, read-only, under `host/`.
 

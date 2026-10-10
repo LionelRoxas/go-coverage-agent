@@ -162,6 +162,7 @@ The app starts without a key. `/api/health` reports `llm_configured: false`, and
 ### 5.2 `workspace`
 
 - `create(job_id, repo_path)`: resolves `repo_path` relative to `REPOS_DIR`, or, for `host/<rel>`, relative to the read-only `/host-repos`; it rejects anything that resolves outside that folder (path-traversal guard, symlinks followed) and requires `go.mod`. It copies to `WORK_DIR/<job_id>/repo`, excluding `.git`, and refuses a work folder inside `/host-repos`. **The source repo is never written to;** for `HOST_REPOS_DIR` the read-only mount enforces it (§10.5).
+- The workspace is deleted when the job ends, once its tests are exported to `OUTPUT_DIR/<job_id>/tests` (kept if that export failed); on startup, job-id-named folders left in `WORK_DIR` by a restart or kill are removed (never a running job's). The file endpoint then serves the exported copy.
 - `delete_existing_tests()`: removes every `*_test.go` in the copy and returns the list.
 - `snapshot(paths)` / `restore(snapshot)`: records content **or absence** for each path. Restore rewrites or deletes. Snapshots always include `go.mod` and `go.sum`.
 - Writes are atomic (temp file + rename), restricted to `*_test.go` paths inside the workspace. Any other path raises.

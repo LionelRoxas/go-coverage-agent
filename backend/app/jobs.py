@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -25,6 +27,7 @@ from app.summary.grounding import ground
 from app.summary.report import save, to_markdown
 
 log = logging.getLogger(__name__)
+_JOB_ID = re.compile(r"[0-9a-f]{12}")  # uuid4().hex[:12], as start() makes them
 
 
 class JobConflict(Exception):
@@ -197,6 +200,20 @@ class JobManager:
         from app.saved_runs import load_runs  # it builds Jobs, so it imports this module
         for job in load_runs(self.settings.output_dir, self.settings.history_max_runs):
             self.jobs.setdefault(job.id, job)
+
+    def clean_work_dir(self) -> None:
+        """Startup: remove job workspaces left in WORK_DIR (a run ended by a restart or a kill), except a running job's.
+        Only folders named like a job id are touched (never raises)."""
+        running = self.running()
+        try:
+            entries = list(self.settings.work_dir.iterdir())
+        except OSError:
+            return
+        for d in entries:
+            if running is not None and d.name == running.id:
+                continue
+            if _JOB_ID.fullmatch(d.name) and d.is_dir() and not d.is_symlink():
+                shutil.rmtree(d, ignore_errors=True)
 
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)

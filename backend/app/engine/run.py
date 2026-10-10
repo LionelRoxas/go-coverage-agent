@@ -57,3 +57,6 @@ async def run_job(job_id: str, request: JobRequest, settings: Settings, llm: LLM
                             accepted)
         except Exception:  # never mask the job's own outcome
             log.exception("could not write artifacts for job %s", job_id)
+        else:
+            # The tests are exported to output/<id>/tests, which the API serves from now on; the copy is not needed.
+            shutil.rmtree(settings.work_dir / job_id, ignore_errors=True)
