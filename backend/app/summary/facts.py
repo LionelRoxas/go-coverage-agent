@@ -74,7 +74,8 @@ class RunFacts(BaseModel):
     mechanical_repairs: int
     pruned_tests: int  # failing new tests removed so the rest could be kept
     pruned_no_assertions: int = 0  # new tests removed because they checked nothing (no t.Error/t.Fatal)
-    # failing tests pruned where the model's expected value and the code's differ (Summary.disagreements); a count
+    # new tests that failed because the model's expected value and the code's differ, pruned or sent to the Fixer
+    # (Summary.disagreements); a count
     # for review, never confirmed bugs
     prediction_disagreements: int = 0
     # PARALLEL_WRITERS comparisons: whether the run's writer requests went out together, and the costs of stale context

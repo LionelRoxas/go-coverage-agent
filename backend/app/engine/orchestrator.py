@@ -28,6 +28,11 @@ OUTAGE_BACKOFF_MAX_S = 120.0
 log = logging.getLogger(__name__)
 
 
+def _event(d: Disagreement) -> dict[str, Any]:
+    """A disagreement as its event shows it: where it happened tells how, and the outcome is not known yet."""
+    return d.model_dump(exclude={"pruned", "outcome"})
+
+
 class Cancelled(Exception):
     pass
 
@@ -348,6 +353,7 @@ class Orchestrator:
         snip: TestSnippet | None = None
         half = transport = False
         history: list[AttemptRecord] = []  # every check of this candidate, oldest first, for the Fixer
+        mine: list[Disagreement] = []  # disagreements first recorded by this attempt; their outcome is set at its end
         try:
             try:
                 # render_context (inside agents.write) is where ContextTooLarge is actually raised
@@ -381,9 +387,9 @@ class Orchestrator:
                     if result.kind is ValidationKind.TEST_FAILURE:
                         doomed = [n for n in result.failed_tests if n in result.new_tests]
                         if doomed and len(doomed) == len(result.failed_tests) and len(doomed) < len(result.new_tests):
-                            found = self._disagreements(item, doomed, result.output)
+                            found = self._disagreements(item, doomed, result.output, mine)
                             await self.emit("tests_pruned", {**base, "tests": doomed,
-                                                             "disagreements": [d.model_dump() for d in found]})
+                                                             "disagreements": [_event(d) for d in found]})
                             result = await self._validate(
                                 base, validator.prune_and_check(test_file, doomed, self.report, result.new_tests))
                             history.append(attempt_record(f"prune of [{', '.join(doomed)}]", result, pruned=doomed))
@@ -403,7 +409,12 @@ class Orchestrator:
                     if attempts >= self.opts.max_fix_attempts:
                         break
                     attempts += 1
-                    await self.emit("fix_attempt", {**base, "attempt": attempts, "kind": result.kind.value})
+                    fixing: dict[str, Any] = {**base, "attempt": attempts, "kind": result.kind.value}
+                    failing = [n for n in result.failed_tests if n in result.new_tests]
+                    if result.kind is ValidationKind.TEST_FAILURE and failing:  # e.g. every new test failed: no prune
+                        found = self._disagreements(item, failing, result.output, mine, pruned=False)
+                        fixing["disagreements"] = [_event(d) for d in found]
+                    await self.emit("fix_attempt", fixing)
                     ws.restore(snap)
                     snip = await self._call("fixer", item, self.deps.agents.fix(
                         item, inputs, snip, result, list(history), on_request=self._on_request("fixer", item, attempts)))
@@ -438,6 +449,8 @@ class Orchestrator:
                 self.test_files.append(test_file)
             if snip is not None:
                 self.bugs.extend(snip.suspected_bugs)
+            for d in mine:  # a test of that name in the accepted code was rewritten after it failed (it may now
+                d.outcome = "kept" if d.test in result.new_tests else "dropped"  # expect the code's value)
             accepted: dict[str, Any] = {**base, "test_file": test_file, "tests": result.new_tests,
                                         "percent": self.report.percent, "gain": gain}
             if snip is not None and snip.suspected_bugs:  # where each claim came from, to drop any Go refuted later
@@ -457,15 +470,19 @@ class Orchestrator:
         await self.emit("candidate_rejected", {**base, "reason": result.kind.value})
         return False
 
-    def _disagreements(self, item: PlanItem, tests: list[str], output: str) -> list[Disagreement]:
-        """Each failing test about to be pruned, with its observed got/want lines: the model's prediction and the
-        code disagree, and nobody has decided which is wrong. Recorded once per (file, test, lines) for the report."""
+    def _disagreements(self, item: PlanItem, tests: list[str], output: str, mine: list[Disagreement],
+                       pruned: bool = True) -> list[Disagreement]:
+        """Each failing new test about to be pruned (or, when no prune applies, sent to the Fixer), with its observed
+        got/want lines: the model's prediction and the code disagree, and nobody has decided which is wrong.
+        Recorded once per (file, test, lines) for the report; a new record starts as `not_accepted` and joins `mine`,
+        whose outcome the attempt sets when its candidate is accepted."""
         functions = [k.label() for k in item.functions]
-        found = [Disagreement(file=item.file, functions=functions, test=t, lines=observed_lines(output, t))
-                 for t in tests]
+        found = [Disagreement(file=item.file, functions=functions, test=t, lines=observed_lines(output, t),
+                              pruned=pruned, outcome="not_accepted") for t in tests]
         for d in found:
             if not any((o.file, o.test, o.lines) == (d.file, d.test, d.lines) for o in self.disagreements):
                 self.disagreements.append(d)
+                mine.append(d)
         return found
 
     def _summary(self, reason: StopReason, detail: str, duration: float, minutes: int = 0) -> Summary:

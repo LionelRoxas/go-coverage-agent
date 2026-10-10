@@ -12,7 +12,11 @@ from app.models import Disagreement, Summary, TokenUsage
 
 NOTE = "AI-written from this run's measured data."
 EMPTY = "Nothing in this part could be checked against the run's data."
-DISAGREEMENTS = "Prediction disagreements (not confirmed bugs: the test was dropped; the prediction or the code is wrong)"
+DISAGREEMENTS = "Prediction disagreements (not confirmed bugs: the prediction or the code is wrong)"
+# frontend/src/lib/format.ts DISAGREEMENT_HOW / DISAGREEMENT_OUTCOME hold the same words
+HOW = {True: "removed when it failed", False: "sent to the Fixer when it failed"}
+OUTCOME = {"kept": "a test of this name was kept after a fix and may now expect the code's value",
+           "dropped": "not in the accepted tests", "not_accepted": "its attempt was not accepted"}
 
 
 def usd(value: float) -> str:
@@ -27,9 +31,11 @@ def cost_line(cost: dict[str, float]) -> str:
 
 
 def disagreement_line(d: Disagreement) -> str:
-    """One pruned failing test for the summary's deterministic part: where, which test, what Go observed."""
+    """One disagreement for the summary's deterministic part: where, which test, what Go observed, what happened to
+    the test at that point and, when known (not in older reports), what became of its candidate."""
     observed = " | ".join(d.lines) if d.lines else "no assertion output"
-    return f"`{d.test}` ({d.file}: {', '.join(d.functions)}): {observed}"
+    then = "; ".join(filter(None, [HOW[d.pruned], OUTCOME.get(d.outcome, "")]))
+    return f"`{d.test}` ({d.file}: {', '.join(d.functions)}): {observed} ({then})"
 
 
 def _has_text(part: dict[str, Any]) -> bool:

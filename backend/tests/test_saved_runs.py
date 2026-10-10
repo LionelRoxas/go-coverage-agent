@@ -107,7 +107,8 @@ def test_disagreements_reload_and_older_reports_without_them_still_load(tmp_path
               report={**summary_data(), "disagreements": [found]})
     snaps = {j.id: j.snapshot() for j in manager_for(tmp_path).list()}
     assert snaps["aaaaaaaaaaa1"]["status"] == "completed" and snaps["aaaaaaaaaaa1"]["summary"]["disagreements"] == []
-    assert snaps["aaaaaaaaaaa2"]["summary"]["disagreements"] == [found]
+    # a report without pruned / outcome (written before they existed) loads as a prune with no known outcome
+    assert snaps["aaaaaaaaaaa2"]["summary"]["disagreements"] == [{**found, "pruned": True, "outcome": ""}]
 
 
 def test_an_interrupted_folder_is_not_modified(tmp_path, out):

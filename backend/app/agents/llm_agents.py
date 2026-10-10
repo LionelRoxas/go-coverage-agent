@@ -7,7 +7,8 @@ from functools import cache
 from pathlib import Path
 from typing import Sequence
 
-from app.agents.context import TEST_OUTPUT, ContextInputs, ContextTooLarge, data_block, render_context
+from app.agents.context import (REJECTED_SNIPPET, TEST_OUTPUT, ContextInputs, ContextTooLarge, data_block,
+                                render_context)
 from app.agents.history import AttemptRecord, render_history
 from app.llm.client import LLMClient, OnRequest, estimate_tokens
 from app.models import PlanItem, RunSummary, TestSnippet, TokenUsage
@@ -146,7 +147,7 @@ class Agents:
         full_history, short_history = render_history(earlier), render_history(earlier, minimal=True)
 
         def task(code: str | None, output: str, past: str, with_plan: bool = True) -> str:
-            shown = (f"```go\n{code}\n```" if code is not None
+            shown = (data_block(REJECTED_SNIPPET, f"```go\n{code}\n```") if code is not None
                      else "(the rejected code is omitted to fit the prompt; write a fresh replacement)")
             checked = data_block(TEST_OUTPUT, f"```\n{output}\n```")  # go test / compiler output: data only
             return (f"{past + chr(10) * 2 if past else ''}"

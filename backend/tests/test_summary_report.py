@@ -63,11 +63,17 @@ def test_markdown_has_both_sections_the_note_and_skips_empty_parts():
 def test_disagreements_are_listed_after_suspected_bugs_and_never_as_bugs():
     line = disagreement_line(Disagreement(file="ttest.go", functions=["TTest", "Float64Data.TTest"],
                                           test="TestTTest_Edge", lines=["TestTTest_Edge/a: x_test.go:4: got 1, want 0",
-                                                                        "TestTTest_Edge/b: x_test.go:9: got 2, want 3"]))
+                                                                        "TestTTest_Edge/b: x_test.go:9: got 2, want 3"],
+                                          outcome="kept"))
     assert line == ("`TestTTest_Edge` (ttest.go: TTest, Float64Data.TTest): TestTTest_Edge/a: x_test.go:4: got 1, want 0"
-                    " | TestTTest_Edge/b: x_test.go:9: got 2, want 3")
-    empty_lines = Disagreement(file="a.go", functions=["A"], test="TestA")
-    assert disagreement_line(empty_lines) == "`TestA` (a.go: A): no assertion output"
+                    " | TestTTest_Edge/b: x_test.go:9: got 2, want 3 (removed when it failed; a test of this name was kept"
+                    " after a fix and may now expect the code's value)")
+    older = Disagreement(file="a.go", functions=["A"], test="TestA")  # an older report: no outcome
+    assert disagreement_line(older) == "`TestA` (a.go: A): no assertion output (removed when it failed)"
+    to_fixer = Disagreement(file="a.go", functions=["A"], test="TestA", pruned=False, outcome="not_accepted")
+    assert disagreement_line(to_fixer).endswith("(sent to the Fixer when it failed; its attempt was not accepted)")
+    dropped = Disagreement(file="a.go", functions=["A"], test="TestA", outcome="dropped")
+    assert disagreement_line(dropped).endswith("(removed when it failed; not in the accepted tests)")
     payload = {**PAYLOAD, "technical": {**PAYLOAD["technical"], "suspected_bugs": ["Mean: odd"]},
                "disagreements": [line]}
     md = to_markdown(payload, repo="stats", model="openai/gpt-oss-120b", generated_at=1791547516.4)

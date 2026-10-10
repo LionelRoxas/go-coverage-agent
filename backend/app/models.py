@@ -204,12 +204,17 @@ class IterationRecord(BaseModel):
 
 
 class Disagreement(BaseModel):
-    """A failing new test removed so the rest of its candidate could be kept: the value the model predicted and the
-    value the code returned differ. Either may be wrong; it is reported for a person to look at, not as a bug."""
+    """A new test that failed because the value the model predicted and the value the code returned differ; at that
+    point it was pruned (or, when every new test failed, sent to the Fixer). Either may be wrong; it is reported for
+    a person to look at, not as a bug."""
     file: str  # the target source file
     functions: list[str]  # the planned functions of the item
     test: str  # the removed top-level Test function
     lines: list[str] = Field(default_factory=list)  # its first got/want (or panic) lines from `go test`, clipped
+    pruned: bool = True  # removed so the rest could be kept; False: every new test failed and all went to the Fixer
+    # what became of the candidate: "kept" (the accepted code has a test of this name, rewritten after it failed:
+    # it may now expect the code's value), "dropped" (accepted without it), "not_accepted"; "" in older reports
+    outcome: str = ""
 
 
 class FileDelta(BaseModel):
@@ -228,7 +233,7 @@ class Summary(BaseModel):
     test_files: list[str]
     tests_added: list[str]
     suspected_bugs: list[SuspectedBug]
-    # failing tests pruned during the run (older reports lack it); never confirmed bugs
+    # failing new tests pruned or sent to the Fixer during the run (older reports lack it); never confirmed bugs
     disagreements: list[Disagreement] = Field(default_factory=list)
     per_file: list[FileDelta]
     tokens: TokenUsage

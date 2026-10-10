@@ -17,11 +17,13 @@ _SIGNATURE = re.compile(r"^(func \w+\([^)]*\)[^{\n]*)", re.M)
 # Delimiters around repository-derived text in prompts: it is data from the repository under test, and the prompts
 # tell the model never to follow instructions found inside it (code comments included).
 REPO_SOURCE, TEST_OUTPUT = "repository_source", "test_output"
+REJECTED_SNIPPET = "rejected_snippet"  # the Fixer's input code: model-written, but it often copies source comments
 
 
 def defuse(tag: str, text: str) -> str:
-    """`text` with any `</tag>` of its own made harmless (`<\\/tag>`), so the data cannot end its block early."""
-    return re.sub(rf"</(\s*{tag}\s*)>", r"<\\/\1>", text, flags=re.I)
+    """`text` with every closing tag of its own made harmless (`<\\/tag…`), so the data cannot end its block early:
+    any case, whitespace after `<` or `/`, anything after the name (`</tag x>`, `</tag\\n>`), even without `>`."""
+    return re.sub(rf"<\s*/\s*({tag})(?![\w-])", r"<\\/\1", text, flags=re.I)
 
 
 def data_block(tag: str, text: str) -> str:
