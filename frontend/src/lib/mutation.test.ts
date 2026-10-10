@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import { describe, expect, it } from "vitest";
-import { initialState, mutationRunning, reduce } from "./runState";
+import { initialState, mutationRunning, reduce, summaryWaiting } from "./runState";
 import type { JobEvent } from "./types";
 
 let seq = 0;
@@ -32,6 +32,22 @@ describe("reduce: mutation test", () => {
     expect(s.status).toBe("completed");
     s = reduce(s, ev("mutation_failed", { reason: "baseline_failed", message: "no", output: "FAIL" }));
     expect(s.mutation).toMatchObject({ status: "failed", error: { reason: "baseline_failed", message: "no", output: "FAIL" } });
+  });
+
+  it("waits for the AI summary when mutation_completed says one follows", () => {
+    seq = 0;
+    const start = [ev("job_started", { repo_path: "m", target_coverage: 80, options: { write_summary: true }, model: "x" }),
+                   completed()[1], ev("summary_generated", { business: {}, technical: {}, tokens: { total_tokens: 1 } })];
+    let s = reduce(start.reduce(reduce, initialState), { type: "mutation_requested" });
+    const result = { total: 0, killed: 0, survived: 0, invalid: 0, timeouts: 0, score: null, per_file: [], mutants: [] };
+    const without = reduce(s, ev("mutation_completed", { ...result, summary_follows: false }));
+    expect(without.aiSummary?.status).toBe("done");
+    s = reduce(s, ev("mutation_completed", { ...result, summary_follows: true }));
+    expect(s.mutation?.status).toBe("done");
+    expect(summaryWaiting(s)).toBe(true);
+    s = reduce(s, ev("summary_generated", { business: {}, technical: {}, tokens: { total_tokens: 1 } }));
+    expect(s.aiSummary?.status).toBe("done");
+    expect(summaryWaiting(s)).toBe(false);
   });
 
   it("a failure before mutation_started still ends the test", () => {

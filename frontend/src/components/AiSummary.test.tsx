@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError } from "@/lib/api";
@@ -19,6 +19,11 @@ const done: AiSummaryView = { status: "done", result: statsSummary, generatedAt:
 function show(view: AiSummaryView, onRequested = vi.fn()) {
   render(<AiSummary view={view} jobId="e2de1ca387cb" repo="stats" model="openai/gpt-oss-120b" onRequested={onRequested} />);
   return onRequested;
+}
+
+function cleanupAndShow(view: AiSummaryView) {
+  cleanup();
+  show(view);
 }
 
 function mockClipboard() {
@@ -124,6 +129,19 @@ describe("AiSummary", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't start the summary: This run is still running or writing its summary.");
     expect(onRequested).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Write summary" })).toBeEnabled();
+  });
+
+  it("shows the test-quality paragraph in both tabs only after a mutation test", async () => {
+    const user = userEvent.setup();
+    show(done);
+    expect(screen.queryByText("Test quality")).not.toBeInTheDocument();
+    cleanupAndShow({ ...done, result: { ...statsSummary,
+      business: { ...statsSummary.business, test_quality: "The tests caught 43 of 60 planted bugs." },
+      technical: { ...statsSummary.technical, test_quality: "Mutation score 71.7%: most misses are in norm.go." } } });
+    expect(within(screen.getByRole("tabpanel")).getByText("Test quality")).toBeInTheDocument();
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("The tests caught 43 of 60 planted bugs.");
+    await user.click(screen.getByRole("tab", { name: "For engineering teams" }));
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Test qualityMutation score 71.7%: most misses are in norm.go.");
   });
 
   it("shows percentages without the space the model sometimes puts before %", () => {

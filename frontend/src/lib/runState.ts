@@ -318,8 +318,9 @@ export function reduce(state: RunState, ev: RunAction): RunState {
                mutation: { status: "running", total: d.total, mutants: [] } };
     case "mutant_result":
       return { ...s, mutation: { status: "running", ...s.mutation, mutants: [...(s.mutation?.mutants ?? []), d as Mutant] } };
-    case "mutation_completed":
-      return { ...s, mutation: { status: "done", total: d.total, mutants: d.mutants, result: d as MutationResult } };
+    case "mutation_completed": // summary_follows: the AI summary is written again next, on the same stream
+      return { ...s, mutation: { status: "done", total: d.total, mutants: d.mutants, result: d as MutationResult },
+               ...(d.summary_follows ? { aiSummary: { ...s.aiSummary, status: "waiting" as const, pending: undefined, error: undefined } } : {}) };
     case "mutation_failed":
       return { ...s, mutation: { mutants: [], ...s.mutation, status: "failed",
                                  error: { reason: d.reason, message: d.message, output: d.output } } };

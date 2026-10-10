@@ -66,7 +66,10 @@ export type JobOptions = {
 };
 
 /** The end-of-run AI summary (summary_generated), written from the run's measured facts. */
-export type BusinessSummary = { headline: string; outcome: string; efficiency: string; risks: string[]; recommendation: string };
+/** test_quality: only after a mutation test (empty otherwise; older payloads lack it). */
+export type BusinessSummary = {
+  headline: string; outcome: string; efficiency: string; risks: string[]; recommendation: string; test_quality?: string;
+};
 export type TechnicalSummary = {
   headline: string;
   what_was_tested: string;
@@ -76,6 +79,7 @@ export type TechnicalSummary = {
   rejected_or_failed: string;
   how_to_run: string;
   next_steps: string[];
+  test_quality?: string;
 };
 /** run: the run itself (what the text talks about); summary: the summary call; input/output/total: both together. */
 export type CostUsd = { run: number; summary: number; input: number; output: number; total: number };
