@@ -78,6 +78,8 @@ The tab also lists every other Go module (a folder with a `go.mod`, up to two le
 
 Your repository is never modified: the agent works on a copy, and the generated tests are written to `./output/<job-id>/tests/`.
 
+Every run is saved in `./output/<job-id>` (events, report, tests, summary), and Run history reloads it from there when the app restarts, so earlier runs stay viewable. A run the app stopped in the middle of shows as Interrupted, with the results up to that point. Delete `./output/<job-id>` to remove a run.
+
 ## How it works
 
 ```
@@ -291,6 +293,7 @@ Environment variables (`.env`, same layout as `.env.example`). Only the key is r
 | `UPLOAD_MAX_FILE_BYTES` | 1048576 (1 MB) | Single files larger than this are skipped in an upload |
 | `GROQ_MAX_COMPLETION_TOKENS` | 65536 | Output-token cap per call (the model maximum). Empty does not mean unlimited: Groq then applies a smaller default |
 | `GROQ_TIMEOUT_S` | 240 | Seconds one Groq request may take. A timed-out request is retried once at `low` reasoning effort; a second timeout fails the item as "Groq timed out" |
+| `HISTORY_MAX_RUNS` | 500 | How many of the most recent runs in `./output` Run history reloads on startup; older folders stay on disk but are not listed |
 
 ## Running the tests
 
@@ -332,7 +335,7 @@ cd frontend && npm ci && npm test
 - Expected values for floating-point code are partly characterization tests: when a generated assertion fails, the fixer may adopt the observed value if it's plausible. Real bugs may therefore be encoded rather than flagged; review generated assertions before trusting them.
 - Generated tests run inside the backend container and could read files there (including the backend's environment via `/proc`) and start processes. The guard's rejection of `StartProcess` and `/proc/` is a cheap best-effort filter and is easy to bypass (string concatenation, reflection); it is not a sandbox. The real control for untrusted generated code is a per-job sandbox with a separate uid and no network (gVisor/Firecracker), listed as production future work.
 - The repository's source code is sent to Groq.
-- Jobs are in memory. Restarting the backend forgets the job list, but `./output` keeps all artifacts.
+- It's designed as a single-user local tool, so run history is persisted to disk (./output/<id>: events, report, tests, summary) and reloaded on startup. That's enough for one developer and needs no extra infrastructure. Multi-user history would need real authentication — not just an anonymous cookie, which only separates browsers and doesn't secure anything. With login in place I'd move run metadata and events to Redis or Postgres keyed by user, with ownership checks on every run endpoint and per-user uploads.
 - Results depend on Groq rate limits and on the model; run time and final coverage vary between runs.
 
 ## AI usage
@@ -356,6 +359,7 @@ I used Claude Code as a pair programmer and implementation team. I set the direc
 - **Fixing `make` for PowerShell.** `make test` failed on my machine, so I had the Makefile made shell-independent.
 - **The UI gaps.** I found no theme switch, no way back to the start page, a one-line running banner, an unfinished navbar and no in-app explanation, and decided on the toggle, Run history panel, "← All runs", navbar and How it works page.
 - **LLM quality over token savings.** I traced semver's `constraints.go` item, rejected after 6 attempts, asked why the LLM kept failing, and decided five changes: (1) give the Fixer the item's full attempt history, including the failures of tests that were pruned; (2) a Fixer rule to keep the tests that reached new lines and correct their expected values to the observed behaviour; (3) reasoning effort per role, with the old low-effort setting removed entirely; both roles now default to `medium`, because `high` was measured as too slow (a Fixer call was still waiting after ~114 s, against 9 s for a `medium` Writer call); (4) a Writer rule to trace parsing and regex logic step by step before asserting; (5) measuring the result on semver: 1.4% → 84.6% with nothing rejected, against 64.2% before the earlier fixes (see Results on Masterminds/semver).
+- **Disk-based run history.** I chose to reload run history from `./output` on startup over a Redis/multi-user design, after weighing it against the assessment's scope: this is a single-user local tool, and real multi-user history needs authentication first.
 - **Publishing and disclosure.** The wording of the per-file disclosure line and the pull-request workflow.
 
 ### What Claude did
