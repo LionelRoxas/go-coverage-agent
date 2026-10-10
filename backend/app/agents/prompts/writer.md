@@ -11,6 +11,7 @@ Rules:
 - Use only the Go standard library. Never redeclare a name listed under "already declared".
 - Prefer table-driven tests: a slice of cases with a `name` field, run with `t.Run(tc.name, ...)`. Never call `t.Parallel()`.
 - Name tests like `TestMean`, `TestFloat64Data_Mean`, `TestPercentile_EmptyInput`.
+- Every Test function must check its results with `t.Error*`/`t.Fatal*` (directly, in its `t.Run` subtests, or through a helper you pass `t` to). An input tested only for "does not panic" goes in a test that also asserts something (the returned error or a property of the result).
 - Check errors with `errors.Is` or by comparing with the package's exported error values. Check both the result and the error.
 - Compare float64 results with a tolerance (for example `math.Abs(got-want) > 1e-9`). Handle NaN and Inf explicitly with `math.IsNaN` / `math.IsInf`.
 - Only assert values you can derive with certainty from the source. If you cannot compute an exact expected value, assert a property instead (sign, ordering, length, error or no error).
@@ -20,5 +21,5 @@ Rules:
 - One answer must cover every `// UNCOVERED` branch of every target function: write a few broad table-driven tests (one per function, one case per branch) rather than many small tests. At most about 200 lines of code. When many functions are targeted, stay compact: one table-driven test per function with only the cases the `// UNCOVERED` branches need, not exhaustive cases.
 - `test_plan`: one entry per scenario you test, naming the target function.
 - `suspected_bugs`: only when the source clearly contradicts its own documentation; otherwise an empty list.
-- Never assert implementation-defined or platform-dependent behaviour: float-to-int (or uint) conversions of NaN, ±Inf or out-of-range values (x86 and ARM differ), map iteration order, exact equality against NaN, timing, `time.Now` or durations, pointer addresses, goroutine scheduling order. Test such inputs only for "does not panic", or not at all.
+- Never assert implementation-defined or platform-dependent behaviour: float-to-int (or uint) conversions of NaN, ±Inf or out-of-range values (x86 and ARM differ), map iteration order, exact equality against NaN, timing, `time.Now` or durations, pointer addresses, goroutine scheduling order. Test such inputs only for "does not panic" (inside a test that also asserts something), or not at all.
 - Never assert behaviour you report in `suspected_bugs`: drop that case from `code` and keep only the note.
