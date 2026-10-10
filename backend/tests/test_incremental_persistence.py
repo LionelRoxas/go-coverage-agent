@@ -3,12 +3,13 @@
 is exported when it is accepted, so a process killed outright mid-run reloads as interrupted with its tests."""
 import asyncio
 import json
+from pathlib import Path
 
 import httpx
 
 from app.config import Settings
 from app.engine import run as run_module
-from app.engine.run import run_job
+from app.engine.run import export_test, run_job
 from app.jobs import JobManager
 from app.main import create_app
 from app.models import JobRequest, JobStatus, StopReason, Summary, TokenUsage
@@ -180,3 +181,80 @@ async def test_a_cut_last_line_does_not_swallow_the_next_event(tmp_path):
     lines = (folder / "events.jsonl").read_text(encoding="utf-8").splitlines()
     assert lines[4] == '{"seq": 4, "ts"'
     assert [json.loads(line)["type"] for line in lines[5:]] == ["llm_request", "summary_generated"]
+
+
+def failing_appends(monkeypatch, fail: set[int]):
+    """Path.open in append mode raises on the given (0-based) append calls; every other open works."""
+    real, calls = Path.open, {"n": 0}
+
+    def open_(self, mode="r", *a, **k):
+        if mode == "ab":
+            n = calls["n"]
+            calls["n"] += 1
+            if n in fail:
+                raise OSError("disk full")
+        return real(self, mode, *a, **k)
+
+    monkeypatch.setattr(Path, "open", open_)
+
+
+def assert_complete(settings: Settings, job) -> None:
+    lines = (settings.output_dir / job.id / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["seq"] for line in lines] == list(range(len(job.events)))
+    assert not (settings.output_dir / job.id / "events.jsonl.tmp").exists()
+
+
+async def test_a_failed_append_is_repaired_by_the_next_event(tmp_path, monkeypatch):
+    settings = settings_for(tmp_path)
+    gate = asyncio.Event()
+
+    async def runner(job, emit, cancel):
+        await emit("iteration_started", {"index": 1, "percent": 0})  # append 1: fails
+        await emit("iteration_completed", {"index": 1, "start_percent": 0, "end_percent": 5})  # rewrites the file
+        await gate.wait()
+        return summary()
+
+    failing_appends(monkeypatch, {1})
+    job = JobManager(settings, runner=runner, llm_factory=fake_llm).start(JobRequest(repo_path="stats"))
+    while len(job.events) < 3:
+        await asyncio.sleep(0)
+    assert saved_types(settings, job.id) == ["job_started", "iteration_started", "iteration_completed"]  # no gap
+    gate.set()
+    await job.task
+    assert_complete(settings, job)
+
+
+async def test_a_failed_last_append_is_repaired_when_the_job_ends(tmp_path, monkeypatch):
+    settings = settings_for(tmp_path)
+
+    async def runner(job, emit, cancel):
+        return summary()
+
+    # job_started, job_completed, llm_request, summary_generated: the last one fails and no event follows it
+    failing_appends(monkeypatch, {3})
+    job = JobManager(settings, runner=runner, llm_factory=fake_llm).start(JobRequest(repo_path="stats"))
+    await job.task
+    assert job.events[-1].type == "summary_generated"
+    assert_complete(settings, job)
+
+
+def test_export_replaces_an_earlier_copy_in_one_step(tmp_path, monkeypatch):
+    """A copy that dies midway leaves the earlier accepted file, never a truncated one."""
+    (tmp_path / "repo").mkdir()
+    (tmp_path / "scratch").mkdir()
+    ws = Workspace(tmp_path / "repo", tmp_path / "scratch")
+    dest = tmp_path / "out"
+    ws.write_test("mean_test.go", CODE)
+    export_test(dest, ws, "mean_test.go")
+    ws.write_test("mean_test.go", CODE + "\nfunc TestMore(t *testing.T) {}\n")
+
+    def dies_midway(src, dst):
+        Path(dst).write_text("package st")  # a partial copy, then the process is gone
+        raise OSError("killed")
+
+    monkeypatch.setattr(run_module.shutil, "copyfile", dies_midway)
+    try:
+        export_test(dest, ws, "mean_test.go")
+    except OSError:
+        pass
+    assert (dest / "tests" / "mean_test.go").read_text() == CODE

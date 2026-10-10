@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Callable
@@ -21,12 +22,15 @@ __all__ = ["JobFailed", "export_test", "prepare", "run_job", "write_artifacts"]
 
 
 def export_test(dest: Path, ws: Workspace, rel: str) -> None:
-    """Copy one test file of the working copy to dest/tests (overwriting an earlier copy)."""
+    """Copy one test file of the working copy to dest/tests, replacing an earlier copy in one step (temp file +
+    rename): a kill mid-copy leaves the earlier accepted version, never a truncated file."""
     src = ws.path(rel)
     if src.exists():
         target = dest / "tests" / rel
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, target)
+        tmp = target.with_name(target.name + ".tmp")
+        shutil.copyfile(src, tmp)
+        os.replace(tmp, target)
 
 
 def write_artifacts(dest: Path, ws: Workspace | None, summary: Summary | None,

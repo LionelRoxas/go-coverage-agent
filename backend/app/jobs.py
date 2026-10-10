@@ -85,7 +85,7 @@ class Job:
         self.saved_tail: list[Event] = []
         # The events.jsonl each event is appended to as it is emitted (None: kept in memory only).
         self.persist_path: Path | None = None
-        self._persist_failed = False
+        self._persist_failed = False  # an append failed: the file misses events until it is rewritten whole
 
     @property
     def on_disk(self) -> bool:
@@ -119,22 +119,42 @@ class Job:
             self._write_line(b"\n")
 
     def _persist(self, event: Event) -> None:
-        if self.persist_path is not None:
+        if self.persist_path is None:
+            return
+        if self._persist_failed:  # an earlier append was lost: write every event again rather than leave a gap
+            self.repair_log()
+        else:
             self._write_line(event.model_dump_json().encode("utf-8") + b"\n")
 
     def _write_line(self, data: bytes) -> None:
         """Append and close (which flushes): a run killed outright keeps every event emitted before. A write that fails
-        is logged once per job; the event stays in memory and on the stream."""
+        is logged; the event stays in memory and on the stream, and the next event (or the end of the job) rewrites the
+        whole file (repair_log)."""
         assert self.persist_path is not None
         try:
             self.persist_path.parent.mkdir(parents=True, exist_ok=True)
             with self.persist_path.open("ab") as f:
                 f.write(data)
         except Exception:  # noqa: BLE001 — saving an event must never stop the job or its stream
-            if not self._persist_failed:
-                self._persist_failed = True
-                log.warning("could not append to %s; events are kept in memory only", self.persist_path,
-                            exc_info=True)
+            self._persist_failed = True
+            log.warning("could not append to %s; it will be rewritten from memory", self.persist_path, exc_info=True)
+
+    def repair_log(self) -> None:
+        """After a failed append: replace the file with every event in memory (temp file + rename, so a kill meanwhile
+        keeps the earlier file). Nothing to do when every append succeeded. Never raises."""
+        if self.persist_path is None or not self._persist_failed:
+            return
+        tmp = self.persist_path.with_name(self.persist_path.name + ".tmp")
+        try:
+            self.persist_path.parent.mkdir(parents=True, exist_ok=True)
+            with tmp.open("wb") as f:
+                f.write(b"".join(e.model_dump_json().encode("utf-8") + b"\n" for e in self.events))
+            os.replace(tmp, self.persist_path)
+        except Exception:  # noqa: BLE001 — tried again on the next event and at the end of the job
+            log.warning("could not rewrite %s", self.persist_path, exc_info=True)
+        else:
+            self._persist_failed = False
+            log.info("rewrote %s with all %d events after a failed append", self.persist_path, len(self.events))
 
     def close(self) -> None:
         self.finished = True
@@ -317,6 +337,7 @@ class JobManager:
                 job.summary_cancel = asyncio.Event()  # before the summary starts, so no Cancel is lost
                 await self._write_summary(job, automatic=True)
         finally:
+            job.repair_log()  # only when an append failed
             job.close()
 
     def write_summary_again(self, job_id: str, saved_events: list[Event] | None = None) -> Job:
@@ -370,6 +391,7 @@ class JobManager:
         try:
             await self._write_summary(job)
         finally:
+            job.repair_log()  # only when an append failed; before a saved run's events leave memory
             if job.log_path is not None:  # a saved run: back to disk, keeping the counts its snapshot shows
                 job.saved_event_count, job.saved_test_files = len(job.events), job.accepted_test_files()
                 job.events, job.saved_tail, job.persist_path = [], [], None  # the tail is in the file now
