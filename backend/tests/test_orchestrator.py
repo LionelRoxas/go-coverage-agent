@@ -507,3 +507,45 @@ async def test_a_timeout_retried_at_low_effort_is_not_a_fix_attempt(ws, tmp_path
     assert [d["reasoning_effort"] for t, d in events if t == "llm_request"] == ["medium", "low"]
     assert [d["reasoning_effort"] for t, d in events if t == "llm_call"] == ["low"]
     assert not any(t == "fix_attempt" for t, _ in events)
+
+
+def billed(error, prompt=1000, completion=500):
+    """An LLM error carrying the tokens Groq billed before it (as GroqLLM attaches them)."""
+    error.spent = TokenUsage(prompt_tokens=prompt, completion_tokens=completion)
+    return error
+
+
+async def test_tokens_billed_by_a_failed_writer_call_are_charged(ws):
+    funcs = (("a.go", "A"), ("a.go", "A2"))
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=funcs)])
+    agents = FakeAgents([billed(LLMOutputTooLarge("truncated")), GOOD])
+    orch, events = run(ws, v, agents, target=50, targets_per_iteration=1, max_iterations=1)
+    summary = await orch.run(report(set(), funcs=funcs))
+    assert summary.tokens == TokenUsage(prompt_tokens=1010, completion_tokens=505)
+    calls = [d for t, d in events if t == "llm_call"]
+    assert [(d["role"], d["prompt_tokens"], d["completion_tokens"], d["total_tokens"], d.get("failed")) for d in calls] == [
+        ("writer", 1000, 500, 1500, True), ("writer", 10, 5, 1515, None)]
+
+
+async def test_tokens_billed_by_a_failed_fixer_call_are_charged(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
+    agents = FakeAgents([GOOD], fixes=[billed(LLMError("schema failure"), 200, 100)])
+    orch, events = run(ws, FakeValidator(ws, [bad]), agents, max_fix_attempts=1, targets_per_iteration=1,
+                       max_iterations=1)
+    summary = await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert summary.tokens == TokenUsage(prompt_tokens=210, completion_tokens=105)
+    assert [d["total_tokens"] for t, d in events if t == "llm_call"] == [15, 315]
+
+
+async def test_billed_tokens_of_failed_calls_count_toward_the_job_budget(ws):
+    agents = FakeAgents([billed(LLMTimeout("slow"), 8000, 4000), GOOD])
+    orch, _ = run(ws, FakeValidator(ws, []), agents, max_llm_tokens=10_000)
+    summary = await orch.run(report(set()))
+    assert summary.stop_reason is StopReason.BUDGET_EXHAUSTED
+    assert summary.tokens.total == 12_000
+
+
+async def test_tokens_billed_before_budget_exhaustion_are_charged(ws):
+    orch, _ = run(ws, FakeValidator(ws, []), FakeAgents([billed(LLMBudgetExhausted("daily cap hit"), 30, 20)]))
+    summary = await orch.run(report(set()))
+    assert summary.stop_reason is StopReason.BUDGET_EXHAUSTED and summary.tokens.total == 50

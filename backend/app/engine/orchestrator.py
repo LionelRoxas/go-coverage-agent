@@ -111,14 +111,26 @@ class Orchestrator:
                     coro: Awaitable[tuple[TestSnippet, TokenUsage]]) -> TestSnippet:
         try:
             snip, usage = await coro
-        except LLMCancelled as e:
-            raise Cancelled() from e
-        self.tokens = self.tokens.add(usage)
-        await self.emit("llm_call", {"index": self.index, "file": item.file, "role": role,
-                                     "prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens,
-                                     "total_tokens": self.tokens.total,
-                                     "reasoning_effort": self.deps.agents.last_effort})
+        except LLMError as e:
+            # Groq billed these before the call failed (truncated answers, a schema retry, a timeout after a billed
+            # attempt); they are in the daily ledger already and count toward this job's tokens and budget too.
+            if e.spent.total > 0:
+                await self._charge(role, item, e.spent, failed=True)
+            if isinstance(e, LLMCancelled):
+                raise Cancelled() from e
+            raise
+        await self._charge(role, item, usage)
         return snip
+
+    async def _charge(self, role: str, item: PlanItem, usage: TokenUsage, failed: bool = False) -> None:
+        self.tokens = self.tokens.add(usage)
+        data: dict[str, Any] = {"index": self.index, "file": item.file, "role": role,
+                                "prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens,
+                                "total_tokens": self.tokens.total,
+                                "reasoning_effort": None if failed else self.deps.agents.last_effort}
+        if failed:
+            data["failed"] = True  # the call ended in an error; its tokens were billed all the same
+        await self.emit("llm_call", data)
 
     def _on_request(self, role: str, item: PlanItem, attempt: int | None = None) -> OnRequest:
         """Emit `llm_request` right before each Groq request, so the UI can show how long it has been waiting."""
