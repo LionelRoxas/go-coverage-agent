@@ -6,7 +6,11 @@ An autonomous agent that raises unit-test coverage for Go repositories. Give it 
 percentage. It measures coverage, plans what to test, asks an LLM to write idiomatic Go tests, compiles and runs
 them, keeps only the tests that pass and add coverage, and repeats until it hits the target or gains flatten out.
 
-<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Results page for montanaflynn/stats showing 81.1% coverage against an 80% target and a Target reached summary card"></a>
+<a href="docs/screenshots/gallery-summary.png"><img src="docs/screenshots/gallery-summary.png" width="100%" alt="Run page for montanaflynn/stats (run f910d155f3cd) showing 97.8% coverage against a 100% target, the Iteration limit reached card and the top of the AI summary"></a>
+
+> **Scope, for reviewers.** This is a single-user tool that runs locally with Docker Compose. There are no accounts:
+> whoever opens http://localhost:3000 sees every run. Run history is saved in `./output` and reloads when the app restarts.
+> Supporting several users would need real authentication first; see [Limitations](#limitations).
 
 ## Quick start
 
@@ -179,12 +183,12 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <table>
 <tr>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="New run page at step 1 of the wizard: the header, the four-step stepper, the Sample repos tab with montanaflynn/stats selected, and the Run history panel"></a>
-<br><b>New run, step 1</b><br>The header, a chart of a measured run (0% to 100% in 22 rounds), and the wizard on step 1 of 4: the stepper above the six sample repos (<code>montanaflynn/stats</code> selected), beside the Run history panel with three past runs.
+<a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="New run page at step 1 of the wizard: the header, the four-step stepper, the Sample repos tab with montanaflynn/stats selected, and the Run history panel listing 31 runs"></a>
+<br><b>New run, step 1</b><br>The header, a chart of a measured run (0% to 100% in 22 rounds), and the wizard on step 1 of 4: the stepper above the six sample repos (<code>montanaflynn/stats</code> selected), beside Run history with all 31 saved runs, newest first (stats 0.0% to 97.8% against a 100% target).
 </td>
 <td valign="top" width="50%">
 <a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="The review step of the New run wizard and the Run history panel in the dark theme"></a>
-<br><b>Review &amp; start, dark theme</b><br>Step 4 of 4: the chosen repository, the 80% target and default advanced options with the AI summary on, each with an Edit link, then Start with the token budget beside it. Run history shows stats 0.0% to 81.1%, semver 1.4% to 83.5% and stats 0.0% to 100.0%.
+<br><b>Review &amp; start, dark theme</b><br>Step 4 of 4: <code>stats</code> (58 source files), the 80% target and default advanced options with the AI summary on, each with an Edit link, then Start beside "About 5.0M tokens left today". Run history lists the newest saved runs: stats 97.8%, stats 48.7%, humanize 82.1%, semver 83.3%, xstrings 83.7%, …
 </td>
 </tr>
 <tr>
@@ -193,36 +197,39 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 <br><b>Your folders</b><br>Step 1 on the Your folders tab, after uploading a local copy of <code>montanaflynn/stats</code>: "Uploaded stats (118 Go files). Skipped: 29 files in .git, 8 hidden files.", with <code>uploads/stats</code> selected under Go modules in <code>./repos</code> and the one-line <code>HOST_REPOS_DIR</code> note below it. The upload selects the folder; Next moves on.
 </td>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Run in progress at 19.9 percent with a Cancel button and the Activity list ending in a running item"></a>
-<br><b>Run in progress</b><br>Iteration 2 of a stats run at 19.9% against the 80% target, with a Cancel button, the status "Compiling and running tests for ttest.go…" and <code>ttest.go</code> Running in the Activity list.
+<a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Run in progress at 17.2 percent with a Cancel button and the Activity list ending in a running item"></a>
+<br><b>Run in progress</b><br>Iteration 2 of stats run <code>f910d155f3cd</code> at 17.2% against its 100% target, with a Cancel button, the status "Compiling and running tests for ttest.go…", iteration 1's three accepted files and <code>ttest.go</code> Running in the Activity list.
 </td>
 </tr>
 <tr>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage after each of 11 iterations rising past the dashed 80 percent target line"></a>
-<br><b>Coverage by iteration</b><br>Coverage after each of the 11 iterations, rising from the 0% baseline to 81.1% and ending just above the dashed 80% target line.
+<a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage after each of 20 iterations rising towards the dashed 100 percent target line, with the Possible bugs found list below it"></a>
+<br><b>Coverage by iteration</b><br>Run <code>f910d155f3cd</code>: coverage after each of its 20 iterations, rising from the 0% baseline to 97.8%, just under the dashed 100% target line. Below it, the one possible bug the run reported (Mode returns duplicate entries when all values are identical).
 </td>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for ttest.go with two numbered attempts: one failing test, then the failing test removed and the rest passing"></a>
-<br><b>Attempt trace, expanded</b><br><code>ttest.go</code> in iteration 2: ① written by the LLM, 1 of 5 tests failed (with the failing assertion); ② the failing test removed, 4 kept, passed. Result: accepted at attempt 2, +2.7 pp.
+<a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for histogram.go with three numbered attempts: rejected by the safety guard, one failing test after the LLM fix, then the failing test removed and the rest passing"></a>
+<br><b>Attempt trace, expanded</b><br><code>histogram.go</code> in iteration 7: ① written by the LLM, rejected by the safety guard (a malformed import path); ② rewritten by the LLM fixer, 1 of 5 tests failed (<code>counts[4] = 2, want 1</code>); ③ the failing test removed, 4 kept, passed. Result: accepted at attempt 3, +1.8 pp (61.6% to 63.4%).
 </td>
 </tr>
 <tr>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-testfile.png"><img src="docs/screenshots/gallery-testfile.png" width="100%" alt="Generated tests section with correlation_test.go selected and highlighted Go code"></a>
-<br><b>Generated tests</b><br>Each of the 29 accepted test files can be read with syntax-highlighted Go, here <code>correlation_test.go</code>.
+<a href="docs/screenshots/gallery-testfile.png"><img src="docs/screenshots/gallery-testfile.png" width="100%" alt="Generated tests section with clip_test.go selected and highlighted Go code"></a>
+<br><b>Generated tests</b><br>Each of the run's 48 accepted test files can be read with syntax-highlighted Go, here <code>clip_test.go</code>.
 </td>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-dark.png"><img src="docs/screenshots/gallery-dark.png" width="100%" alt="Target reached summary card and the AI summary below it, on the For stakeholders tab, in the dark theme"></a>
-<br><b>Run page, dark theme</b><br>The Target reached card (0.0% to 81.1%, 109 tests in 29 files, 5m 10s, 175.0k tokens) and, below it, the AI summary on its For stakeholders tab with the run / summary / total cost line, in the dark theme.
+<a href="docs/screenshots/gallery-dark.png"><img src="docs/screenshots/gallery-dark.png" width="100%" alt="Iteration limit reached summary card and the AI summary below it, on the For stakeholders tab, in the dark theme"></a>
+<br><b>Run page, dark theme</b><br>The Iteration limit reached card (0.0% to 97.8%, 206 tests in 48 files, 7m 53s, 337.7k tokens) and, below it, the AI summary on its For stakeholders tab with the run / summary / total cost line.
 </td>
 </tr>
 <tr>
 <td valign="top" width="50%">
-<a href="docs/screenshots/gallery-summary-ai.png"><img src="docs/screenshots/gallery-summary-ai.png" width="100%" alt="The Summary section of a finished stats run on the For stakeholders tab: a headline about coverage rising from 0% to 81.1%, then Outcome, Efficiency with an estimated cost, Risks and Recommendation, with Copy as Markdown and Write again buttons"></a>
-<br><b>AI summary</b><br>Under the summary card, two tabs: For stakeholders (shown: outcome, efficiency with the cost line "Run cost $0.0674 · summary $0.0013 · total $0.0688", risks, recommendation) and For engineering teams (what was tested, where the tests are, how to run them, gaps, suspected bugs, next steps), with Copy as Markdown (the same text as <code>SUMMARY.md</code>) and Write again. No Groq call was made for this screenshot: the text was written by hand from run <code>e2de1ca387cb</code>'s facts, and a backend test checks that it passes the same grounding check as a real summary.
+<a href="docs/screenshots/gallery-summary-ai.png"><img src="docs/screenshots/gallery-summary-ai.png" width="100%" alt="The Summary section of run f910d155f3cd on the For stakeholders tab: a headline about coverage rising from 0.0% to 97.83%, then Outcome, Efficiency with an estimated cost, Risks and Recommendation, with Copy as Markdown and Write again buttons"></a>
+<br><b>AI summary, for stakeholders</b><br>The real summary Groq (<code>openai/gpt-oss-120b</code>) wrote when run <code>f910d155f3cd</code> finished: outcome, efficiency with the cost line "Run cost $0.1247 · summary $0.0020 · total $0.1268", risks (including the suspected Mode bug) and a recommendation. Copy as Markdown gives the same text as <code>SUMMARY.md</code>; Write again asks for a new one.
 </td>
-<td valign="top" width="50%"></td>
+<td valign="top" width="50%">
+<a href="docs/screenshots/gallery-summary-tech.png"><img src="docs/screenshots/gallery-summary-tech.png" width="100%" alt="The same Summary section on the For engineering teams tab: what was tested, where the tests live, how to run them, and a table of the files with uncovered statements"></a>
+<br><b>AI summary, for engineering teams</b><br>The other tab of the same real summary: what was tested, where the tests live (<code>output/f910d155f3cd/tests</code>), how to run them with <code>go test ./...</code> and <code>go test -cover ./...</code>, and the gaps, starting with <code>errors.go</code> (2 uncovered statements) and <code>data.go</code> (12).
+</td>
 </tr>
 <tr>
 <td valign="top" width="50%">
@@ -244,7 +251,7 @@ I ran the system end to end, spotted these problems, and decided the fixes. Clau
 </td>
 <td valign="top" width="33%">
 <a href="docs/screenshots/gallery-mobile.png"><img src="docs/screenshots/gallery-mobile.png" width="100%" alt="Run page on a 390 pixel wide phone screen"></a>
-<br><b>Run page on a phone</b><br>The 81.1% meter, the summary card in two columns, and the top of the AI summary. The header total (179.5k tokens) includes the summary call.
+<br><b>Run page on a phone</b><br>Run <code>f910d155f3cd</code>: the 97.8% meter, the summary card in two columns, and the top of the AI summary. The header total (344.5k tokens) includes the summary call.
 </td>
 <td valign="top" width="33%">
 <a href="docs/screenshots/gallery-howitworks-mobile.png"><img src="docs/screenshots/gallery-howitworks-mobile.png" width="100%" alt="How it works page on a 390 pixel wide phone screen"></a>
