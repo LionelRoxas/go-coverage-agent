@@ -67,6 +67,14 @@ async def try_mutant(ws: Workspace, tools: Any, site: dict[str, Any], pkg: GoPac
     return "timeout" if r.timed_out or _TIMED_OUT.search(r.combined) else "killed"
 
 
+def lines(ws: Workspace, site: dict[str, Any]) -> tuple[str, str]:
+    """The site's source line before and after the swap, for the mini diff (Go columns count bytes)."""
+    raw = ws.path(site["file"]).read_bytes().split(b"\n")[site["line"] - 1]
+    c, old = site["col"] - 1, site["original"].encode()
+    after = raw[:c] + site["mutated"].encode() + raw[c + len(old):]
+    return raw.decode(errors="replace").strip(), after.decode(errors="replace").strip()
+
+
 def result(mutants: list[dict[str, Any]]) -> dict[str, Any]:
     def score(k: int, s: int) -> float | None:
         return round(100 * k / (k + s), 1) if k + s else None
@@ -177,8 +185,9 @@ async def _run(name: str, request: JobRequest, settings: Settings, emit: Emit, c
         status = await try_mutant(ws, tools, site, package_of[site["file"]], settings.mutation_timeout_s)
         if status is None:
             raise cancelled
+        before, after = lines(ws, site)
         mutant = {"index": index, "file": site["file"], "line": site["line"], "original": site["original"],
-                  "mutated": site["mutated"], "op": site["op"], "status": status}
+                  "mutated": site["mutated"], "op": site["op"], "status": status, "before": before, "after": after}
         mutants.append(mutant)
         await emit("mutant_result", mutant)
     return result(mutants)

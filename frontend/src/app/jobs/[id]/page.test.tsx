@@ -65,6 +65,24 @@ describe("JobPage", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "The app stopped before this run finished; the results up to that point are shown.");
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Test quality" })).not.toBeInTheDocument(); // no kept tests
+  });
+
+  it("offers the mutation test on an interrupted run that kept a test file", async () => {
+    vi.mocked(api.job).mockResolvedValue({ status: "interrupted", writing_summary: false } as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    act(() => {
+      const send = (seq: number, type: string, data: object) =>
+        FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq, ts: 1, type, data }) });
+      send(0, "job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" });
+      send(1, "iteration_started", { index: 1, percent: 0 });
+      send(2, "plan_created", { index: 1, items: [{ file: "mean.go", functions: ["Mean"], uncovered_statements: 4 }] });
+      send(3, "candidate_accepted", { index: 1, file: "mean.go", test_file: "mean_test.go", tests: ["TestMean"], percent: 40, gain: 40 });
+      FakeEventSource.last!.onerror!();
+    });
+    expect(await screen.findByRole("heading", { name: "Test quality" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run mutation test" })).toBeInTheDocument();
   });
 
   it("hides Cancel when a live run turns out to be interrupted after a backend restart", async () => {

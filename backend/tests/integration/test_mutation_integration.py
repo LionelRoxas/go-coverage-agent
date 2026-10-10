@@ -43,6 +43,7 @@ async def test_weak_test_lets_its_mutant_survive(tmp_path):
     assert events[0] == ("mutation_started", {"total": 2})
     assert [(m["line"], m["original"], m["mutated"], m["status"]) for m in r["mutants"]] == [
         (7, "+", "-", "killed"), (12, ">=", ">", "survived")]
+    assert (r["mutants"][1]["before"], r["mutants"][1]["after"]) == ("return age >= 18", "return age > 18")
     assert (r["killed"], r["survived"], r["invalid"], r["timeouts"], r["score"]) == (1, 1, 0, 0, 50.0)
     assert r["per_file"] == [{"file": "mut.go", "killed": 1, "survived": 1, "score": 50.0}]
     assert not (settings.work_dir / "j-mutation").exists()

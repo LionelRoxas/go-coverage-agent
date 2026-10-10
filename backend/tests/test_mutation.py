@@ -169,7 +169,7 @@ async def test_run_mutation_tests_covered_sites_only_and_reports(tmp_path, monke
     assert [t for t, _ in events] == ["mutation_started", "mutant_result"]
     assert events[0][1] == {"total": 1}  # Sum (line 8) is not covered
     assert events[1][1] == {"index": 1, "file": "calc.go", "line": 4, "original": "<", "mutated": "<=",
-                            "op": "boundary", "status": "killed"}
+                            "op": "boundary", "status": "killed", "before": "return a < b", "after": "return a <= b"}
     assert tools.tested == [(SRC.replace("a < b", "a <= b"), 7)]
     assert (r["killed"], r["survived"], r["score"]) == (1, 0, 100.0) and r["mutants"] == [events[1][1]]
     assert not (s.work_dir / "j-mutation").exists()

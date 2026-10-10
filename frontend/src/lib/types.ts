@@ -144,4 +144,20 @@ export type JobSnapshot = {
   writing_summary?: boolean;
   /** The last AI summary event: "generated" or "failed"; null when none. Older backends omit it. */
   ai_summary?: "generated" | "failed" | null;
+  /** "Run mutation test" is running on this finished run; the job still counts as busy. Older backends omit it. */
+  mutating?: boolean;
+};
+
+/** One planted bug (mutant_result): "timeout" counts as killed; "invalid" (does not build) is not counted. */
+export type Mutant = {
+  index: number; file: string; line: number; original: string; mutated: string; op: string;
+  status: "killed" | "survived" | "timeout" | "invalid";
+  /** The source line before and after the swap (the mini diff). */
+  before?: string; after?: string;
+};
+/** mutation_completed: score = killed ÷ (killed + survived) in percent, null when no mutant was counted. */
+export type MutationResult = {
+  total: number; killed: number; survived: number; invalid: number; timeouts: number; score: number | null;
+  per_file: { file: string; killed: number; survived: number; score: number | null }[];
+  mutants: Mutant[];
 };
