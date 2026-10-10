@@ -10,12 +10,29 @@ updates:
     directory: /frontend
     schedule: { interval: weekly }
     groups: { npm: { patterns: ["*"] } }
+    ignore:
+      # Major toolchain jumps are done deliberately, not automatically; @types/node tracks the Node 22 runtime.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: gomod
     directory: /tools/gohelper
     schedule: { interval: weekly }
   - package-ecosystem: docker
     directories: [/backend, /frontend]
     schedule: { interval: weekly }
+    ignore:
+      # Runtime versions are chosen on purpose: Python 3.12 for the backend, Node 22 LTS for the frontend (the brief assumes Node 22).
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+      # The Go toolchain image follows .go-version and is bumped by hand.
+      - dependency-name: golang
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
