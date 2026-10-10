@@ -426,8 +426,11 @@ class Orchestrator:
                 self.test_files.append(test_file)
             if snip is not None:
                 self.bugs.extend(snip.suspected_bugs)
-            await self.emit("candidate_accepted", {**base, "test_file": test_file, "tests": result.new_tests,
-                                                   "percent": self.report.percent, "gain": gain})
+            accepted: dict[str, Any] = {**base, "test_file": test_file, "tests": result.new_tests,
+                                        "percent": self.report.percent, "gain": gain}
+            if snip is not None and snip.suspected_bugs:  # where each claim came from, to drop any Go refuted later
+                accepted["suspected_bugs"] = [b.model_dump() for b in snip.suspected_bugs]
+            await self.emit("candidate_accepted", accepted)
             return True
 
         ws.restore(snap)

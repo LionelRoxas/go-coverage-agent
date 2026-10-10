@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from dataclasses import dataclass, field
 from typing import Sequence
 
 from pydantic import BaseModel
@@ -107,44 +108,108 @@ def _module(packages: Sequence[str]) -> str | None:
     return root if all(p == root or p.startswith(root + "/") for p in packages) else None
 
 
-def _func_name(label: str) -> str:
-    """`Mode` -> `Mode`, `Float64Data.Histogram` -> `Histogram`, `(*T).Do` -> `Do`."""
-    return label.rsplit(".", 1)[-1].strip("()* ")
+def _norm(label: str) -> str:
+    """`(*T).Do` / `*T.Do` -> `T.Do`; `Mode` -> `Mode`."""
+    return re.sub(r"[()*\s]", "", label)
 
 
-def refuted_functions(events: Sequence[Event]) -> set[str]:
-    """Functions (bare names) for which Go's own run refuted at least one assertion of the item that targeted them.
+def _bare(label: str) -> str:
+    return _norm(label).rsplit(".", 1)[-1]
 
-    The rule (conservative; a suspected bug cannot be tied to one test case from the events): within one item
-    (`index`, `file`), a `validation_result` of kind `test_failure` that was then resolved by removing the failing
-    tests (`tests_pruned`) or by handing them to the Fixer (`fix_attempt`, which adopts the observed value) refutes
-    the item's planned function F when a failing test is named after F (`TestF`, `TestF_case`, `TestT_F`), or when
-    F is the item's only function. Example: run f910d155f3cd planned `Mode` alone; `TestMode_VariousScenarios`
-    failed on "uniform values (duplicate bug)" and was pruned, so the Writer's `Mode` bug claim was refuted."""
+
+def _test_target(test: str, labels: Sequence[str]) -> str | None:
+    """The planned function a failing test is named after (`TestF`, `TestF_case`, `TestT_F`): the longest matching
+    name, preferring a label whose receiver also appears in the test name. With one planned function, that one."""
+    def named(label: str) -> bool:
+        return re.search(rf"(?:^Test_?|_){re.escape(_bare(label))}(?![a-z0-9])", test) is not None
+    matches = [lb for lb in labels if named(lb)]
+    if not matches:
+        return labels[0] if len(labels) == 1 else None
+    def score(label: str) -> tuple[bool, int]:
+        receiver = _norm(label).rpartition(".")[0]
+        return (bool(receiver) and receiver in test, len(_bare(label)))
+    return max(matches, key=score)
+
+
+@dataclass
+class _Answer:
+    """One accepted LLM answer (the Writer's or a Fixer's) of an item, and what Go refuted after it was written."""
+    labels: list[str]
+    refuted: set[str] = field(default_factory=set)  # planned labels with a failing assertion pruned after this answer
+    plan: list[dict] = field(default_factory=list)  # its test plan (scenario, target)
+    bugs: list[dict] | None = None  # the claims it carried, as recorded on candidate_accepted (newer runs)
+
+
+def _accepted_answers(events: Sequence[Event]) -> list[_Answer]:
     planned: dict[tuple[int, str], list[str]] = {}
+    current: dict[tuple[int, str], _Answer] = {}
     failing: dict[tuple[int, str], list[str]] = {}
-    refuted: set[str] = set()
+    accepted: list[_Answer] = []
     for e in events:
+        d = e.data
         if e.type == "plan_created":
-            for item in e.data.get("items", []):
-                planned[(e.data.get("index", 0), item.get("file", ""))] = [_func_name(f) for f in item.get("functions", [])]
+            for item in d.get("items", []):
+                planned[(d.get("index", 0), item.get("file", ""))] = list(item.get("functions", []))
             continue
-        key = (e.data.get("index", 0), e.data.get("file", ""))
-        if e.type == "validation_result":
-            failing[key] = list(e.data.get("failed_tests") or []) if e.data.get("kind") == "test_failure" else []
-        elif e.type in ("tests_pruned", "fix_attempt") and failing.get(key):
-            funcs = planned.get(key, [])
-            for f in funcs:
-                named = re.compile(rf"(?:^Test_?|_){re.escape(f)}(?![a-z0-9])")
-                if len(funcs) == 1 or any(named.search(t) for t in failing[key]):
-                    refuted.add(f)
-    return refuted
+        key = (d.get("index", 0), d.get("file", ""))
+        if e.type == "llm_call" and d.get("role") in ("writer", "fixer") and not d.get("failed"):
+            current[key] = _Answer(labels=planned.get(key, []))  # a new answer: its claims start here
+            failing[key] = []
+        elif e.type == "candidate_generated" and key in current and not current[key].plan:
+            current[key].plan = list(d.get("test_plan") or [])  # the answer's own plan (repairs come later)
+        elif e.type == "validation_result":
+            failing[key] = list(d.get("failed_tests") or []) if d.get("kind") == "test_failure" else []
+        elif e.type == "tests_pruned" and key in current and failing.get(key):
+            for test in failing[key]:
+                target = _test_target(test, current[key].labels)
+                if target is not None:
+                    current[key].refuted.add(target)
+        elif e.type == "candidate_accepted" and key in current:
+            answer = current.pop(key)
+            if "suspected_bugs" in d:
+                answer.bugs = list(d["suspected_bugs"])
+            accepted.append(answer)
+    return accepted
+
+
+def _claims(answer: _Answer, function: str) -> str | None:
+    """The planned label of this answer's item that a claim about `function` names, if any."""
+    want = _norm(function)
+    for label in answer.labels:
+        if (_norm(label) == want) if "." in want else (_bare(label) == want):
+            return label
+    return None
 
 
 def drop_refuted_bugs(bugs: Sequence[SuspectedBug], events: Sequence[Event]) -> list[SuspectedBug]:
-    """Suspected bugs are leads, not verdicts: keep only those about functions whose assertions Go never refuted."""
-    refuted = refuted_functions(events)
-    return [b for b in bugs if _func_name(b.function) not in refuted]
+    """Suspected bugs are leads, not verdicts: drop a claim the Go runtime disproved.
+
+    A claim belongs to the accepted answer (Writer or Fixer) that carried it, and is refuted only when, after that
+    answer was written and in the same item, a failing test named after the claimed function was pruned (the
+    accepted code no longer asserts it). Failures before the answer never refute it: a Fixer that reports a
+    documentation contradiction does so because an earlier assertion failed. Newer runs record each accepted
+    answer's claims on `candidate_accepted`; for older runs the answer is inferred: the only accepted answer for
+    that function, or else the only one whose test plan names a bug for it. Anything ambiguous is kept."""
+    answers = _accepted_answers(events)
+    kept = []
+    for bug in bugs:
+        mine = [(a, lb) for a in answers if (lb := _claims(a, bug.function)) is not None]
+        recorded = [(a, lb) for a, lb in mine
+                    if a.bugs is not None and {"function": bug.function, "description": bug.description} in a.bugs]
+        if recorded:
+            source = recorded
+        else:
+            source = [(a, lb) for a, lb in mine if a.bugs is None]  # older runs: infer
+            if len(source) > 1:
+                source = [(a, lb) for a, lb in source if any(
+                    "bug" in str(s.get("scenario", "")).lower() and _claims(_Answer([lb]), str(s.get("target", "")))
+                    for s in a.plan)]
+                if len(source) != 1:
+                    source = []
+        if source and all(lb in a.refuted for a, lb in source):
+            continue
+        kept.append(bug)
+    return kept
 
 
 def _run_events(events: Sequence[Event]) -> list[Event]:
