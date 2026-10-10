@@ -82,7 +82,7 @@ describe("SetupPage", () => {
     expect(h1).toHaveTextContent("Fill the gaps in a Go project’s tests");
     const header = h1.closest("header")!;
     expect(header).toHaveTextContent(
-      "Point it at a Go project and it writes unit tests with AI, keeping only the ones that pass and test code no other test reaches.",
+      "Point it at a Go project and it writes unit tests with AI, keeping each batch only if it passes twice and reaches code the earlier tests did not.",
     );
     expect(header.textContent).not.toMatch(/autonomously|LLM/);
     // the proof uses the real run 0e1f8bf7442a (output/0e1f8bf7442a/report.json)

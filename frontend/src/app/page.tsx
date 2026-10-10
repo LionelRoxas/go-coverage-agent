@@ -266,7 +266,7 @@ export default function SetupPage() {
         <div className="min-w-0 max-w-2xl space-y-4">
           <h1 className={pageTitleClass}>Fill the gaps in a Go project’s tests</h1>
           <p className={`${ledeClass} max-w-[38rem]`}>
-            Point it at a Go project and it writes unit tests with AI, keeping only the ones that pass and test code no other test reaches.
+            Point it at a Go project and it writes unit tests with AI, keeping each batch only if it passes twice and reaches code the earlier tests did not.
           </p>
           <p className="text-sm text-muted">
             New to this? <Link href="/how-it-works" className={inlineLinkClass}>How it works</Link> explains each step in plain words.

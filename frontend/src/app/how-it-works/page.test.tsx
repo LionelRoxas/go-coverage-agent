@@ -82,7 +82,8 @@ describe("HowItWorksPage", () => {
                      "It used up its AI budget", "Nothing is left that it can work on", "The AI service could not be reached"]) {
       expect(screen.getByText(t)).toBeInTheDocument();
     }
-    expect(screen.getByText(/at least one piece of code that no earlier test ran/)).toBeInTheDocument();
+    expect(screen.getByText(/Each new batch of tests also has to run at least one piece of code that no earlier test ran/)).toBeInTheDocument();
+    expect(screen.getByText(/never checks the result is not kept/)).toBeInTheDocument();
     expect(screen.getByText(/re-run in a fresh copy of the project/)).toBeInTheDocument();
     const stats = screen.getByTestId("result-stats");
     expect(stats).toHaveTextContent("goal 80%");
