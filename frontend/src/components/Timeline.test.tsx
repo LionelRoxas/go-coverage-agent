@@ -33,7 +33,7 @@ describe("Timeline attempt trace", () => {
     expect(within(steps()[0]).getByText("Didn't compile")).toBeInTheDocument();
     expect(within(steps()[0]).getByText(/undefined: strconv/)).toBeInTheDocument();
     expect(within(steps()[1]).getByText("3 of 8 tests failed")).toBeInTheDocument();
-    expect(within(steps()[2]).getByText("Passed: compiles, go vet clean, tests pass twice, adds new coverage")).toBeInTheDocument();
+    expect(within(steps()[2]).getByText("Passed: compiles, go vet clean, every test asserts, tests pass twice, adds new coverage")).toBeInTheDocument();
   });
 
   it("shows the accepted-at status, the one-liner and the result line", () => {

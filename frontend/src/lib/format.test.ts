@@ -31,7 +31,7 @@ describe("format", () => {
   });
 
   it("labels checks, counting failed tests out of the tests in that version", () => {
-    expect(checkLabel("accepted", 0)).toBe("Passed: compiles, go vet clean, tests pass twice, adds new coverage");
+    expect(checkLabel("accepted", 0)).toBe("Passed: compiles, go vet clean, every test asserts, tests pass twice, adds new coverage");
     expect(checkLabel("compile_error", 0)).toBe("Didn't compile");
     expect(checkLabel("vet_error", 0)).toBe("go vet failed");
     expect(checkLabel("no_gain", 0)).toBe("No new coverage");

@@ -53,7 +53,7 @@ export const REJECTION_LABEL: Record<string, string> = {
 
 // One-line verdict for a check of one attempt (validation_result kind). test_failure is counted by checkLabel.
 export const CHECK_LABEL: Record<string, string> = {
-  accepted: "Passed: compiles, go vet clean, tests pass twice, adds new coverage",
+  accepted: "Passed: compiles, go vet clean, every test asserts, tests pass twice, adds new coverage",
   compile_error: "Didn't compile",
   vet_error: "go vet failed",
   no_gain: "No new coverage",
