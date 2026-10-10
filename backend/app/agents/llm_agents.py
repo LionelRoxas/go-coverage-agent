@@ -22,9 +22,13 @@ PRUNED_NO_GAIN = ("Removing the failing tests left no new coverage: the tests th
                   "ones that failed. Keep them and correct their expected values (observed values are in the history).")
 
 
+_HEADER = re.compile(r"\A<!--.*?-->\s*", re.S)
+
+
 @cache
 def load_prompt(name: str) -> str:
-    return (_PROMPTS / f"{name}.md").read_text(encoding="utf-8")
+    """The prompt file without its leading <!-- --> disclosure comment, which is for readers of the repo, not the model."""
+    return _HEADER.sub("", (_PROMPTS / f"{name}.md").read_text(encoding="utf-8"), count=1)
 
 
 def _trim(text: str, limit: int) -> str:

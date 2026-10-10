@@ -1,6 +1,9 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+from pathlib import Path
+
 import pytest
 
+from app.agents import llm_agents
 from app.agents.context import ContextInputs, ContextTooLarge, render_context
 from app.agents.history import attempt_record
 from app.agents.llm_agents import Agents, load_prompt
@@ -14,6 +17,15 @@ INPUTS = ContextInputs(module="m", package="stats", go_version="1.17", source_fi
                        targets=[("Mean", "func Mean(input Float64Data) (float64, error) {\n\treturn 0, nil  // UNCOVERED\n}")],
                        declared=[], referenced=["type Float64Data []float64"] * 400, existing_tests=[])
 
+
+
+@pytest.mark.parametrize("name", ["writer", "fixer", "summarizer"])
+def test_prompt_files_carry_the_disclosure_header_but_the_model_never_sees_it(name):
+    raw = (Path(llm_agents.__file__).parent / "prompts" / f"{name}.md").read_text(encoding="utf-8")
+    assert raw.startswith("<!-- AI-generated with Claude Code"), "the file itself is disclosed"
+    sent = load_prompt(name)
+    assert "AI-generated" not in sent and "<!--" not in sent
+    assert sent == sent.lstrip() and sent.startswith("You ")
 
 async def test_write_sends_context_task_and_schema_within_budget():
     llm = FakeLLM([snippet("func TestMean(t *testing.T) {}")])
