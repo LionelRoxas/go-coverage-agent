@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, *a, **kw):
         """env_ignore_empty drops empty values; GROQ_MAX_COMPLETION_TOKENS= (empty) must instead mean "send no cap"."""
         def no_cap_when_empty() -> dict:
-            empty = os.environ.get("GROQ_MAX_COMPLETION_TOKENS") == "" or                 dotenv_settings.env_vars.get("groq_max_completion_tokens") == ""
+            empty = os.environ.get("GROQ_MAX_COMPLETION_TOKENS") == "" or \
+                dotenv_settings.env_vars.get("groq_max_completion_tokens") == ""
             return {"groq_max_completion_tokens": None} if empty else {}
         return init_settings, env_settings, no_cap_when_empty, dotenv_settings, *a
 
