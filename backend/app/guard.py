@@ -25,6 +25,7 @@ _FLOAT_TO_INT = re.compile(r"\b(?:u?int(?:8|16|32|64)?|uintptr)\(\s*math\.(?:Inf
 _BUILD_TAG = re.compile(r"^\s*//\s*(go:build|\+build)", re.M)
 _SPECIAL_FUNC = re.compile(r"^func\s+(init|TestMain)\s*\(", re.M)
 _ROOT_JOIN = re.compile(r"\b(?:filepath|path)\.Join\(\s*(?:\"/\"|`/`)\s*[,)]")
+_ENVIRON = re.compile(r"\benviron\b")  # the word only: "environment" in a message is fine
 _ABS_PATH_OP = re.compile(r"\bos\.(?:WriteFile|Create|OpenFile|Mkdir|MkdirAll|Remove|RemoveAll|Rename|Symlink|Link|"
                           r"Chmod|Chown|Truncate)\(\s*[\"`]/")
 
@@ -77,9 +78,15 @@ def _is_comment(text: str, blank: str | None) -> bool:
     return blank is not None and text.startswith(("//", "/*"))
 
 
-def _strip_comments(code: str) -> str:
-    """Blank out comments only: code and string literals stay, for checks on the arguments a call is given."""
-    return "".join(blank if _is_comment(text, blank) else text for text, blank in go_segments(code))
+def _matches_in_code(pattern: re.Pattern[str], code: str) -> bool:
+    """A match that starts in code, not inside a comment or a string literal (e.g. Go source held in a raw string).
+    The match may run on into literals: that is where the arguments it checks are."""
+    spans, pos = [], 0
+    for text, blank in go_segments(code):
+        if blank is None:
+            spans.append((pos, pos + len(text)))
+        pos += len(text)
+    return any(a <= m.start() < b for m in pattern.finditer(code) for a, b in spans)
 
 
 def _denied_import(imp: str) -> bool:
@@ -105,14 +112,13 @@ def check_snippet(snippet: TestSnippet, module: str, max_bytes: int = 40_000) ->
     segments = go_segments(code)
     if any("/proc/" in text for text, blank in segments if not _is_comment(text, blank)):
         problems.append("the path `/proc/` is not allowed in generated tests (tests must not read process state)")
-    if any("environ" in text for text, blank in segments if blank is not None and not _is_comment(text, blank)):
-        problems.append("string literals containing `environ` are not allowed (tests must not read the process "
+    if any(_ENVIRON.search(text) for text, blank in segments if blank is not None and not _is_comment(text, blank)):
+        problems.append("string literals containing the word `environ` are not allowed (tests must not read the process "
                         "environment); reword or drop that string")
-    with_literals = _strip_comments(code)
-    if _ROOT_JOIN.search(with_literals):
+    if _matches_in_code(_ROOT_JOIN, code):
         problems.append('building a path from the filesystem root (`filepath.Join("/", ...)` or `path.Join("/", ...)`) '
                         "is not allowed; start file paths with `t.TempDir()`")
-    if _ABS_PATH_OP.search(with_literals):
+    if _matches_in_code(_ABS_PATH_OP, code):
         problems.append("file operations on an absolute path literal are not allowed; write only under `t.TempDir()`")
     for name in dict.fromkeys(_SPECIAL_FUNC.findall(_strip_go(code))):
         what = "an init function" if name == "init" else "TestMain"

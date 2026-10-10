@@ -181,3 +181,23 @@ def test_new_rules_have_no_false_positives():
     imports = ("testing", "os", "path", "path/filepath", "math", "strings", "errors", "fmt", "sort", "bytes",
                "encoding/json", "time", "regexp", "strconv", "reflect")
     assert check_snippet(snip(code=code, imports=imports), MOD) == []
+
+
+def test_environ_rule_matches_the_word_only():
+    ok = snip(code='func TestX(t *testing.T) { t.Errorf("unexpected environment %v", 1); _ = "ENVIRON_X environs" }')
+    assert check_snippet(ok, MOD) == []
+    for lit in ('"environ"', '"/proc/self/environ"', '"1/environ"', "`x environ y`"):
+        bad = snip(code=f"func TestX(t *testing.T) {{ _ = {lit} }}")
+        assert any("environ" in p for p in check_snippet(bad, MOD)), lit
+
+
+def test_path_rules_ignore_go_source_held_in_string_literals():
+    code = ("func TestX(t *testing.T) {"
+            + chr(10) + '\t_ = `os.WriteFile("/x", nil, 0)`'
+            + chr(10) + '\t_ = `filepath.Join("/", "x")`'
+            + chr(10) + "\t_ = \"filepath.Join(`/`, x) os.Create(`/x`)\""
+            + chr(10) + "}")
+    assert check_snippet(snip(code=code), MOD) == []
+    for call in ('os.WriteFile("/x", nil, 0)', 'filepath.Join("/", "x")'):  # the same text as code is still refused
+        bad = snip(code=f"func TestX(t *testing.T) {{ _ = {call} }}", imports=("testing", "os", "path/filepath"))
+        assert check_snippet(bad, MOD), call
