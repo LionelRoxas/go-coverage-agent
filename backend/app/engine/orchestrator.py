@@ -15,7 +15,7 @@ from app.agents.planner import plan
 from app.agents.repair import clean_imports, mechanical_repair
 from app.engine.policy import StopPolicy, stop_message
 from app.llm.client import (Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal,
-                            LLMOutputTooLarge, LLMTimeout, LLMTransportError, OnRequest)
+                            LLMOutputTooLarge, LLMTimeout, LLMTransportError, LLMUnavailable, OnRequest)
 from app.models import (CoverageReport, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem, StopReason,
                         Summary, SuspectedBug, TestSnippet, TokenUsage)
 from app.validator import ValidationKind, ValidationResult
@@ -86,7 +86,11 @@ class Orchestrator:
         return self._summary(reason, detail, self.clock() - started, minutes)
 
     async def _loop(self) -> StopReason:
-        for index in range(1, self.opts.max_iterations + 1):
+        # Rounds in which every item only met a Groq outage measured nothing, so they use up neither max_iterations
+        # nor patience; the outage window (LLM_UNAVAILABLE_AFTER_S) bounds them.
+        counted = index = 0
+        while counted < self.opts.max_iterations:
+            index += 1
             if self.policy.target_reached(self.report.percent):
                 return StopReason.TARGET_REACHED
             items = plan(self.report, self.failed, self.skipped, max_items=self.opts.targets_per_iteration)
@@ -100,28 +104,32 @@ class Orchestrator:
             accepted = rejected = 0
             deferred_before = self.deferred
             for item in items:
+                before = self.deferred
                 if await self._attempt(item):
                     accepted += 1
-                else:
+                elif self.deferred == before:  # a deferred item is not a rejection
                     rejected += 1
                 if self.policy.target_reached(self.report.percent):
-                    await self._record(index, start, accepted, rejected)
+                    await self._record(index, start, accepted, rejected, self.deferred - deferred_before)
                     return StopReason.TARGET_REACHED
-            # A round in which every item only met a Groq outage measured nothing: it is not a marginal gain.
-            outage_only = accepted == 0 and rejected == self.deferred - deferred_before
-            await self._record(index, start, accepted, rejected, count_gain=not outage_only)
+            deferred = self.deferred - deferred_before
+            outage_only = accepted == 0 and rejected == 0 and deferred > 0
+            await self._record(index, start, accepted, rejected, deferred, count_gain=not outage_only)
+            if not outage_only:
+                counted += 1
             if self.policy.marginal(self.gains):
                 return StopReason.MARGINAL_GAINS
         return StopReason.MAX_ITERATIONS
 
-    async def _record(self, index: int, start: float, accepted: int, rejected: int, count_gain: bool = True) -> None:
+    async def _record(self, index: int, start: float, accepted: int, rejected: int, deferred: int = 0,
+                      count_gain: bool = True) -> None:
         end = self.report.percent
         self.iterations.append(IterationRecord(index=index, start_percent=start, end_percent=end,
-                                               accepted=accepted, rejected=rejected))
+                                               accepted=accepted, rejected=rejected, deferred=deferred))
         if count_gain:
             self.gains.append(round(end - start, 2))
         await self.emit("iteration_completed", {"index": index, "start_percent": start, "end_percent": end,
-                                                "accepted": accepted, "rejected": rejected})
+                                                "accepted": accepted, "rejected": rejected, "deferred": deferred})
 
     def _check(self) -> None:
         if self.cancel.is_set():
@@ -144,7 +152,7 @@ class Orchestrator:
             if isinstance(e, LLMTransportError):
                 if self._outage_since is None:
                     self._outage_since = started
-            else:  # Groq answered (with an error about this request): any outage is over
+            elif not e.local:  # Groq answered (with an error about this request): any outage is over
                 self._outage_since, self._outage_failures = None, 0
             raise
         self._outage_since, self._outage_failures = None, 0
@@ -289,7 +297,8 @@ class Orchestrator:
             transport = isinstance(e, LLMTransportError)
             # a fixer prompt that cannot fit even after degrading is a local check, not a model error
             kind = (ValidationKind.PROMPT_TOO_LARGE if isinstance(e, ContextTooLarge)
-                    else ValidationKind.LLM_TIMEOUT if isinstance(e, LLMTimeout) else ValidationKind.LLM_ERROR)
+                    else ValidationKind.LLM_TIMEOUT if isinstance(e, LLMTimeout)
+                    else ValidationKind.LLM_UNAVAILABLE if isinstance(e, LLMUnavailable) else ValidationKind.LLM_ERROR)
             result = ValidationResult(kind, str(e))
             log.warning("%s for %s: %s", kind.value, item.file, e)
             await self.emit("validation_result", {**base, **result.event()})
@@ -315,7 +324,7 @@ class Orchestrator:
         ws.restore(snap)
         if transport:  # Groq was unreachable: not this item's fault, so it is planned again in a later round
             self.deferred += 1
-            await self.emit("candidate_rejected", {**base, "reason": result.kind.value})
+            await self.emit("candidate_deferred", {**base, "reason": result.kind.value})
             await self._back_off()
             return False
         for key in item.functions:

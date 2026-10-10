@@ -63,6 +63,8 @@ class RunFacts(BaseModel):
     targets_accepted: int
     targets_rejected: int
     rejected_reasons: dict[str, int]
+    targets_deferred: int = 0  # items that met a Groq outage and were planned again later (not rejections)
+    failed_llm_calls: int = 0  # calls that ended in an error; their billed tokens are in `tokens`
     first_check_passes: int  # writer answers accepted on their first check, with no prune, repair or fix
     llm_fixes: int
     mechanical_repairs: int
@@ -116,14 +118,15 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
     baseline_files = next((d["report"]["files"] for d in by_type.get("baseline_measured", [])), [])
     statements = {f["file"]: f["statements"] for f in baseline_files}
 
-    calls = Counter((d.get("role", ""), d.get("reasoning_effort")) for d in by_type.get("llm_call", []))
+    answered = [d for d in by_type.get("llm_call", []) if not d.get("failed")]
+    calls = Counter((d.get("role", ""), d.get("reasoning_effort")) for d in answered)
     rejected = Counter(d.get("reason", "") for d in by_type.get("candidate_rejected", []))
 
     first_passes = 0
     awaiting: set[tuple[int, str]] = set()  # items whose writer answer has not been checked yet
     for e in run:
         key = (e.data.get("index", 0), e.data.get("file", ""))
-        if e.type == "llm_call" and e.data.get("role") == "writer":
+        if e.type == "llm_call" and e.data.get("role") == "writer" and not e.data.get("failed"):
             awaiting.add(key)
         elif e.type == "validation_result" and key in awaiting:
             awaiting.discard(key)
@@ -152,6 +155,8 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
         llm_calls=[RoleCalls(role=r, reasoning_effort=eff, calls=n) for (r, eff), n in calls.items()],
         targets_accepted=len(by_type.get("candidate_accepted", [])), targets_rejected=sum(rejected.values()),
         rejected_reasons=dict(rejected), first_check_passes=first_passes,
+        targets_deferred=len(by_type.get("candidate_deferred", [])),
+        failed_llm_calls=len(by_type.get("llm_call", [])) - len(answered),
         llm_fixes=len(by_type.get("fix_attempt", [])), mechanical_repairs=len(by_type.get("mechanical_repair", [])),
         pruned_tests=sum(len(d.get("tests", [])) for d in by_type.get("tests_pruned", [])),
         llm_timeouts=sum(d.get("kind") == "llm_timeout" for d in by_type.get("validation_result", [])),

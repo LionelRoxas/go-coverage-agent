@@ -482,12 +482,12 @@ async def test_llm_request_is_emitted_before_each_call(ws):
 
 async def test_a_groq_timeout_is_recorded_as_llm_timeout(ws):
     msg = "Groq did not answer within 240 s, twice"
-    orch, events = run(ws, FakeValidator(ws, []), FakeAgents([LLMTimeout(msg)]), targets_per_iteration=1,
-                       max_iterations=1)
-    await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=ONE)])
+    orch, events = run(ws, v, FakeAgents([LLMTimeout(msg), GOOD]), targets_per_iteration=1, max_iterations=1)
+    await orch.run(report(set(), funcs=ONE))
     assert ("validation_result", {"index": 1, "file": "a.go", "kind": "llm_timeout", "output": msg,
                                   "failed_tests": []}) in events
-    assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "llm_timeout"}) in events
+    assert ("candidate_deferred", {"index": 1, "file": "a.go", "reason": "llm_timeout"}) in events
 
 
 async def test_a_timeout_retried_at_low_effort_is_not_a_fix_attempt(ws, tmp_path):
@@ -592,6 +592,32 @@ async def test_a_groq_outage_does_not_burn_the_target_and_it_is_retried_later(ws
     assert len(agents_items := v.snips) == 1 and agents_items[0] == GOOD
     assert not orch.failed and t.slept == [15.0]
     assert ("llm_unreachable", {"seconds": 15.0, "unreachable_s": 0.0}) in events
+    reason = "llm_timeout" if isinstance(outage, LLMTimeout) else "llm_unavailable"
+    assert ("candidate_deferred", {"index": 1, "file": "a.go", "reason": reason}) in events
+    assert not any(kind == "candidate_rejected" for kind, _ in events)  # deferred, not rejected
+    first = summary.iterations[0]
+    assert (first.accepted, first.rejected, first.deferred) == (0, 0, 1)
+    assert ("validation_result", {"index": 1, "file": "a.go", "kind": reason, "output": str(outage),
+                                  "failed_tests": []}) in events
+
+
+async def test_outage_only_rounds_do_not_use_up_max_iterations(ws):
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=ONE)])
+    orch, _, _ = run_timed(ws, v, FakeAgents([LLMUnavailable("down"), LLMUnavailable("down"), GOOD]),
+                           targets_per_iteration=1, max_iterations=1)
+    summary = await orch.run(report(set(), funcs=ONE))
+    assert summary.stop_reason is StopReason.TARGET_REACHED
+    assert [i.index for i in summary.iterations] == [1, 2, 3]
+
+
+async def test_an_error_raised_before_groq_was_contacted_does_not_end_the_outage(ws):
+    local = LLMError("prompt is ~13000 tokens, over the 12000 limit")
+    local.local = True
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=ONE)])
+    agents = FakeAgents([LLMUnavailable("down"), local, LLMUnavailable("down"), GOOD])
+    orch, _, t = run_timed(ws, v, agents, targets_per_iteration=1, patience=5)
+    await orch.run(report(set(), funcs=ONE))
+    assert t.slept == [15.0, 30.0]
 
 
 async def test_groq_unreachable_past_the_window_stops_with_llm_unavailable(ws):
@@ -602,6 +628,14 @@ async def test_groq_unreachable_past_the_window_stops_with_llm_unavailable(ws):
     assert summary.message == "Stopped: Groq was unreachable for 12 minutes; tests kept so far are saved."
     assert t.slept == [15.0, 30.0, 60.0, 120.0, 120.0, 120.0, 120.0, 120.0]  # 705 s >= 600 s at the 9th failure
     assert not orch.failed
+
+
+async def test_a_model_error_from_groq_ends_the_outage(ws):
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=ONE)])
+    agents = FakeAgents([LLMUnavailable("down"), LLMError("schema"), LLMUnavailable("down"), GOOD])
+    orch, _, t = run_timed(ws, v, agents, targets_per_iteration=1, patience=5)
+    await orch.run(report(set(), funcs=ONE))
+    assert t.slept == [15.0, 15.0]
 
 
 async def test_a_successful_call_ends_the_outage(ws):

@@ -25,6 +25,7 @@ class LLMError(Exception):
     (e.g. truncated answers retried at a lower effort); they are already in the daily ledger."""
 
     spent: TokenUsage = TokenUsage()
+    local: bool = False  # raised before Groq was contacted (says nothing about whether Groq is reachable)
 
 
 class LLMOutputTooLarge(LLMError):
@@ -147,9 +148,13 @@ class GroqLLM:
                        on_request: OnRequest | None = None) -> tuple[T, TokenUsage]:
         prompt_tokens = estimate_tokens(system) + estimate_tokens(user)
         if prompt_tokens > self.s.max_prompt_tokens:
-            raise LLMError(f"prompt is ~{prompt_tokens} tokens, over the {self.s.max_prompt_tokens} limit")
+            error = LLMError(f"prompt is ~{prompt_tokens} tokens, over the {self.s.max_prompt_tokens} limit")
+            error.local = True
+            raise error
         if self.ledger.remaining() < self.s.call_token_reservation:
-            raise LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
+            exhausted = LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
+            exhausted.local = True
+            raise exhausted
 
         effort: str = (self.s.groq_fixer_reasoning_effort if role == "fixer"
                        else self.s.groq_writer_reasoning_effort)

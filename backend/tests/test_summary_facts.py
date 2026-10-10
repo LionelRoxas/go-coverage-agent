@@ -101,3 +101,21 @@ def test_counts_rejections_timeouts_repairs_and_waits():
     f = build_facts(summary, events[:end] + inserted + events[end:], repo="stats", model="m", job_id="x")
     assert (f.targets_rejected, f.rejected_reasons) == (3, {"no_gain": 2, "too_large": 1})
     assert (f.llm_timeouts, f.mechanical_repairs, f.rate_limit_waits, f.rate_limit_wait_s) == (1, 1, 2, 15.5)
+
+
+def test_deferred_items_and_failed_calls_are_not_rejections_or_calls():
+    summary, events = load()
+    run, rest = events[:-1], events[-1:]
+    assert rest[0].type == "job_completed"
+    seq = run[-1].seq
+    extra = [Event(seq=seq + 1, ts=1.0, type="llm_call", data={"index": 1, "file": "x.go", "role": "writer",
+                                                             "prompt_tokens": 10, "completion_tokens": 5,
+                                                             "total_tokens": 1, "reasoning_effort": None,
+                                                             "failed": True}),
+             Event(seq=seq + 2, ts=1.0, type="candidate_deferred",
+                   data={"index": 1, "file": "x.go", "reason": "llm_unavailable"})]
+    f = build_facts(summary, [*run, *extra, *rest], repo="stats", model="m", job_id="e2de1ca387cb")
+    assert [(c.role, c.reasoning_effort, c.calls) for c in f.llm_calls] == [("writer", "medium", 31),
+                                                                            ("fixer", "medium", 1)]
+    assert (f.failed_llm_calls, f.targets_deferred) == (1, 1)
+    assert (f.targets_rejected, f.rejected_reasons) == (0, {})

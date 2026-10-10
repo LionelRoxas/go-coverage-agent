@@ -277,7 +277,7 @@ class JobManager:
             # Setup failures have no Summary and get no summary.
             if job.request.options.write_summary:
                 job.summary_cancel = asyncio.Event()  # before the summary starts, so no Cancel is lost
-                await self._write_summary(job)
+                await self._write_summary(job, automatic=True)
         finally:
             try:
                 self._save_events(job)
@@ -343,12 +343,15 @@ class JobManager:
         started = next((e for e in job.events if e.type == "job_started"), None)
         return (started.data.get("model") if started else None) or self.settings.groq_model
 
-    async def _summarize(self, job: Job) -> dict[str, Any]:
+    async def _summarize(self, job: Job, automatic: bool) -> dict[str, Any]:
         """The summary_generated payload, or SummaryFailed."""
         s, summary = self.settings, job.summary
         assert summary is not None
         if not s.llm_configured:
             raise SummaryFailed("llm_not_configured", "Set GROQ_API_KEY in .env and restart the app.")
+        if automatic and summary.stop_reason is StopReason.LLM_UNAVAILABLE:
+            raise SummaryFailed("llm_unavailable", "Groq was unreachable when the run stopped, so no AI summary was "
+                                "written. Use Write again once Groq is back.")
         if summary.tokens.total + job.summary_tokens.total >= job.request.options.max_llm_tokens:
             raise SummaryFailed("budget_exhausted", "This run's token budget (max_llm_tokens) is used up.")
         facts = build_facts(summary, job.events, repo=job.request.repo_path, model=self._model(job), job_id=job.id,
@@ -384,13 +387,13 @@ class JobManager:
                                    "input": total.input_usd, "output": total.output_usd, "total": total.total_usd}
         return payload
 
-    async def _write_summary(self, job: Job) -> None:
+    async def _write_summary(self, job: Job, automatic: bool = False) -> None:
         """Emit summary_generated or summary_failed (never raises; the run itself has already ended) and save it
         next to the run's other files."""
         assert job.summary is not None
         out = self.settings.output_dir / job.id
         try:
-            payload = await self._summarize(job)
+            payload = await self._summarize(job, automatic)
         except Exception as e:  # noqa: BLE001
             if isinstance(e, SummaryFailed):
                 reason, message = e.reason, e.message

@@ -162,7 +162,7 @@ class _Checker:
                     | {p.percent for p in f.lowest_files})
         # counts: the count fields themselves (never a percentage or a dollar amount), plus the token facts
         counts = {float(n) for n in (
-            f.rounds, f.targets_accepted, f.targets_rejected, f.first_check_passes, f.llm_fixes, f.mechanical_repairs,
+            f.rounds, f.targets_accepted, f.targets_rejected, f.targets_deferred, f.failed_llm_calls, f.first_check_passes, f.llm_fixes, f.mechanical_repairs,
             f.pruned_tests, f.llm_timeouts, f.rate_limit_waits, f.tests_added_count, f.test_files_count,
             len(f.lowest_files), *f.rejected_reasons.values(), *(c.calls for c in f.llm_calls),
             *(low.uncovered_statements for low in f.lowest_files))} | tokens
