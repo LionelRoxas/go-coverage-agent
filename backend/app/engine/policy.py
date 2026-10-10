@@ -19,7 +19,8 @@ class StopPolicy:
         return len(gains) >= self.patience and all(g < self.min_gain for g in gains[-self.patience:])
 
 
-def stop_message(reason: StopReason, request: JobRequest, detail: str = "") -> str:
+def stop_message(reason: StopReason, request: JobRequest, detail: str = "", minutes: int = 0) -> str:
+    """`minutes`: for llm_unavailable, how long Groq was unreachable."""
     o = request.options
     target = f"{request.target_coverage:g}"
     text = {
@@ -29,5 +30,7 @@ def stop_message(reason: StopReason, request: JobRequest, detail: str = "") -> s
         StopReason.NO_REMAINING_TARGETS: "Stopped: every remaining uncovered function was attempted without success or is too large for one request.",
         StopReason.BUDGET_EXHAUSTED: "Stopped: the LLM token budget ran out. Accepted tests were kept.",
         StopReason.CANCELLED: "Cancelled. Accepted tests were kept.",
+        StopReason.LLM_UNAVAILABLE: (f"Stopped: Groq was unreachable for {minutes} minute{'' if minutes == 1 else 's'}; "
+                                     "tests kept so far are saved."),
     }[reason]
     return f"{text} {detail}".strip() if detail else text

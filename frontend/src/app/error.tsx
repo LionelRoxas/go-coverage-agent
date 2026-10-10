@@ -6,7 +6,7 @@ import { Button, buttonClass, StatusPanel } from "@/components/ui";
 
 const CRASH_TITLE = "This page stopped working";
 const CRASH_TEXT =
-  "Something on this page failed while it was being shown. Runs keep going on the backend; trying again usually brings the page back.";
+  "This page hit an error. Runs on the backend are not affected. Try again, or go back to New run.";
 
 /**
  * Shown in place of a page that threw while rendering. It sits inside the root layout, so the navbar and theme

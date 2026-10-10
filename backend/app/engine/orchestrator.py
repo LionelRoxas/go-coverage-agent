@@ -15,7 +15,7 @@ from app.agents.planner import plan
 from app.agents.repair import clean_imports, mechanical_repair
 from app.engine.policy import StopPolicy, stop_message
 from app.llm.client import (Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal,
-                            LLMOutputTooLarge, LLMTimeout, OnRequest)
+                            LLMOutputTooLarge, LLMTimeout, LLMTransportError, LLMUnavailable, OnRequest)
 from app.models import (CoverageReport, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem, StopReason,
                         Summary, SuspectedBug, TestSnippet, TokenUsage)
 from app.validator import ValidationKind, ValidationResult
@@ -23,11 +23,21 @@ from app.workspace import Workspace, test_path_for
 
 
 MAX_MECHANICAL_REPAIRS = 3
+OUTAGE_BACKOFF_S = 15.0  # wait after the first Groq transport failure in a row; doubles per failure, up to the cap
+OUTAGE_BACKOFF_MAX_S = 120.0
 log = logging.getLogger(__name__)
 
 
 class Cancelled(Exception):
     pass
+
+
+class GroqUnreachable(Exception):
+    """Groq has been unreachable (timeouts, 5xx, connection errors) for longer than the outage window."""
+
+    def __init__(self, seconds: float):
+        super().__init__(f"Groq unreachable for {seconds:.0f} s")
+        self.minutes = max(1, round(seconds / 60))
 
 
 @dataclass
@@ -41,8 +51,14 @@ class RunDeps:
 
 class Orchestrator:
     def __init__(self, deps: RunDeps, request: JobRequest, emit: Emit, cancel: asyncio.Event,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic,
+                 sleep: Callable[[float], Awaitable[None]] | None = None, unavailable_after_s: float = 600.0):
         self.deps, self.request, self.emit, self.cancel, self.clock = deps, request, emit, cancel, clock
+        self._sleep, self.unavailable_after_s = sleep, unavailable_after_s
+        # The current run of Groq transport failures: when the first failing call started, and how many in a row.
+        self._outage_since: float | None = None
+        self._outage_failures = 0
+        self.deferred = 0  # items that hit a transport failure (planned again later, never counted as failed)
         self.opts = request.options
         self.policy = StopPolicy(request.target_coverage, self.opts.min_gain, self.opts.patience)
         self.tokens = TokenUsage()
@@ -58,17 +74,23 @@ class Orchestrator:
     async def run(self, baseline: CoverageReport) -> Summary:
         started = self.clock()
         self.baseline = self.report = baseline
-        detail = ""
+        detail, minutes = "", 0
         try:
             reason = await self._loop()
         except LLMBudgetExhausted as e:
             reason, detail = StopReason.BUDGET_EXHAUSTED, str(e)
+        except GroqUnreachable as e:
+            reason, minutes = StopReason.LLM_UNAVAILABLE, e.minutes
         except Cancelled:
             reason = StopReason.CANCELLED
-        return self._summary(reason, detail, self.clock() - started)
+        return self._summary(reason, detail, self.clock() - started, minutes)
 
     async def _loop(self) -> StopReason:
-        for index in range(1, self.opts.max_iterations + 1):
+        # Rounds in which every item only met a Groq outage measured nothing, so they use up neither max_iterations
+        # nor patience; the outage window (LLM_UNAVAILABLE_AFTER_S) bounds them.
+        counted = index = 0
+        while counted < self.opts.max_iterations:
+            index += 1
             if self.policy.target_reached(self.report.percent):
                 return StopReason.TARGET_REACHED
             items = plan(self.report, self.failed, self.skipped, max_items=self.opts.targets_per_iteration)
@@ -80,26 +102,34 @@ class Orchestrator:
                 {"file": i.file, "functions": [k.label() for k in i.functions],
                  "uncovered_statements": i.uncovered_statements} for i in items]})
             accepted = rejected = 0
+            deferred_before = self.deferred
             for item in items:
+                before = self.deferred
                 if await self._attempt(item):
                     accepted += 1
-                else:
+                elif self.deferred == before:  # a deferred item is not a rejection
                     rejected += 1
                 if self.policy.target_reached(self.report.percent):
-                    await self._record(index, start, accepted, rejected)
+                    await self._record(index, start, accepted, rejected, self.deferred - deferred_before)
                     return StopReason.TARGET_REACHED
-            await self._record(index, start, accepted, rejected)
+            deferred = self.deferred - deferred_before
+            outage_only = accepted == 0 and rejected == 0 and deferred > 0
+            await self._record(index, start, accepted, rejected, deferred, count_gain=not outage_only)
+            if not outage_only:
+                counted += 1
             if self.policy.marginal(self.gains):
                 return StopReason.MARGINAL_GAINS
         return StopReason.MAX_ITERATIONS
 
-    async def _record(self, index: int, start: float, accepted: int, rejected: int) -> None:
+    async def _record(self, index: int, start: float, accepted: int, rejected: int, deferred: int = 0,
+                      count_gain: bool = True) -> None:
         end = self.report.percent
         self.iterations.append(IterationRecord(index=index, start_percent=start, end_percent=end,
-                                               accepted=accepted, rejected=rejected))
-        self.gains.append(round(end - start, 2))
+                                               accepted=accepted, rejected=rejected, deferred=deferred))
+        if count_gain:
+            self.gains.append(round(end - start, 2))
         await self.emit("iteration_completed", {"index": index, "start_percent": start, "end_percent": end,
-                                                "accepted": accepted, "rejected": rejected})
+                                                "accepted": accepted, "rejected": rejected, "deferred": deferred})
 
     def _check(self) -> None:
         if self.cancel.is_set():
@@ -109,16 +139,55 @@ class Orchestrator:
 
     async def _call(self, role: str, item: PlanItem,
                     coro: Awaitable[tuple[TestSnippet, TokenUsage]]) -> TestSnippet:
+        started = self.clock()
         try:
             snip, usage = await coro
-        except LLMCancelled as e:
-            raise Cancelled() from e
-        self.tokens = self.tokens.add(usage)
-        await self.emit("llm_call", {"index": self.index, "file": item.file, "role": role,
-                                     "prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens,
-                                     "total_tokens": self.tokens.total,
-                                     "reasoning_effort": self.deps.agents.last_effort})
+        except LLMError as e:
+            # Groq billed these before the call failed (truncated answers, a schema retry, a timeout after a billed
+            # attempt); they are in the daily ledger already and count toward this job's tokens and budget too.
+            if e.spent.total > 0:
+                await self._charge(role, item, e.spent, failed=True)
+            if isinstance(e, LLMCancelled):
+                raise Cancelled() from e
+            if isinstance(e, LLMTransportError):
+                if self._outage_since is None:
+                    self._outage_since = started
+            elif not e.local:  # Groq answered (with an error about this request): any outage is over
+                self._outage_since, self._outage_failures = None, 0
+            raise
+        self._outage_since, self._outage_failures = None, 0
+        await self._charge(role, item, usage)
         return snip
+
+    async def _back_off(self) -> None:
+        """After a transport failure: stop the run once Groq has been unreachable for the outage window, else wait
+        (15 s, doubling, at most 120 s) before the next item."""
+        assert self._outage_since is not None
+        elapsed = self.clock() - self._outage_since
+        if elapsed >= self.unavailable_after_s:
+            raise GroqUnreachable(elapsed)
+        self._outage_failures += 1
+        wait = min(OUTAGE_BACKOFF_S * 2 ** (self._outage_failures - 1), OUTAGE_BACKOFF_MAX_S)
+        await self.emit("llm_unreachable", {"seconds": wait, "unreachable_s": round(elapsed, 1)})
+        if self._sleep is not None:
+            await self._sleep(wait)
+        else:
+            try:  # wake up at once on Cancel
+                await asyncio.wait_for(self.cancel.wait(), timeout=wait)
+            except asyncio.TimeoutError:
+                pass
+        if self.cancel.is_set():
+            raise Cancelled()
+
+    async def _charge(self, role: str, item: PlanItem, usage: TokenUsage, failed: bool = False) -> None:
+        self.tokens = self.tokens.add(usage)
+        data: dict[str, Any] = {"index": self.index, "file": item.file, "role": role,
+                                "prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens,
+                                "total_tokens": self.tokens.total,
+                                "reasoning_effort": None if failed else self.deps.agents.last_effort}
+        if failed:
+            data["failed"] = True  # the call ended in an error; its tokens were billed all the same
+        await self.emit("llm_call", data)
 
     def _on_request(self, role: str, item: PlanItem, attempt: int | None = None) -> OnRequest:
         """Emit `llm_request` right before each Groq request, so the UI can show how long it has been waiting."""
@@ -171,7 +240,7 @@ class Orchestrator:
 
         snap = ws.snapshot([test_file, "go.mod", "go.sum"])
         snip: TestSnippet | None = None
-        half = False
+        half = transport = False
         history: list[AttemptRecord] = []  # every check of this candidate, oldest first, for the Fixer
         try:
             try:
@@ -225,9 +294,11 @@ class Orchestrator:
                 ws.restore(snap)
                 raise
             too_large = False
+            transport = isinstance(e, LLMTransportError)
             # a fixer prompt that cannot fit even after degrading is a local check, not a model error
             kind = (ValidationKind.PROMPT_TOO_LARGE if isinstance(e, ContextTooLarge)
-                    else ValidationKind.LLM_TIMEOUT if isinstance(e, LLMTimeout) else ValidationKind.LLM_ERROR)
+                    else ValidationKind.LLM_TIMEOUT if isinstance(e, LLMTimeout)
+                    else ValidationKind.LLM_UNAVAILABLE if isinstance(e, LLMUnavailable) else ValidationKind.LLM_ERROR)
             result = ValidationResult(kind, str(e))
             log.warning("%s for %s: %s", kind.value, item.file, e)
             await self.emit("validation_result", {**base, **result.event()})
@@ -251,17 +322,22 @@ class Orchestrator:
             return True
 
         ws.restore(snap)
+        if transport:  # Groq was unreachable: not this item's fault, so it is planned again in a later round
+            self.deferred += 1
+            await self.emit("candidate_deferred", {**base, "reason": result.kind.value})
+            await self._back_off()
+            return False
         for key in item.functions:
             self.failed[key] += 1
         await self.emit("candidate_rejected", {**base, "reason": result.kind.value})
         return False
 
-    def _summary(self, reason: StopReason, detail: str, duration: float) -> Summary:
+    def _summary(self, reason: StopReason, detail: str, duration: float, minutes: int = 0) -> Summary:
         before = {f.file: f.percent for f in self.baseline.files}
         per_file = sorted((FileDelta(file=f.file, before=before.get(f.file, 0.0), after=f.percent)
                            for f in self.report.files), key=lambda d: (-(d.after - d.before), d.file))
         return Summary(
-            stop_reason=reason, message=stop_message(reason, self.request, detail),
+            stop_reason=reason, message=stop_message(reason, self.request, detail, minutes=minutes),
             target=self.request.target_coverage, baseline_percent=self.baseline.percent,
             final_percent=self.report.percent, iterations=self.iterations, test_files=sorted(self.test_files),
             tests_added=self.tests_added, suspected_bugs=self.bugs, per_file=per_file, tokens=self.tokens,

@@ -45,7 +45,8 @@ async def run_job(job_id: str, request: JobRequest, settings: Settings, llm: LLM
     summary: Summary | None = None
     try:
         prepared = await prepare(job_id, request, settings, llm, emit, cancel)
-        summary = await Orchestrator(prepared.deps, request, emit, cancel).run(prepared.baseline)
+        summary = await Orchestrator(prepared.deps, request, emit, cancel,
+                                     unavailable_after_s=settings.llm_unavailable_after_s).run(prepared.baseline)
         return summary
     except LLMFatal as e:
         raise JobFailed("llm_auth", str(e)) from e
@@ -57,3 +58,6 @@ async def run_job(job_id: str, request: JobRequest, settings: Settings, llm: LLM
                             accepted)
         except Exception:  # never mask the job's own outcome
             log.exception("could not write artifacts for job %s", job_id)
+        else:
+            # The tests are exported to output/<id>/tests, which the API serves from now on; the copy is not needed.
+            shutil.rmtree(settings.work_dir / job_id, ignore_errors=True)

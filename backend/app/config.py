@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     groq_fixer_reasoning_effort: Effort = "medium"  # "high" was too slow (job 86b6d88b558c: still waiting after ~114 s)
     groq_max_completion_tokens: int | None = 65536  # model maximum; empty env value -> None: omit the field (Groq then applies a smaller default)
     groq_timeout_s: float = Field(240.0, gt=0)  # GROQ_TIMEOUT_S: per request; retried once at low effort, then the item fails
+    # LLM_UNAVAILABLE_AFTER_S: stop the run (llm_unavailable) once Groq has been unreachable this long in a row
+    llm_unavailable_after_s: float = Field(600.0, gt=0)
     call_token_reservation: int = 16000  # pacing/ledger reserve per call (>= MAX_PROMPT_TOKENS + expected output); never sent to Groq
     max_prompt_tokens: int = 12000  # MAX_PROMPT_TOKENS; free-trial keys (8K tokens/min) should set 4500
     # USD per 1M tokens, for the cost estimate in the end-of-run summary; unset -> no cost is shown
@@ -34,14 +36,21 @@ class Settings(BaseSettings):
     daily_token_budget: int = 2_000_000
     min_daily_tokens_to_start: int = 20_000
 
-    repos_dir: Path = Path("/repos")
+    repos_dir: Path = Path("/repos")  # app-managed, read-write: downloaded samples and browser uploads
+    # HOST_REPOS_MOUNT: the user's own code, mounted read-only (never written). Not named host_repos_dir on purpose:
+    # HOST_REPOS_DIR is the host path compose mounts, and compose's env_file also passes it (e.g. ./my-repos) in here.
+    host_repos_mount: Path = Path("/host-repos")
     output_dir: Path = Path("/output")
     work_dir: Path = Path("/work")
     gocache: Path = Path("/home/app/.cache/go-build")
     gomodcache: Path = Path("/home/app/.cache/go-mod")
 
-    command_timeout_s: float = 120.0
-    test_timeout: str = "60s"
+    command_timeout_s: float = 120.0  # COMMAND_TIMEOUT_S: go list and gohelper
+    # Per stage, for the whole command (a cold module cache downloads modules during the first compile):
+    compile_timeout_s: float = Field(300.0, gt=0)  # COMPILE_TIMEOUT_S: go test -run=^$ (builds every test binary)
+    vet_timeout_s: float = Field(180.0, gt=0)  # VET_TIMEOUT_S: go vet
+    test_timeout_s: float = Field(300.0, gt=0)  # TEST_TIMEOUT_S: go test -count=2 -cover over every package
+    test_timeout: str = "60s"  # TEST_TIMEOUT: go test's own -timeout, per test binary
     max_output_chars: int = 20_000
     cors_origins: list[str] = ["http://localhost:3000"]
     host_repos_dir_display: str | None = None  # display only (HOST_REPOS_DIR_DISPLAY); never used as a path

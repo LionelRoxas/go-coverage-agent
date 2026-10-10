@@ -16,7 +16,7 @@ test-go:
 test-backend: backend-image
 	docker run --rm gca-backend uv run --no-sync pytest
 test-integration: backend-image
-	docker run --rm gca-backend uv run --no-sync pytest -m integration
+	docker run --rm --env-file .env.example -v "$(CURDIR)/backend/tests/fixtures:/host-repos:ro" gca-backend uv run --no-sync pytest -m integration
 test-frontend:
 	cd frontend && npm ci && npm test
 build-frontend:

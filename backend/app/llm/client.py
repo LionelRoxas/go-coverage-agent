@@ -25,14 +25,24 @@ class LLMError(Exception):
     (e.g. truncated answers retried at a lower effort); they are already in the daily ledger."""
 
     spent: TokenUsage = TokenUsage()
+    local: bool = False  # raised before Groq was contacted (says nothing about whether Groq is reachable)
 
 
 class LLMOutputTooLarge(LLMError):
     """The answer did not fit in the output limit (truncated, or Groq could not finish the JSON): ask for less."""
 
 
-class LLMTimeout(LLMError):
-    """Groq did not answer within GROQ_TIMEOUT_S, and again on the one retry at low effort. The item fails."""
+class LLMTransportError(LLMError):
+    """Groq could not be reached or did not answer (not a problem with this item): the orchestrator retries the item
+    later instead of counting it as a failure, and stops the run if Groq stays unreachable."""
+
+
+class LLMTimeout(LLMTransportError):
+    """Groq did not answer within GROQ_TIMEOUT_S, and again on the one retry at low effort."""
+
+
+class LLMUnavailable(LLMTransportError):
+    """Connection errors or 5xx responses persisted through the network retries."""
 
 
 class LLMBudgetExhausted(LLMError):
@@ -138,9 +148,13 @@ class GroqLLM:
                        on_request: OnRequest | None = None) -> tuple[T, TokenUsage]:
         prompt_tokens = estimate_tokens(system) + estimate_tokens(user)
         if prompt_tokens > self.s.max_prompt_tokens:
-            raise LLMError(f"prompt is ~{prompt_tokens} tokens, over the {self.s.max_prompt_tokens} limit")
+            error = LLMError(f"prompt is ~{prompt_tokens} tokens, over the {self.s.max_prompt_tokens} limit")
+            error.local = True
+            raise error
         if self.ledger.remaining() < self.s.call_token_reservation:
-            raise LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
+            exhausted = LLMBudgetExhausted("The daily Groq token budget is used up. It resets at 00:00 UTC.")
+            exhausted.local = True
+            raise exhausted
 
         effort: str = (self.s.groq_fixer_reasoning_effort if role == "fixer"
                        else self.s.groq_writer_reasoning_effort)
@@ -211,7 +225,7 @@ class GroqLLM:
                     raise LLMTimeout(f"Groq did not answer within {self.s.groq_timeout_s:g} s, twice") from e
                 except (groq.APIConnectionError, groq.InternalServerError) as e:
                     if net_retries >= self.MAX_NET_RETRIES:
-                        raise LLMError(f"Groq is unreachable: {e}") from e
+                        raise LLMUnavailable(f"Groq is unreachable: {e}") from e
                     net_retries += 1
                     await self._sleep_cancellable(2.0 ** net_retries)
                     continue

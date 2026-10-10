@@ -91,7 +91,7 @@ async def test_errors_use_error_envelope(env):
     client, _ = env
     r = await client.post("/api/jobs", json={"repo_path": "/Users/me/code/stats"})
     assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_repo"
-    assert "./repos" in r.json()["error"]["message"]
+    assert "./my-repos" in r.json()["error"]["message"]
     r = await client.post("/api/jobs", json={"repo_path": "stats", "target_coverage": 500})
     assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_request"
     assert (await client.get("/api/jobs/nope")).status_code == 404
@@ -225,3 +225,18 @@ async def test_sample_by_id_and_alias(env, monkeypatch):
     assert (await client.post("/api/repos/samples/semver")).json()["path"] == "semver"
     assert (await client.post("/api/repos/sample")).json()["path"] == "stats"
     assert calls == ["semver", "stats"]
+
+
+async def test_repos_lists_host_modules_read_only_and_jobs_accept_them(tmp_path):
+    host = tmp_path / "host-repos"
+    (host / "mine").mkdir(parents=True)
+    (host / "mine" / "go.mod").write_text("module example.com/mine\n")
+    app, manager = make_env(tmp_path, noop_runner, host_repos_mount=host)
+    async with client_for(app) as client:
+        listed = (await client.get("/api/repos")).json()
+        assert [(r["path"], r["read_only"]) for r in listed] == [("host/mine", True), ("stats", False)]
+        bad = await client.post("/api/jobs", json={"repo_path": "host/../repos/stats"})
+        assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_repo"
+        ok = await client.post("/api/jobs", json={"repo_path": "host/mine"})
+        assert ok.status_code == 201
+        await manager.get(ok.json()["job_id"]).task

@@ -6,7 +6,7 @@ import pytest
 
 from app.agents.context import ContextTooLarge
 from app.engine.orchestrator import Orchestrator, RunDeps
-from app.llm.client import LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge, LLMTimeout
+from app.llm.client import LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge, LLMTimeout, LLMUnavailable
 from app.models import (CoverageReport, FileCoverage, FuncCoverage, FuncKey, JobOptions, JobRequest, StopReason,
                         TokenUsage)
 from app.validator import ValidationKind, ValidationResult
@@ -102,8 +102,12 @@ def run(ws, validator, agents, target=100.0, contexts=None, cancel=None, **opts)
     req = JobRequest(repo_path="x", target_coverage=target, options=JobOptions(**opts))
     deps = RunDeps(ws=ws, validator=validator, agents=agents, contexts=contexts or FakeContexts(),
                    package_of=lambda f: "p")
-    orch = Orchestrator(deps, req, emit, cancel or asyncio.Event())
+    orch = Orchestrator(deps, req, emit, cancel or asyncio.Event(), sleep=_no_sleep)
     return orch, events
+
+
+async def _no_sleep(seconds):
+    pass
 
 
 GOOD = snippet("func TestA(t *testing.T) {}", bugs=[("A", "looks odd")])
@@ -478,12 +482,12 @@ async def test_llm_request_is_emitted_before_each_call(ws):
 
 async def test_a_groq_timeout_is_recorded_as_llm_timeout(ws):
     msg = "Groq did not answer within 240 s, twice"
-    orch, events = run(ws, FakeValidator(ws, []), FakeAgents([LLMTimeout(msg)]), targets_per_iteration=1,
-                       max_iterations=1)
-    await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=ONE)])
+    orch, events = run(ws, v, FakeAgents([LLMTimeout(msg), GOOD]), targets_per_iteration=1, max_iterations=1)
+    await orch.run(report(set(), funcs=ONE))
     assert ("validation_result", {"index": 1, "file": "a.go", "kind": "llm_timeout", "output": msg,
                                   "failed_tests": []}) in events
-    assert ("candidate_rejected", {"index": 1, "file": "a.go", "reason": "llm_timeout"}) in events
+    assert ("candidate_deferred", {"index": 1, "file": "a.go", "reason": "llm_timeout"}) in events
 
 
 async def test_a_timeout_retried_at_low_effort_is_not_a_fix_attempt(ws, tmp_path):
@@ -507,3 +511,160 @@ async def test_a_timeout_retried_at_low_effort_is_not_a_fix_attempt(ws, tmp_path
     assert [d["reasoning_effort"] for t, d in events if t == "llm_request"] == ["medium", "low"]
     assert [d["reasoning_effort"] for t, d in events if t == "llm_call"] == ["low"]
     assert not any(t == "fix_attempt" for t, _ in events)
+
+
+def billed(error, prompt=1000, completion=500):
+    """An LLM error carrying the tokens Groq billed before it (as GroqLLM attaches them)."""
+    error.spent = TokenUsage(prompt_tokens=prompt, completion_tokens=completion)
+    return error
+
+
+async def test_tokens_billed_by_a_failed_writer_call_are_charged(ws):
+    funcs = (("a.go", "A"), ("a.go", "A2"))
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=funcs)])
+    agents = FakeAgents([billed(LLMOutputTooLarge("truncated")), GOOD])
+    orch, events = run(ws, v, agents, target=50, targets_per_iteration=1, max_iterations=1)
+    summary = await orch.run(report(set(), funcs=funcs))
+    assert summary.tokens == TokenUsage(prompt_tokens=1010, completion_tokens=505)
+    calls = [d for t, d in events if t == "llm_call"]
+    assert [(d["role"], d["prompt_tokens"], d["completion_tokens"], d["total_tokens"], d.get("failed")) for d in calls] == [
+        ("writer", 1000, 500, 1500, True), ("writer", 10, 5, 1515, None)]
+
+
+async def test_tokens_billed_by_a_failed_fixer_call_are_charged(ws):
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
+    agents = FakeAgents([GOOD], fixes=[billed(LLMError("schema failure"), 200, 100)])
+    orch, events = run(ws, FakeValidator(ws, [bad]), agents, max_fix_attempts=1, targets_per_iteration=1,
+                       max_iterations=1)
+    summary = await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert summary.tokens == TokenUsage(prompt_tokens=210, completion_tokens=105)
+    assert [d["total_tokens"] for t, d in events if t == "llm_call"] == [15, 315]
+
+
+async def test_billed_tokens_of_failed_calls_count_toward_the_job_budget(ws):
+    agents = FakeAgents([billed(LLMTimeout("slow"), 8000, 4000), GOOD])
+    orch, _ = run(ws, FakeValidator(ws, []), agents, max_llm_tokens=10_000)
+    summary = await orch.run(report(set()))
+    assert summary.stop_reason is StopReason.BUDGET_EXHAUSTED
+    assert summary.tokens.total == 12_000
+
+
+async def test_tokens_billed_before_budget_exhaustion_are_charged(ws):
+    orch, _ = run(ws, FakeValidator(ws, []), FakeAgents([billed(LLMBudgetExhausted("daily cap hit"), 30, 20)]))
+    summary = await orch.run(report(set()))
+    assert summary.stop_reason is StopReason.BUDGET_EXHAUSTED and summary.tokens.total == 50
+
+
+class FakeTime:
+    """A clock that only moves while the orchestrator backs off."""
+    def __init__(self):
+        self.now, self.slept = 0.0, []
+
+    def clock(self):
+        return self.now
+
+    async def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+def run_timed(ws, validator, agents, **opts):
+    t = FakeTime()
+    events = []
+
+    async def emit(kind, data):
+        events.append((kind, data))
+
+    req = JobRequest(repo_path="x", target_coverage=opts.pop("target", 100.0), options=JobOptions(**opts))
+    deps = RunDeps(ws=ws, validator=validator, agents=agents, contexts=FakeContexts(), package_of=lambda f: "p")
+    return Orchestrator(deps, req, emit, asyncio.Event(), clock=t.clock, sleep=t.sleep), events, t
+
+
+ONE = (("a.go", "A"),)
+
+
+@pytest.mark.parametrize("outage", [LLMUnavailable("Groq is unreachable: 503"), LLMTimeout("slow, twice")])
+async def test_a_groq_outage_does_not_burn_the_target_and_it_is_retried_later(ws, outage):
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=ONE)])
+    orch, events, t = run_timed(ws, v, FakeAgents([outage, GOOD]), targets_per_iteration=1, patience=1)
+    summary = await orch.run(report(set(), funcs=ONE))
+    assert summary.stop_reason is StopReason.TARGET_REACHED  # an outage-only round is not a marginal gain
+    assert len(agents_items := v.snips) == 1 and agents_items[0] == GOOD
+    assert not orch.failed and t.slept == [15.0]
+    assert ("llm_unreachable", {"seconds": 15.0, "unreachable_s": 0.0}) in events
+    reason = "llm_timeout" if isinstance(outage, LLMTimeout) else "llm_unavailable"
+    assert ("candidate_deferred", {"index": 1, "file": "a.go", "reason": reason}) in events
+    assert not any(kind == "candidate_rejected" for kind, _ in events)  # deferred, not rejected
+    first = summary.iterations[0]
+    assert (first.accepted, first.rejected, first.deferred) == (0, 0, 1)
+    assert ("validation_result", {"index": 1, "file": "a.go", "kind": reason, "output": str(outage),
+                                  "failed_tests": []}) in events
+
+
+async def test_outage_only_rounds_do_not_use_up_max_iterations(ws):
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=ONE)])
+    orch, _, _ = run_timed(ws, v, FakeAgents([LLMUnavailable("down"), LLMUnavailable("down"), GOOD]),
+                           targets_per_iteration=1, max_iterations=1)
+    summary = await orch.run(report(set(), funcs=ONE))
+    assert summary.stop_reason is StopReason.TARGET_REACHED
+    assert [i.index for i in summary.iterations] == [1, 2, 3]
+
+
+async def test_an_error_raised_before_groq_was_contacted_does_not_end_the_outage(ws):
+    local = LLMError("prompt is ~13000 tokens, over the 12000 limit")
+    local.local = True
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=ONE)])
+    agents = FakeAgents([LLMUnavailable("down"), local, LLMUnavailable("down"), GOOD])
+    orch, _, t = run_timed(ws, v, agents, targets_per_iteration=1, patience=5)
+    await orch.run(report(set(), funcs=ONE))
+    assert t.slept == [15.0, 30.0]
+
+
+async def test_groq_unreachable_past_the_window_stops_with_llm_unavailable(ws):
+    agents = FakeAgents([LLMUnavailable("Groq is unreachable") for _ in range(20)])
+    orch, events, t = run_timed(ws, FakeValidator(ws, []), agents, targets_per_iteration=1, max_iterations=30)
+    summary = await orch.run(report(set(), funcs=ONE))
+    assert summary.stop_reason is StopReason.LLM_UNAVAILABLE
+    assert summary.message == "Stopped: Groq was unreachable for 12 minutes; tests kept so far are saved."
+    assert t.slept == [15.0, 30.0, 60.0, 120.0, 120.0, 120.0, 120.0, 120.0]  # 705 s >= 600 s at the 9th failure
+    assert not orch.failed
+
+
+async def test_a_model_error_from_groq_ends_the_outage(ws):
+    v = FakeValidator(ws, [accepted({"A:1", "A:2"}, funcs=ONE)])
+    agents = FakeAgents([LLMUnavailable("down"), LLMError("schema"), LLMUnavailable("down"), GOOD])
+    orch, _, t = run_timed(ws, v, agents, targets_per_iteration=1, patience=5)
+    await orch.run(report(set(), funcs=ONE))
+    assert t.slept == [15.0, 15.0]
+
+
+async def test_a_successful_call_ends_the_outage(ws):
+    funcs = (("a.go", "A"), ("b.go", "B"))
+    bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
+    v = FakeValidator(ws, [bad, accepted({"A:1", "A:2"}, funcs=funcs)])
+    agents = FakeAgents([LLMUnavailable("down"), GOOD, LLMUnavailable("down again"), GOOD])
+    orch, _, t = run_timed(ws, v, agents, target=50, targets_per_iteration=1, max_fix_attempts=0, patience=5)
+    await orch.run(report(set(), funcs=funcs))
+    assert t.slept == [15.0, 15.0]
+
+
+async def test_a_model_error_still_counts_as_a_failure(ws):
+    orch, _, _ = run_timed(ws, FakeValidator(ws, []), FakeAgents([LLMError("schema")]), targets_per_iteration=1,
+                           max_iterations=1)
+    await orch.run(report(set(), funcs=ONE))
+    assert orch.failed[FuncKey(file="a.go", name="A")] == 1
+
+
+async def test_cancel_during_an_outage_backoff_wakes_at_once(ws):
+    cancel = asyncio.Event()
+
+    async def emit(kind, data):
+        if kind == "llm_unreachable":
+            cancel.set()
+
+    req = JobRequest(repo_path="x", options=JobOptions(targets_per_iteration=1))
+    deps = RunDeps(ws=ws, validator=FakeValidator(ws, []), agents=FakeAgents([LLMUnavailable("down")]),
+                   contexts=FakeContexts(), package_of=lambda f: "p")
+    orch = Orchestrator(deps, req, emit, cancel)  # the real, cancellable wait
+    summary = await asyncio.wait_for(orch.run(report(set(), funcs=ONE)), timeout=5)
+    assert summary.stop_reason is StopReason.CANCELLED

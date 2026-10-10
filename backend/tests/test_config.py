@@ -1,4 +1,7 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+import re
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -100,3 +103,27 @@ def test_groq_prices_are_unset_by_default_and_read_from_env(monkeypatch):
     monkeypatch.setenv("GROQ_PRICE_INPUT_PER_M", "-1")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_host_repos_dir_in_env_does_not_move_the_container_mount(monkeypatch):
+    """compose passes .env into the container, and .env sets HOST_REPOS_DIR to a host path for compose itself."""
+    monkeypatch.setenv("HOST_REPOS_DIR", "./my-repos")
+    assert Settings(_env_file=None).host_repos_mount == Path("/host-repos")
+    monkeypatch.setenv("HOST_REPOS_MOUNT", "/elsewhere")
+    assert Settings(_env_file=None).host_repos_mount == Path("/elsewhere")
+
+
+def test_no_setting_reads_a_compose_only_variable(monkeypatch):
+    """Variables compose interpolates (${...} in docker-compose.yml) are host-side; .env also reaches the backend,
+    so no setting may read one of them."""
+    compose = Path(__file__).resolve().parents[2] / "docker-compose.yml"
+    if not compose.is_file():
+        pytest.skip("docker-compose.yml is not in this checkout (backend image)")
+    names = set(re.findall(r"\$\{([A-Z_][A-Z0-9_]*)", compose.read_text(encoding="utf-8")))
+    assert {"HOST_REPOS_DIR", "BACKEND_PORT", "FRONTEND_PORT"} <= names
+    for name in names:
+        monkeypatch.setenv(name, "./host-side-value")
+    s = Settings(_env_file=None)
+    for name in names:
+        monkeypatch.delenv(name)
+    assert s.model_dump() == Settings(_env_file=None).model_dump(), "a setting reads a compose-only variable"

@@ -30,7 +30,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const unreachable = () =>
-  new ApiError(0, "unreachable", `Can't reach the backend at ${API_URL}. Is \`docker compose up\` running?`);
+  new ApiError(0, "unreachable", `Can't reach the backend at ${API_URL}. Is \`docker compose up\` running? If you changed BACKEND_PORT, rebuild the frontend (\`make up\`).`);
 
 const UPLOAD_TIMEOUT_MS = 10 * 60_000;
 
@@ -77,10 +77,10 @@ export const api = {
   startJob: (body: StartJobBody) =>
     request<{ job_id: string }>("/api/jobs", { method: "POST", body: JSON.stringify(body) }),
   jobs: () => request<JobSnapshot[]>("/api/jobs"),
-  job: (id: string) => request<JobSnapshot>(`/api/jobs/${id}`),
-  cancel: (id: string) => request<JobSnapshot>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+  job: (id: string) => request<JobSnapshot>(`/api/jobs/${encodeURIComponent(id)}`),
+  cancel: (id: string) => request<JobSnapshot>(`/api/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
   /** Write the AI summary of a finished run (again); its events follow on the run's event stream. */
-  writeSummary: (id: string) => request<JobSnapshot>(`/api/jobs/${id}/summary`, { method: "POST" }),
-  file: (id: string, path: string) => request<string>(`/api/jobs/${id}/files/${encodePath(path)}`),
-  eventsUrl: (id: string) => `${API_URL}/api/jobs/${id}/events`,
+  writeSummary: (id: string) => request<JobSnapshot>(`/api/jobs/${encodeURIComponent(id)}/summary`, { method: "POST" }),
+  file: (id: string, path: string) => request<string>(`/api/jobs/${encodeURIComponent(id)}/files/${encodePath(path)}`),
+  eventsUrl: (id: string) => `${API_URL}/api/jobs/${encodeURIComponent(id)}/events`,
 };

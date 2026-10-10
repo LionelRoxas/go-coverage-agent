@@ -1,0 +1,50 @@
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+# Vulnerability and misconfiguration scanning (Trivy): dependencies and Dockerfiles in the repo, plus the built backend image.
+# Report-only: results are uploaded to Security → Code scanning and never fail the build.
+name: trivy
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "41 6 * * 1"   # weekly, Monday 06:41 UTC
+permissions:
+  contents: read
+jobs:
+  repo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: { contents: read, security-events: write }
+    steps:
+      - uses: actions/checkout@v4
+      - name: scan dependencies, secrets and Dockerfiles (report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          format: sarif
+          output: trivy-repo.sarif
+          severity: MEDIUM,HIGH,CRITICAL
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: { sarif_file: trivy-repo.sarif, category: trivy-repo }
+      # Report-only for now. To make fixable CRITICAL vulnerabilities fail the build, add a second fs scan step
+      # with `scanners: vuln`, `severity: CRITICAL`, `ignore-unfixed: true` and `exit-code: "1"`.
+  backend-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions: { contents: read, security-events: write }
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f backend/Dockerfile --build-arg GO_IMAGE=golang:$(cat .go-version) -t gca-backend:scan .
+      - name: scan the backend image (report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: gca-backend:scan
+          format: sarif
+          output: trivy-image.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: { sarif_file: trivy-image.sarif, category: trivy-backend-image }

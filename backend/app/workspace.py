@@ -1,5 +1,8 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-"""A throwaway copy of the user's repo. The only place generated files are ever written."""
+"""A throwaway copy of the user's repo. The only place generated files are ever written.
+
+Repos come from two folders: REPOS_DIR (app-managed: samples and uploads) and HOST_REPOS_DIR, the user's own code,
+mounted read-only and addressed as `host/<rel>`. Nothing here ever writes to either; a job only reads its source."""
 from __future__ import annotations
 
 import os
@@ -9,6 +12,7 @@ import shutil
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 SEED_FILE = "zz_coverage_seed_test.go"
+HOST_PREFIX = "host"  # `host/<rel>` names a module under HOST_REPOS_DIR (read-only)
 _RESTORABLE = {"go.mod", "go.sum"}
 _PKG_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
@@ -33,7 +37,8 @@ def _looks_host_path(repo_path: str) -> bool:
 def _host_path_error(repo_path: str) -> WorkspaceError:
     return WorkspaceError(
         f"{repo_path!r} looks like a path on your machine, which the container cannot see. "
-        "Put the repo under ./repos (or set HOST_REPOS_DIR in .env) and pick it from the list."
+        "Put it under the folder HOST_REPOS_DIR points at (./my-repos by default) or upload it, "
+        "then pick it from the list."
     )
 
 
@@ -42,18 +47,33 @@ def _skip_git_and_links(directory: str, names: list[str]) -> set[str]:
     return {n for n in names if n == ".git" or os.path.islink(os.path.join(directory, n))}
 
 
-def resolve_repo(repos_dir: Path, repo_path: str) -> Path:
-    root = repos_dir.resolve()
-    candidate = (root / repo_path).resolve()
+def _split_host(repo_path: str) -> str | None:
+    """The part after `host/` when repo_path names a module under HOST_REPOS_DIR, else None."""
+    parts = repo_path.replace("\\", "/").split("/", 1)
+    if parts[0] != HOST_PREFIX:
+        return None
+    return parts[1] if len(parts) > 1 else ""
+
+
+def resolve_repo(repos_dir: Path, repo_path: str, host_repos_dir: Path | None = None) -> Path:
+    """The module folder `repo_path` names: `host/<rel>` under host_repos_dir (read-only), anything else under
+    repos_dir. Either way it must resolve (symlinks followed) inside that folder and hold a go.mod."""
+    host_rel = _split_host(repo_path) if host_repos_dir is not None else None
+    if host_rel is not None:
+        assert host_repos_dir is not None
+        root, rel, where = host_repos_dir.resolve(), host_rel, "HOST_REPOS_DIR"
+    else:
+        root, rel, where = repos_dir.resolve(), repo_path, "the repos folder"
+    candidate = (root / rel).resolve()
     inside = candidate.is_relative_to(root)
     # On Linux "C:\\x" or "~/x" is a harmless relative name under root, so only accept
     # such input when it really exists there; otherwise explain the host path.
-    if _looks_host_path(repo_path) and not (inside and candidate.exists()):
+    if _looks_host_path(rel) and not (inside and candidate.exists()):
         raise _host_path_error(repo_path)
     if not inside:
-        if _looks_absolute(repo_path):
+        if host_rel is None and _looks_absolute(repo_path):
             raise _host_path_error(repo_path)
-        raise WorkspaceError("repo_path must point inside the repos folder")
+        raise WorkspaceError(f"repo_path must point inside {where}")
     if not (candidate / "go.mod").is_file():
         raise WorkspaceError(f"no go.mod found in {repo_path!r}; choose the module root")
     return candidate
@@ -73,8 +93,12 @@ class Workspace:
         self.scratch = scratch.resolve()
 
     @classmethod
-    def create(cls, work_dir: Path, job_id: str, source: Path) -> Workspace:
+    def create(cls, work_dir: Path, job_id: str, source: Path, read_only: tuple[Path, ...] = ()) -> Workspace:
+        """Copy `source` (read only) to work_dir/<job_id>/repo. `read_only`: folders nothing may ever be written
+        under (HOST_REPOS_DIR); a workspace that would land inside one is refused before anything is created."""
         base = work_dir / job_id
+        if any(base.resolve().is_relative_to(r.resolve()) for r in read_only):
+            raise WorkspaceError("the work folder is inside a read-only folder; refusing to write there")
         root = base / "repo"
         try:
             shutil.copytree(source, root, ignore=_skip_git_and_links)

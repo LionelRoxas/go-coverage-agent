@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from app.config import Settings
 from app.gotools import read_module_info, run
+from app.workspace import HOST_PREFIX
 
 # Held while a folder under repos_dir is created or replaced (sample clone, upload swap) and while a job copies one.
 repo_lock = asyncio.Lock()
@@ -48,6 +49,7 @@ class RepoInfo(BaseModel):
     module: str
     go_files: int
     test_files: int
+    read_only: bool = False  # under HOST_REPOS_DIR (mounted read-only; path is `host/<rel>`)
 
 
 def count_go_files(root: Path) -> tuple[int, int]:
@@ -62,8 +64,9 @@ def count_go_files(root: Path) -> tuple[int, int]:
     return go, tests
 
 
-def list_repos(repos_dir: Path) -> list[RepoInfo]:
-    if not repos_dir.is_dir():
+def _list_modules(root: Path, skip: frozenset[str] = frozenset()) -> list[tuple[Path, str, int, int]]:
+    """(dir, module, go files, test files) of each Go module up to two levels below root."""
+    if not root.is_dir():
         return []
     def subdirs(parent: Path) -> list[Path]:
         try:
@@ -71,7 +74,7 @@ def list_repos(repos_dir: Path) -> list[RepoInfo]:
         except OSError:
             return []
 
-    candidates = subdirs(repos_dir)
+    candidates = [d for d in subdirs(root) if d.name not in skip]
     candidates += [g for d in list(candidates) if not (d / "go.mod").exists() for g in subdirs(d)]
     found = []
     for d in candidates:
@@ -82,7 +85,19 @@ def list_repos(repos_dir: Path) -> list[RepoInfo]:
             go, tests = count_go_files(d)
         except (ValueError, OSError):
             continue
-        found.append(RepoInfo(path=d.relative_to(repos_dir).as_posix(), module=module, go_files=go, test_files=tests))
+        found.append((d, module, go, tests))
+    return found
+
+
+def list_repos(repos_dir: Path, host_repos_dir: Path | None = None) -> list[RepoInfo]:
+    """Modules in repos_dir (samples, uploads), plus those in host_repos_dir as read-only `host/<rel>`. A folder
+    named `host` in repos_dir is not listed: that prefix always means HOST_REPOS_DIR."""
+    found = [RepoInfo(path=d.relative_to(repos_dir).as_posix(), module=m, go_files=g, test_files=t)
+             for d, m, g, t in _list_modules(repos_dir, frozenset({HOST_PREFIX}))]
+    if host_repos_dir is not None:
+        found += [RepoInfo(path=f"{HOST_PREFIX}/{d.relative_to(host_repos_dir).as_posix()}", module=m, go_files=g,
+                           test_files=t, read_only=True)
+                  for d, m, g, t in _list_modules(host_repos_dir)]
     return sorted(found, key=lambda r: r.path)
 
 

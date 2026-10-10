@@ -175,3 +175,33 @@ async def test_existing_non_module_error_names_the_sample(tmp_path):
     (settings.repos_dir / "btree").mkdir()
     with pytest.raises(RuntimeError, match=r"repos/btree exists but is not a Go module"):
         await clone_sample(settings, "btree")
+
+
+def _module(d, module):
+    d.mkdir(parents=True)
+    (d / "go.mod").write_text(f"module {module}\n")
+
+
+def test_list_repos_adds_host_modules_read_only_under_host_prefix(tmp_path):
+    repos, host = tmp_path / "repos", tmp_path / "host-repos"
+    _module(repos / "stats", "github.com/montanaflynn/stats")
+    _module(host / "mine", "example.com/mine")
+    _module(host / "team" / "svc", "example.com/svc")
+    found = list_repos(repos, host)
+    assert [(r.path, r.module, r.read_only) for r in found] == [
+        ("host/mine", "example.com/mine", True),
+        ("host/team/svc", "example.com/svc", True),
+        ("stats", "github.com/montanaflynn/stats", False),
+    ]
+
+
+def test_list_repos_hides_an_app_folder_named_host(tmp_path):
+    """`host/...` always means the read-only host folder, so ./repos/host could never be picked."""
+    repos = tmp_path / "repos"
+    _module(repos / "host" / "x", "example.com/x")
+    assert list_repos(repos, tmp_path / "missing") == []
+
+
+def test_list_repos_without_host_dir_lists_only_app_repos(tmp_path):
+    _module(tmp_path / "repos" / "a", "example.com/a")
+    assert [r.path for r in list_repos(tmp_path / "repos", tmp_path / "nope")] == ["a"]

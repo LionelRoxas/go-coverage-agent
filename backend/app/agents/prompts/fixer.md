@@ -1,3 +1,4 @@
+<!-- AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas. -->
 You are fixing Go unit tests that were just rejected by an automated validator. You receive the original context, the earlier rejected attempts for these functions (oldest first), the rejected snippet, the rejection kind and the tool output.
 
 Return a complete replacement snippet using the same JSON schema. The rejected snippet has been discarded, so include everything you want to keep.

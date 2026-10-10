@@ -158,6 +158,7 @@ class StopReason(StrEnum):
     NO_REMAINING_TARGETS = "no_remaining_targets"
     BUDGET_EXHAUSTED = "budget_exhausted"
     CANCELLED = "cancelled"
+    LLM_UNAVAILABLE = "llm_unavailable"  # Groq unreachable (timeouts, 5xx, connection errors) past the outage window
 
 
 class JobStatus(StrEnum):
@@ -194,6 +195,7 @@ class IterationRecord(BaseModel):
     end_percent: float
     accepted: int
     rejected: int
+    deferred: int = 0  # items that met a Groq outage: neither accepted nor rejected, planned again later
 
 
 class FileDelta(BaseModel):

@@ -66,6 +66,25 @@ describe("JobPage", () => {
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
 
+  it("hides Cancel when a live run turns out to be interrupted after a backend restart", async () => {
+    vi.mocked(api.job).mockResolvedValueOnce({ status: "running", writing_summary: false } as never)
+      .mockResolvedValue({ status: "interrupted", writing_summary: false } as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    act(() => FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq: 0, ts: 1, type: "job_started",
+      data: { repo_path: "stats", target_coverage: 80, options: {}, model: "m" } }) }));
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    act(() => FakeEventSource.last!.onerror!());
+    await waitFor(() => expect(api.job).toHaveBeenCalledTimes(2));
+    act(() => {  // the reconnected stream replays the run and ends
+      FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq: 0, ts: 1, type: "job_started",
+        data: { repo_path: "stats", target_coverage: 80, options: {}, model: "m" } }) });
+      FakeEventSource.last!.onerror!();
+    });
+    expect(await screen.findByText("Interrupted")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+  });
+
   it("shows the load error instead of the loading page when a saved run replays nothing", async () => {
     vi.mocked(api.job).mockResolvedValue({ status: "completed", writing_summary: false } as never);
     render(<JobPage />);

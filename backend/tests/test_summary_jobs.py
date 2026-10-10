@@ -396,3 +396,15 @@ async def test_a_cancel_right_after_write_again_is_not_lost(tmp_path):
     m.cancel(job.id)  # before the summary task has started
     await job.summary_task
     assert job.events[-1].data["reason"] == "cancelled" and llms == []
+
+
+async def test_no_automatic_summary_call_after_groq_was_unreachable(tmp_path):
+    m, llms = setup(tmp_path, reason=StopReason.LLM_UNAVAILABLE)
+    job = await run(m)
+    assert job.status is JobStatus.COMPLETED and llms == []
+    assert types(job)[-2:] == ["job_completed", "summary_failed"]
+    assert job.events[-1].data["reason"] == "llm_unavailable"
+    assert "Write again" in job.events[-1].data["message"]
+    m.write_summary_again(job.id)  # on request it is tried: Groq may be back
+    await job.summary_task
+    assert len(llms) == 1 and job.events[-1].type == "summary_generated"

@@ -68,7 +68,7 @@ describe("WalkthroughPage", () => {
     expect(keep).toHaveTextContent("snapshot");
     expect(keep).toHaveTextContent("history");
     const stop = section("stop");
-    for (const r of ["target_reached", "marginal_gains", "max_iterations", "no_remaining_targets", "budget_exhausted", "cancelled"]) {
+    for (const r of ["target_reached", "marginal_gains", "max_iterations", "no_remaining_targets", "budget_exhausted", "cancelled", "llm_unavailable"]) {
       expect(stop).toHaveTextContent(r);
     }
     expect(stop).toHaveTextContent("20");

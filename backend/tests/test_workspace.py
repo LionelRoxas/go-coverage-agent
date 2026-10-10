@@ -36,14 +36,14 @@ def test_resolve_repo_explains_host_paths(tmp_path):
     make_repo(tmp_path)
     elsewhere = tmp_path / "Users" / "me" / "code" / "stats"
     elsewhere.mkdir(parents=True)
-    with pytest.raises(WorkspaceError, match=r"\./repos"):
+    with pytest.raises(WorkspaceError, match=r"\./my-repos"):
         resolve_repo(tmp_path / "repos", str(elsewhere))
 
 
 @pytest.mark.parametrize("host_path", [r"C:\Users\me\code\stats", "~/code/stats"])
 def test_resolve_repo_explains_windows_and_home_paths_on_any_os(tmp_path, host_path):
     make_repo(tmp_path)
-    with pytest.raises(WorkspaceError, match=r"\./repos"):
+    with pytest.raises(WorkspaceError, match=r"\./my-repos"):
         resolve_repo(tmp_path / "repos", host_path)
 
 
@@ -123,3 +123,51 @@ def test_snapshot_restore_handles_absent_files(tmp_path):
     ws.restore(snap)
     assert ws.read("new_test.go") is None
     assert ws.read("go.mod") == "module example.com/demo\n\ngo 1.17\n"
+
+
+def make_host(root: Path) -> Path:
+    repo = root / "host-repos" / "team" / "proj"
+    repo.mkdir(parents=True)
+    (repo / "go.mod").write_text("module example.com/proj\n")
+    return root / "host-repos"
+
+
+def test_resolve_repo_maps_host_prefix_into_host_dir(tmp_path):
+    make_repo(tmp_path)
+    host = make_host(tmp_path)
+    assert resolve_repo(tmp_path / "repos", "host/team/proj", host) == (host / "team" / "proj").resolve()
+    assert resolve_repo(tmp_path / "repos", "demo", host) == (tmp_path / "repos" / "demo").resolve()
+
+
+@pytest.mark.parametrize("path", ["host/../repos/demo", "host/team/../../repos/demo", "host/../../etc"])
+def test_resolve_repo_rejects_traversal_out_of_host_dir(tmp_path, path):
+    make_repo(tmp_path)
+    host = make_host(tmp_path)
+    with pytest.raises(WorkspaceError, match="inside"):
+        resolve_repo(tmp_path / "repos", path, host)
+
+
+def test_resolve_repo_rejects_host_symlink_leading_out(tmp_path):
+    make_repo(tmp_path)
+    host = make_host(tmp_path)
+    try:
+        os.symlink(tmp_path / "repos" / "demo", host / "link", target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available on this host")
+    with pytest.raises(WorkspaceError, match="inside"):
+        resolve_repo(tmp_path / "repos", "host/link", host)
+
+
+def test_resolve_repo_host_prefix_requires_go_mod(tmp_path):
+    host = make_host(tmp_path)
+    with pytest.raises(WorkspaceError, match="go.mod"):
+        resolve_repo(tmp_path / "repos", "host/team", host)
+
+
+def test_create_refuses_a_workspace_inside_a_read_only_root(tmp_path):
+    host = make_host(tmp_path)
+    with pytest.raises(WorkspaceError, match="read-only"):
+        Workspace.create(host / "work", "job1", host / "team" / "proj", read_only=(host,))
+    assert not (host / "work").exists()
+    ws = Workspace.create(tmp_path / "work", "job1", host / "team" / "proj", read_only=(host,))
+    assert (ws.root / "go.mod").is_file()

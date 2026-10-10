@@ -326,8 +326,11 @@ async def test_startup_reloads_a_real_run(tmp_path, out):
     folder = out / "fc080d7fc500"
     shutil.copytree(REAL_RUN, folder, ignore=shutil.ignore_patterns("ai_summary.json"))
     settings = settings_for(tmp_path)
+    stale = settings.work_dir / "fc080d7fc500" / "repo"  # its workspace, left behind by a restart
+    stale.mkdir(parents=True)
     app = create_app(settings, JobManager(settings, llm_factory=fake_llm))
     async with app.router.lifespan_context(app):
+        assert not stale.parent.exists()  # removed on startup; its tests are served from output/<id>/tests
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             [listed] = (await client.get("/api/jobs")).json()
             assert listed["id"] == "fc080d7fc500" and listed["status"] == "completed"

@@ -33,7 +33,7 @@ function pickTab(folders: RepoInfo[]): PickerTab {
 // Header and body share the columns, so the measured run sits above Run history and the aside starts level with the wizard.
 const COLUMNS = "grid gap-10 lg:grid-cols-[minmax(0,1fr)_23rem] lg:gap-14";
 
-// Coverage after each round of a real run: montanaflynn/stats, goal 100%, run 0e1f8bf7442a
+// Coverage after each round of a real run: montanaflynn/stats, goal 100%, max_iterations 30, min_gain 0.5, run 0e1f8bf7442a
 // (output/0e1f8bf7442a/report.json, iterations[].end_percent; 0% at the start, 612 s in total).
 const MEASURED = [17.2, 33.9, 44.6, 51.6, 58.9, 64.7, 69.8, 72.0, 76.2, 80.0, 83.2, 86.0, 88.5, 90.8, 92.5, 94.2, 96.2, 97.0, 98.2, 99.4, 99.8, 100];
 
@@ -51,7 +51,7 @@ function MeasuredRun() {
         ))}
       </div>
       <figcaption className="text-xs leading-relaxed text-muted">
-        Measured on <span className="font-mono text-text">montanaflynn/stats</span>: 0% to 100% of the code tested in 22 rounds, about 10 minutes.
+        Measured on <span className="font-mono text-text">montanaflynn/stats</span>: 0% to 100% of the code tested in 22 rounds (goal 100%, up to 30 rounds), about 10 minutes.
       </figcaption>
     </figure>
   );
@@ -313,7 +313,7 @@ export default function SetupPage() {
                 <div className="space-y-2">
                   <label htmlFor="target" className="sr-only">Target coverage</label>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <input id="target" type="range" min={10} max={100} step={1} value={Math.min(100, Math.max(10, target || 10))}
+                    <input id="target" type="range" min={1} max={100} step={1} value={Math.min(100, Math.max(1, target || 1))}
                            onChange={(e) => setTarget(Number(e.target.value))} className="w-full max-w-64 accent-[var(--accent)]" />
                     <div className="flex items-center gap-2">
                       <input type="number" min={1} max={100} value={Number.isNaN(target) ? "" : target} aria-label="Target coverage percent"

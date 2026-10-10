@@ -79,7 +79,7 @@ describe("HowItWorksPage", () => {
   it("keeps the stop rules, a short trust list with the no-new-coverage sentence, and the measured results", () => {
     render(<HowItWorksPage />);
     for (const t of ["It reached the goal", "The last rounds added very little", "It ran out of rounds (20 by default)",
-                     "It used up its AI budget", "Nothing is left that it can work on"]) {
+                     "It used up its AI budget", "Nothing is left that it can work on", "The AI service could not be reached"]) {
       expect(screen.getByText(t)).toBeInTheDocument();
     }
     expect(screen.getByText(/at least one piece of code that no earlier test ran/)).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe("HowItWorksPage", () => {
     const stats100 = screen.getByTestId("result-stats-100");
     expect(stats100).toHaveTextContent("goal 100%");
     expect(stats100).toHaveTextContent("0% → 100%");
-    expect(stats100).toHaveTextContent("22 rounds, about 10 minutes");
+    expect(stats100).toHaveTextContent("22 rounds, about 10 minutes (round limit raised to 30)");
     const btree = screen.getByTestId("result-btree");
     expect(btree).toHaveTextContent("0% → 87.1%");
     expect(btree).toHaveTextContent("stopped when new rounds added very little");

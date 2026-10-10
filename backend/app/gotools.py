@@ -140,6 +140,19 @@ async def run(argv: list[str], cwd: Path, timeout: float, env: dict[str, str],
     )
 
 
+# stage -> (what timed out, the Settings field that bounds it; its env var is the field name in upper case)
+_STAGES = {"list": ("go list (loading the module)", "command_timeout_s"),
+           "compile": ("the compile step (go test -run=^$)", "compile_timeout_s"),
+           "vet": ("go vet", "vet_timeout_s"),
+           "test": ("go test", "test_timeout_s")}
+
+
+def timeout_message(settings: Settings, stage: str) -> str:
+    """'<what> timed out after N s (ENV_VAR)' for a command killed at its stage's timeout."""
+    what, field = _STAGES[stage]
+    return f"{what} timed out after {getattr(settings, field):g} s ({field.upper()})"
+
+
 def go_env(settings: Settings) -> dict[str, str]:
     env = {k: os.environ[k] for k in _PASSTHROUGH if k in os.environ}
     env.update(
@@ -200,14 +213,16 @@ class GoTools:
         return pkgs
 
     async def compile(self, pkgs: list[GoPackage]) -> CommandResult:
-        return await self._run(["go", "test", "-count=1", "-run=^$", *[p.import_path for p in pkgs]])
+        return await self._run(["go", "test", "-count=1", "-run=^$", *[p.import_path for p in pkgs]],
+                               timeout=self.settings.compile_timeout_s)
 
     async def vet(self, pkgs: list[GoPackage]) -> CommandResult:
-        return await self._run(["go", "vet", *[p.import_path for p in pkgs]])
+        return await self._run(["go", "vet", *[p.import_path for p in pkgs]], timeout=self.settings.vet_timeout_s)
 
     async def test(self, pkgs: list[GoPackage], profile: Path) -> CommandResult:
         return await self._run(["go", "test", "-count=2", "-covermode=set", f"-coverprofile={profile}",
-                                f"-timeout={self.settings.test_timeout}", *[p.import_path for p in pkgs]])
+                                f"-timeout={self.settings.test_timeout}", *[p.import_path for p in pkgs]],
+                               timeout=self.settings.test_timeout_s)
 
     async def funcs(self) -> list[FuncInfo]:
         r = await self._run(["gohelper", "funcs", "."], max_chars=JSON_MAX_CHARS)

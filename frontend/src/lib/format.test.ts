@@ -1,6 +1,6 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 import { describe, expect, it } from "vitest";
-import { ATTEMPT_LABEL, REJECTION_LABEL, checkLabel, circled, delta, duration, parseTestFailures, pct, tokens } from "./format";
+import { ATTEMPT_LABEL, REJECTION_LABEL, STOP_REASON_LABEL, checkLabel, circled, delta, duration, parseTestFailures, pct, tokens } from "./format";
 
 describe("format", () => {
   it("formats numbers for humans", () => {
@@ -14,6 +14,10 @@ describe("format", () => {
     expect(tokens(152_300)).toBe("152.3k");
     expect(tokens(2_000_000)).toBe("2.0M");
     expect(tokens(1_500_000)).toBe("1.5M");
+  });
+
+  it("labels the llm_unavailable stop", () => {
+    expect(STOP_REASON_LABEL.llm_unavailable).toBe("Groq unreachable");
   });
 
   it("labels attempts and rejections separately", () => {

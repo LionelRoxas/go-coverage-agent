@@ -103,6 +103,13 @@ describe("reduce", () => {
     expect(reduce(once, first)).toBe(once);
   });
 
+  it("shows the backoff while Groq is unreachable", () => {
+    seq = 0;
+    const s = run([ev("job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" }),
+                   ev("llm_unreachable", { seconds: 30, unreachable_s: 15 })]);
+    expect(s.activity).toBe("Groq is unreachable; trying again in 30s (the item is retried later)…");
+  });
+
   it("shows rate-limit waits and terminal states", () => {
     seq = 0;
     let s = run([ev("job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" }),
@@ -132,6 +139,18 @@ describe("reduce", () => {
                                   check: { kind: "llm_error", output: "model timed out", failedTests: [] } }]);
     expect(item.status).toBe("rejected");
     expect(item.rejectReason).toBe("llm_error");
+  });
+
+  it("marks an item that met a Groq outage as deferred, not rejected", () => {
+    seq = 0;
+    const s = run([
+      ...planned(),
+      ev("validation_result", { index: 1, file: "mean.go", kind: "llm_unavailable", output: "Groq is unreachable", failed_tests: [] }),
+      ev("candidate_deferred", { index: 1, file: "mean.go", reason: "llm_unavailable" }),
+    ]);
+    const item = s.iterations[0].items[0];
+    expect(item.status).toBe("deferred");
+    expect(item.pending).toBeUndefined();
   });
 
   it("handles a cancelled job", () => {

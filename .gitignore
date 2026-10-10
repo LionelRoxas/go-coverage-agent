@@ -1,3 +1,4 @@
+# AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 __pycache__/
 .venv/
 .pytest_cache/
@@ -6,6 +7,8 @@ node_modules/
 .env
 repos/*
 !repos/.gitkeep
+my-repos/*
+!my-repos/.gitkeep
 output/*
 !output/.gitkeep
 compose.local*.yml
