@@ -375,12 +375,14 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
         <Section id="results">
           <H3>Files on your machine</H3>
           <Pre>{`./output/<job id>/
-  tests/         every accepted test file, at its path in the repo (the seed file is left out)
+  tests/         every accepted test file, at its path in the repo, copied when it is accepted
+                 (the seed file is left out)
   report.json    stop reason and message, baseline → final %, every round, per-file before/after,
                  tests added, possible bugs, tokens, duration,
                  the AI summary (ai_summary)
   SUMMARY.md     the AI summary as Markdown (when one was written)
-  events.jsonl   every event, one JSON object per line, including the final one`}</Pre>
+  events.jsonl   every event, one JSON object per line, appended as it happens
+                 (a run killed mid-way reloads as Interrupted, with its accepted tests)`}</Pre>
           <H3>The AI summary</H3>
           <p>After the result is shown, one more model call (the Summarizer) gets the run’s measured facts as JSON: coverage, rounds, time, tokens, an estimated cost when prices are set, rejected targets, the least-covered files and suspected bugs. It returns two summaries, one for stakeholders and one for engineering teams. A deterministic grounding check then drops any sentence whose numbers, files or test names are not in those facts; suspected bugs are copied from the facts, not written by the model. The job stays busy until the summary is written, so a new run can’t start until then, and Cancel stops only the summary. It is skipped when Groq was unreachable at the end (<C>llm_unavailable</C>); Write again on the run page asks for a new one. Turn it off with <C>write_summary: false</C> or the checkbox in the advanced options.</p>
           <H3>The job page</H3>
