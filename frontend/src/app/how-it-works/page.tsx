@@ -43,9 +43,10 @@ const STEPS: Step[] = [
 const STOPS = [
   { rule: "It reached the goal", why: "Coverage hit the target you set (80% unless you change it)." },
   { rule: "The last rounds added very little", why: "Two rounds in a row each raised coverage by less than 1% (for example, from 60% to 60.5%)." },
-  { rule: "It ran out of rounds (20 by default)", why: "A round is one pass through steps 2 to 5." },
+  { rule: "It ran out of rounds (20 by default)", why: "A round is one pass through steps 2 to 5. A round in which the AI service could not be reached does not count." },
   { rule: "It used up its AI budget", why: "Each run, and each day, has a limit on how much AI it may use." },
   { rule: "Nothing is left that it can work on", why: "Every remaining gap was tried twice without success, or is too big to send in one go." },
+  { rule: "The AI service could not be reached", why: "Groq, the AI service, did not answer for 10 minutes in a row. Until then it keeps waiting a little longer each time and tries the same gaps again; they never count as failed. The tests kept so far are saved." },
 ];
 
 const RESULTS = [

@@ -251,6 +251,16 @@ describe("Timeline waiting on Groq", () => {
     expect(screen.queryByText(/Waiting for Groq/)).not.toBeInTheDocument();
   });
 
+  it("shows an item that met a Groq outage as retried later, not rejected", () => {
+    renderRun([...stuckFixer, { seq: 11, ts: T0 + 250, type: "validation_result",
+      data: { index: 1, file: "constraints.go", kind: "llm_unavailable", output: "Groq is unreachable: 503", failed_tests: [] } },
+      { seq: 12, ts: T0 + 250, type: "candidate_deferred", data: { index: 1, file: "constraints.go", reason: "llm_unavailable" } }]);
+    expect(screen.getAllByText("Retried later (Groq unreachable)")[0]).toBeInTheDocument();
+    expect(screen.getByText(/Groq unreachable: nothing to check/)).toBeInTheDocument();
+    expect(screen.getByText(/does not count as failed and is planned again in a later round/)).toBeInTheDocument();
+    expect(screen.queryByText(/rejected/i)).not.toBeInTheDocument();
+  });
+
   it("marks a version that was cleaned up before its first check", () => {
     const cleaned: JobEvent[] = [...stuckFixer.slice(0, 5),
       { ...stuckFixer[5], seq: 7 },

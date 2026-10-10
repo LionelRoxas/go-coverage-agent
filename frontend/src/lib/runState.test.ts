@@ -141,6 +141,18 @@ describe("reduce", () => {
     expect(item.rejectReason).toBe("llm_error");
   });
 
+  it("marks an item that met a Groq outage as deferred, not rejected", () => {
+    seq = 0;
+    const s = run([
+      ...planned(),
+      ev("validation_result", { index: 1, file: "mean.go", kind: "llm_unavailable", output: "Groq is unreachable", failed_tests: [] }),
+      ev("candidate_deferred", { index: 1, file: "mean.go", reason: "llm_unavailable" }),
+    ]);
+    const item = s.iterations[0].items[0];
+    expect(item.status).toBe("deferred");
+    expect(item.pending).toBeUndefined();
+  });
+
   it("handles a cancelled job", () => {
     seq = 0;
     const summary = { stop_reason: "cancelled", message: "Cancelled by user", final_percent: 12.5 };

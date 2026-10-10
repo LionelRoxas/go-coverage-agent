@@ -18,6 +18,9 @@ export const STOP_REASON_LABEL: Record<StopReason, string> = {
   llm_unavailable: "Groq unreachable",
 };
 
+// An item that met a Groq outage (candidate_deferred): neither accepted nor rejected.
+export const DEFERRED_LABEL = "Retried later (Groq unreachable)";
+
 // Why a single validation attempt did not pass (or was repaired without the model).
 export const ATTEMPT_LABEL: Record<string, string> = {
   compile_error: "Didn't compile",
@@ -27,6 +30,7 @@ export const ATTEMPT_LABEL: Record<string, string> = {
   guard_rejected: "Blocked by safety rules",
   llm_error: "Model error",
   llm_timeout: "Groq timed out",
+  llm_unavailable: "Groq unreachable",
   prompt_too_large: "Prompt too large (no model call)",
   mechanical_repair: "Auto-fixed (no LLM call)",
 };
@@ -40,6 +44,7 @@ export const REJECTION_LABEL: Record<string, string> = {
   guard_rejected: "Blocked by safety rules",
   llm_error: "Model error",
   llm_timeout: "Groq timed out",
+  llm_unavailable: "Groq unreachable",
   prompt_too_large: "Prompt too large (no model call)",
   too_large: "Too large for one request",
 };
@@ -53,6 +58,7 @@ export const CHECK_LABEL: Record<string, string> = {
   guard_rejected: "Rejected by the safety guard",
   llm_error: "Model error",
   llm_timeout: "Groq timed out",
+  llm_unavailable: "Groq unreachable",
   prompt_too_large: "Prompt too large (no model call)",
 };
 

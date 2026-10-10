@@ -3,7 +3,8 @@
 import type { CoverageReport, JobEvent, Scenario, Summary, SummaryGenerated } from "./types";
 
 // "not_run": the run ended (goal reached, stopped or cancelled) before this planned item finished.
-export type ItemStatus = "writing" | "validating" | "fixing" | "accepted" | "rejected" | "not_run";
+// deferred: Groq was unreachable; the target is planned again in a later round (not a rejection).
+export type ItemStatus = "writing" | "validating" | "fixing" | "accepted" | "rejected" | "deferred" | "not_run";
 
 // What checking one version of the test code found (validation_result).
 export type Check = { kind: string; output: string; failedTests: string[] };
@@ -92,7 +93,7 @@ function withItem(s: RunState, index: number, file: string, fn: (item: ItemView)
 // No request is waiting any more: a rate-limit pause (its own activity line) or the end of the job.
 // Items still writing/validating/fixing when the job ends never finish; mark them so the page stops showing "Writing…".
 function settleUnfinished(s: RunState, reason: "goal" | "stopped"): RunState {
-  const open = (i: ItemView) => i.status !== "accepted" && i.status !== "rejected" && i.status !== "not_run";
+  const open = (i: ItemView) => i.status !== "accepted" && i.status !== "rejected" && i.status !== "deferred" && i.status !== "not_run";
   if (!s.iterations.some((it) => it.items.some(open))) return s;
   return { ...s, iterations: s.iterations.map((it) => ({
     ...it, items: it.items.map((i) => (open(i) ? { ...i, status: "not_run" as const, notRunReason: reason, pending: undefined } : i)) })) };
@@ -107,7 +108,7 @@ function clearPending(s: RunState): RunState {
 // The item whose Groq request is still waiting, if any (requests are made one at a time).
 export function waitingOn(s: RunState): (PendingRequest & { file: string }) | undefined {
   for (const it of s.iterations) for (const i of it.items) {
-    if (i.pending && i.status !== "accepted" && i.status !== "rejected") return { file: i.file, ...i.pending };
+    if (i.pending && i.status !== "accepted" && i.status !== "rejected" && i.status !== "deferred") return { file: i.file, ...i.pending };
   }
   return undefined;
 }
@@ -240,6 +241,8 @@ export function reduce(state: RunState, ev: RunAction): RunState {
         percentBefore: d.percent != null && d.gain != null ? d.percent - d.gain : undefined }));
       return { ...next, percent: d.percent, activity: nextWriting(next, d.index) };
     }
+    case "candidate_deferred":
+      return withItem(s, d.index, d.file, (i) => ({ ...i, status: "deferred", pending: undefined, rejectReason: d.reason }));
     case "candidate_rejected": {
       const next = withItem(s, d.index, d.file, (i) => ({ ...i, status: "rejected", pending: undefined,
                                                          rejectReason: d.reason })); // e.g. too_large: no llm_call came

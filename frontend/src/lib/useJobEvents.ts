@@ -41,6 +41,9 @@ export function useJobEvents(jobId: string) {
         // What this stream replayed: whether it reached the run's end (and its summary, when the snapshot says one exists).
         let received = false, sawEnd = false, sawSummary = false;
         let lastSeq = -1, seqAtLastError = -1, staleReplays = 0;
+        // A live run found ended by a later snapshot: settle only once the reopened stream has replayed something, so
+        // events saved after the last live one are shown (null: the run was not live when the page opened).
+        let sinceEnded: number | null = null;
         const es = new EventSource(api.eventsUrl(jobId));
         source.current = es;
         let settled = false;
@@ -50,7 +53,8 @@ export function useJobEvents(jobId: string) {
           es.close();
           dispatch({ type: "stream_ended", saved: job.status });
         };
-        const replayComplete = () => job.status === "interrupted" || (sawEnd && (sawSummary || !job.ai_summary));
+        const replayComplete = () => (sinceEnded === null || sinceEnded > 0)
+          && (job.status === "interrupted" || (sawEnd && (sawSummary || !job.ai_summary)));
         es.onopen = () => patch({ connection: "open", error: null });
         es.onerror = () => {
           if (settled) return; // a late error event after the stream was closed
@@ -83,7 +87,9 @@ export function useJobEvents(jobId: string) {
               if (cancelled || settled || ended || !isEnded(fresh)) return;
               job = fresh;
               ended = true;
-              if (replayComplete()) settle(); // otherwise the retry replays the end, which closes the stream
+              // The browser gave up: nothing more will be replayed. Otherwise its retry replays the run first.
+              if (es.readyState === EventSource.CLOSED) return settle();
+              sinceEnded = 0;
             },
             (e) => {
               if (!cancelled && e instanceof ApiError && e.status === 404) patch({ notFound: true });
@@ -94,6 +100,7 @@ export function useJobEvents(jobId: string) {
             const ev = JSON.parse(m.data);
             dispatch(ev);
             received = true;
+            if (sinceEnded !== null) sinceEnded++;
             if (typeof ev.seq === "number" && ev.seq > lastSeq) lastSeq = ev.seq;
             if (END_EVENTS.has(ev.type)) sawEnd = true;
             if (SUMMARY_EVENTS.has(ev.type)) sawSummary = true;

@@ -75,6 +75,12 @@ describe("JobPage", () => {
       data: { repo_path: "stats", target_coverage: 80, options: {}, model: "m" } }) }));
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     act(() => FakeEventSource.last!.onerror!());
+    await waitFor(() => expect(api.job).toHaveBeenCalledTimes(2));
+    act(() => {  // the reconnected stream replays the run and ends
+      FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq: 0, ts: 1, type: "job_started",
+        data: { repo_path: "stats", target_coverage: 80, options: {}, model: "m" } }) });
+      FakeEventSource.last!.onerror!();
+    });
     expect(await screen.findByText("Interrupted")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
