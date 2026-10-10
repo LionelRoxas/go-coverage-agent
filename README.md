@@ -69,9 +69,9 @@ Step 1 of the setup page, **Choose a repository**, has two tabs.
 - An upload only ever replaces a folder that an earlier upload created; any other folder with the same name is left untouched and you are asked for a different name.
 - If the mounted folder already has an `uploads` folder of its own, the app leaves it alone and refuses to upload until it is renamed.
 
-The tab also lists every other Go module (a folder with a `go.mod`, up to two levels deep) in the mounted folder, apart from the samples. For large projects, or to keep a folder in sync while you edit it, mount it instead:
+The tab also lists your own Go projects: every Go module (a folder with a `go.mod`, up to two levels deep) in `HOST_REPOS_DIR`, shown as `host/<path>` with a **read-only** label. For large projects, or to keep a folder in sync while you edit it, use this instead of uploading:
 
-1. Copy or clone it into the mounted folder (`./repos` by default; the tab shows the real host path), then press Refresh; or
+1. Copy or clone it into `./my-repos` (the default `HOST_REPOS_DIR`; the tab shows the real host path), then press Refresh; or
 2. Set `HOST_REPOS_DIR` in `.env` to any parent folder and run `make up` again. Compose needs an absolute path (it does not expand `~`) or one relative to this repository:
 
    | OS | Example |
@@ -80,7 +80,11 @@ The tab also lists every other Go module (a folder with a `go.mod`, up to two le
    | macOS | `HOST_REPOS_DIR=/Users/you/code` |
    | Linux | `HOST_REPOS_DIR=/home/you/code` |
 
-Your repository is never modified: the agent works on a copy, and the generated tests are written to `./output/<job-id>/tests/`.
+The two folders are kept apart. `./repos` is the app's own folder, mounted read-write at `/repos`: downloaded samples and browser uploads live there. `HOST_REPOS_DIR` is your code, mounted **read-only** at `/host-repos`.
+
+Your code is never modified. `HOST_REPOS_DIR` is mounted read-only, so nothing in the container can write to it: not the app, and not the generated tests it compiles and runs. A run reads your module once to copy it into the container's `/work/<job-id>`, works only on that copy, and writes the generated tests to `./output/<job-id>/tests/` for you to review and copy over yourself. An uploaded folder is a copy from the start: the browser sends its files and your original folder is not touched.
+
+**Upgrading from an earlier version:** samples and uploads stay in `./repos` (same path) and keep working. If your `.env` still has `HOST_REPOS_DIR=./repos` (the old default), point it at your own code folder or remove the line; otherwise the samples are listed a second time, read-only, under `host/`.
 
 Every run is saved in `./output/<job-id>` (events, report, tests, summary), and Run history reloads it from there when the app restarts, so earlier runs stay viewable. A run the app was shut down in the middle of shows as Interrupted, with the results up to that point; a run whose container was killed outright mid-run has no saved events yet and is not listed. Delete `./output/<job-id>` to remove a run.
 
@@ -97,7 +101,8 @@ Every run is saved in `./output/<job-id>` (events, report, tests, summary), and 
 │                                   │                  Groq API   go test/vet/gofmt
 │                                   │   Workspace: /work/<job>/repo (copy)│
 │                                   └──────────────────────────────────┘ │
-│  volumes: ${HOST_REPOS_DIR:-./repos} ─▶ /repos   ./output ─▶ /output    │
+│  volumes: ./repos ─▶ /repos (samples, uploads)   ./output ─▶ /output   │
+│           ${HOST_REPOS_DIR:-./my-repos} ─▶ /host-repos (read-only)     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -288,7 +293,7 @@ Environment variables (`.env`, same layout as `.env.example`). Only the key is r
 | `GROQ_WRITER_REASONING_EFFORT` | `medium` | Writer's reasoning effort (`medium` or `low`; `high` is accepted but too slow) |
 | `GROQ_FIXER_REASONING_EFFORT` | `medium` | Fixer's reasoning effort (`medium` or `low`; `high` is accepted but too slow). If an answer is cut off for length, it is retried automatically one level lower |
 | `BACKEND_PORT` / `FRONTEND_PORT` | 8000 / 3000 | Host ports (loopback only); run `make up` again after changing |
-| `HOST_REPOS_DIR` | `./repos` | Host folder whose Go modules appear under "Your folders" |
+| `HOST_REPOS_DIR` | `./my-repos` | Host folder with your own Go projects, mounted read-only at `/host-repos`; its modules appear under "Your folders" as `host/<path>`. Keep it separate from `./repos` (samples and uploads) |
 | `DAILY_TOKEN_BUDGET` | 2,000,000 | The app's own daily token cap (not a Groq limit), counted in `output/.usage.json`, reset at midnight UTC. Raise it freely on a paid key |
 | `GROQ_PRICE_INPUT_PER_M` / `GROQ_PRICE_OUTPUT_PER_M` | (unset) | Groq prices in USD per 1M input / output tokens. When both are set, the AI summary shows an estimated cost; unset shows none. `.env.example` sets `0.15` / `0.60` as an example (openai/gpt-oss-120b on Groq at the time of writing; check console.groq.com pricing); remove both lines to hide the cost |
 | **Free-trial Groq key** (8K tokens/min, 200K/day): set all three | | |
@@ -340,7 +345,7 @@ cd frontend && npm ci && npm test
 ## Limitations
 
 - Expected values for floating-point code are partly characterization tests: when a generated assertion fails, the fixer may adopt the observed value if it's plausible. Real bugs may therefore be encoded rather than flagged; review generated assertions before trusting them.
-- Generated tests run inside the backend container and could read files there (including the backend's environment via `/proc`) and start processes. The guard's rejection of `StartProcess` and `/proc/` is a cheap best-effort filter and is easy to bypass (string concatenation, reflection); it is not a sandbox. The real control for untrusted generated code is a per-job sandbox with a separate uid and no network (gVisor/Firecracker), listed as production future work.
+- Generated tests run inside the backend container with the backend's privileges. They cannot modify your code (`HOST_REPOS_DIR` is mounted read-only), but they could read the backend's environment (including `GROQ_API_KEY`, via `/proc`), write to the app's own folders (`./repos`, `./output`, the Go build cache), start processes or reach the network. The import guard's rejection of `StartProcess`, `net` and `/proc/` is a best-effort filter and is easy to bypass (string concatenation, reflection); it is not a sandbox. The production fix is a throwaway container per test run with `network: none` and no secrets.
 - The repository's source code is sent to Groq.
 - It's designed as a single-user local tool, so run history is persisted to disk (./output/<id>: events, report, tests, summary) and reloaded on startup. That's enough for one developer and needs no extra infrastructure. Multi-user history would need real authentication — not just an anonymous cookie, which only separates browsers and doesn't secure anything. With login in place I'd move run metadata and events to Redis or Postgres keyed by user, with ownership checks on every run endpoint and per-user uploads.
 - Results depend on Groq rate limits and on the model; run time and final coverage vary between runs.

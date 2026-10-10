@@ -10,12 +10,13 @@ services:
       - path: .env
         required: false
     environment:
-      HOST_REPOS_DIR_DISPLAY: "${HOST_REPOS_DIR:-./repos}"   # shown in the UI only; never used as a path
+      HOST_REPOS_DIR_DISPLAY: "${HOST_REPOS_DIR:-./my-repos}"   # shown in the UI only; never used as a path
       CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}", "http://127.0.0.1:${FRONTEND_PORT:-3000}"]'
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     volumes:
-      - ${HOST_REPOS_DIR:-./repos}:/repos
+      - ./repos:/repos   # app-managed, read-write: downloaded samples and browser uploads
+      - ${HOST_REPOS_DIR:-./my-repos}:/host-repos:ro   # your own Go projects, READ-ONLY (jobs work on a copy)
       - ./output:/output
       - gocache:/home/app/.cache
     healthcheck:

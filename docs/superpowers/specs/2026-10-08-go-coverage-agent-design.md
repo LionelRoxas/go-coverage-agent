@@ -89,7 +89,8 @@ The weakest row is "coverage met based on input", because it depends on Groq's t
 │                                   │                             gofmt  │
 │                                   │   Workspace: /work/<job>/repo (copy)│
 │                                   └──────────────────────────────────┘ │
-│  volumes: ${HOST_REPOS_DIR:-./repos} ─▶ /repos   ./output ─▶ /output    │
+│  volumes: ./repos ─▶ /repos (samples, uploads)   ./output ─▶ /output   │
+│           ${HOST_REPOS_DIR:-./my-repos} ─▶ /host-repos (read-only)     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -152,7 +153,7 @@ Pydantic `BaseSettings` from env:
 - `GROQ_MAX_COMPLETION_TOKENS` (default 65536, sent as `max_completion_tokens`; set it empty to send no cap), `CALL_TOKEN_RESERVATION` (default 16,000: tokens reserved per call for daily-ledger checks and TPM pacing, never sent to Groq; for accurate pacing it should be at least `MAX_PROMPT_TOKENS` plus the expected answer, so free-trial keys set 8,000), `DAILY_TOKEN_BUDGET` (default 2,000,000 for a paid plan; free-tier keys should set `DAILY_TOKEN_BUDGET=190000`)
 - `MAX_PROMPT_TOKENS` (default 12,000: the estimated prompt cap per call; free-trial keys with 8K tokens/min should set 4,500 so prompt plus completion fit in one minute's allowance)
 - `GROQ_PRICE_INPUT_PER_M` and `GROQ_PRICE_OUTPUT_PER_M` (USD per 1M input / output tokens, unset by default): when both are set, the end-of-run summary includes an estimated cost (§6.8); unset means no cost is shown anywhere.
-- `REPOS_DIR=/repos`, `OUTPUT_DIR=/output`, `WORK_DIR=/work`
+- `REPOS_DIR=/repos` (app-managed, read-write: samples and uploads), `HOST_REPOS_DIR=/host-repos` inside the container (the user's own code, mounted read-only; §10.5), `OUTPUT_DIR=/output`, `WORK_DIR=/work`
 - `HISTORY_MAX_RUNS` (default 500): how many of the most recent runs saved in `OUTPUT_DIR` are reloaded on startup (§5.8)
 - loop defaults (§7.4), command timeouts, `CORS_ORIGINS=["http://localhost:3000"]` (JSON list; set by docker-compose from `FRONTEND_PORT`, and the compose value overrides `.env`)
 
@@ -160,7 +161,7 @@ The app starts without a key. `/api/health` reports `llm_configured: false`, and
 
 ### 5.2 `workspace`
 
-- `create(job_id, repo_path)`: resolves `repo_path` relative to `REPOS_DIR`, rejects anything that resolves outside it (path-traversal guard), and requires `go.mod`. It copies to `WORK_DIR/<job_id>/repo`, excluding `.git`. **The source repo is never written to.**
+- `create(job_id, repo_path)`: resolves `repo_path` relative to `REPOS_DIR`, or, for `host/<rel>`, relative to the read-only `/host-repos`; it rejects anything that resolves outside that folder (path-traversal guard, symlinks followed) and requires `go.mod`. It copies to `WORK_DIR/<job_id>/repo`, excluding `.git`, and refuses a work folder inside `/host-repos`. **The source repo is never written to;** for `HOST_REPOS_DIR` the read-only mount enforces it (§10.5).
 - `delete_existing_tests()`: removes every `*_test.go` in the copy and returns the list.
 - `snapshot(paths)` / `restore(snapshot)`: records content **or absence** for each path. Restore rewrites or deletes. Snapshots always include `go.mod` and `go.sum`.
 - Writes are atomic (temp file + rename), restricted to `*_test.go` paths inside the workspace. Any other path raises.
@@ -460,7 +461,7 @@ All under `/api`, JSON, Pydantic-validated. Errors: `{"error": {"code", "message
 | Method & path | Purpose |
 |---|---|
 | `GET /api/health` | `{status, go_version, model, llm_configured, tokens_left_today, min_daily_tokens_to_start, storage_writable, host_repos_dir, upload_limits}` (`upload_limits` is `{max_files, max_bytes, max_file_bytes}` from `UPLOAD_MAX_*`, used by the UI's pre-check; `host_repos_dir` is display only, from `HOST_REPOS_DIR_DISPLAY`; `min_daily_tokens_to_start` is the minimum daily budget needed to start a job, below which `POST /api/jobs` returns 429) |
-| `GET /api/repos` | Directories under `/repos` (depth ≤2) containing `go.mod`: `[{path, module, go_files, test_files}]` |
+| `GET /api/repos` | Directories under `/repos` and the read-only `/host-repos` (depth ≤2) containing `go.mod`: `[{path, module, go_files, test_files, read_only}]`; host modules are `host/<rel>` with `read_only: true` (§10.5) |
 | `GET /api/repos/samples` | The curated sample allowlist: `[{id, name, description, license, ref, path, downloaded}]` |
 | `POST /api/repos/samples/{id}` | Shallow-clones that sample (pinned release tags, no submodules; stats: default branch, the assessment's evaluation repo) into `/repos/<id>` if absent and returns the entry. Unknown id: 404 `unknown_sample`. Refuses a `go.mod` that has `require` lines |
 | `POST /api/repos/sample` | Alias for `POST /api/repos/samples/stats` |
@@ -473,7 +474,7 @@ All under `/api`, JSON, Pydantic-validated. Errors: `{"error": {"code", "message
 | `POST /api/jobs/{id}/summary` | Write the AI summary (§6.8) again for a finished job, live or reloaded from disk → `202` with the job snapshot; the summary events follow on the job's event stream. 404 unknown job, 409 `job_running` (this or another job is running or writing a summary), 409 `no_report` (failed before the baseline, or `interrupted`), 409 `run_files_unreadable` (a reloaded run whose saved files no longer give the summary's facts), 400 `llm_not_configured`. Cross-origin POSTs are refused like every write |
 | `GET /api/jobs/{id}/files/{path}` | Content of one generated test file, from the working copy or else `OUTPUT_DIR/<id>/tests`. The path must be in the job's generated-file list (no traversal), end in `_test.go`, resolve inside that folder (no symlink out of it) and be at most 1 MB; otherwise 404 `file_not_found` |
 
-**Repo path input:** containers can only see mounted paths. The user puts (or clones) repos into the host `./repos` folder, or sets `HOST_REPOS_DIR` to an **absolute** host path. Compose doesn't expand `~`, so the README shows `/Users/you/code`. The UI repo picker has two tabs: **Sample repos** (the six allowlisted libraries: stats, semver, xstrings, humanize, btree, decimal; click to download and select) and **Your folders** (a Choose a folder… button and drop area that upload a project to `/repos/uploads/<name>` via `POST /api/repos/upload`, the modules found under the mount, and one line on `HOST_REPOS_DIR` for large projects). There is no free-text path field.
+**Repo path input:** containers can only see mounted paths. The user puts (or clones) repos into the host `./my-repos` folder, or sets `HOST_REPOS_DIR` to an **absolute** host path; either is mounted read-only (§10.5). Compose doesn't expand `~`, so the README shows `/Users/you/code`. The UI repo picker has two tabs: **Sample repos** (the six allowlisted libraries: stats, semver, xstrings, humanize, btree, decimal; click to download and select) and **Your folders** (a Choose a folder… button and drop area that upload a project to `/repos/uploads/<name>` via `POST /api/repos/upload`, the modules found under the mount, and one line on `HOST_REPOS_DIR` for large projects). There is no free-text path field.
 
 **Data notice:** the UI and README state that the target repo's source code is sent to Groq.
 
@@ -529,7 +530,8 @@ services:
       CORS_ORIGINS: '["http://localhost:${FRONTEND_PORT:-3000}"]'
     ports: ["127.0.0.1:${BACKEND_PORT:-8000}:8000"]   # loopback only; host ports set in .env (defaults 8000/3000)
     volumes:
-      - ${HOST_REPOS_DIR:-./repos}:/repos     # rw only so "Use sample repo" can clone
+      - ./repos:/repos                                 # app-managed, rw: samples and uploads
+      - ${HOST_REPOS_DIR:-./my-repos}:/host-repos:ro   # the user's own code, read-only
       - ./output:/output
       - gocache:/home/app/.cache
   frontend:
@@ -541,7 +543,7 @@ services:
 volumes: { gocache: {} }
 ```
 
-`repos/.gitkeep` and `output/.gitkeep` are committed. Changing the API URL requires a rebuild, and the README says so.
+`repos/.gitkeep`, `my-repos/.gitkeep` and `output/.gitkeep` are committed. Changing the API URL requires a rebuild, and the README says so.
 
 ### 10.2 Backend image
 
@@ -559,11 +561,19 @@ volumes: { gocache: {} }
 - Only fixed commands run; the LLM can't choose commands.
 - Ports bound to loopback only.
 - **Folder uploads** (`POST /api/repos/upload`) write user-supplied files that are later compiled and tested, so: writes are subject to the origin check like every other write; every part's path is checked before anything is written (`\` normalised to `/`; absolute paths, `..`, `.`, empty segments, NUL and control characters, and `:` `<` `>` `"` `|` `?` `*` anywhere rejected, the last group so a segment can never carry a drive or an NTFS stream on a Windows host; at most 64 segments, 1,024 bytes per path and 255 per segment; all parts must share one top folder; a file the host can't create gives 400, never a 500) and each target must resolve inside the temp directory; only regular files are created (exclusive create, no symlinks); `.git`, `vendor`, `node_modules`, hidden paths, files over `UPLOAD_MAX_FILE_BYTES` (1 MB) and files with a NUL byte in their first 8 KB are skipped; at most `UPLOAD_MAX_FILES` (3,000) files and `UPLOAD_MAX_BYTES` (25 MB) are kept, and the raw body is cut off at twice the byte limit plus multipart overhead and at twice the file limit in parts (413 `upload_too_large`). Files go to `/repos/uploads/.tmp-<random>` and replace `/repos/uploads/<name>` with a rename under the clone lock; a destination is replaced only if it holds the `.gca-upload` marker of an earlier upload (otherwise 409 `name_taken`), and the temp directory is removed on any failure; `.tmp-*` folders older than an hour (left by a crash or kill) are removed on the next upload. `repos/uploads` is created with its own `.gca-uploads` marker, and an existing `uploads` folder without it (for example the user's own, under `HOST_REPOS_DIR`) is never written into (409 `uploads_dir_taken`). Jobs copy the repository under the same lock, so a re-upload never swaps a folder while a job is copying it. Error messages carry no server paths. `<name>` is the top folder (or `name`) reduced to lowercase letters, digits, `-`, `_`, `.`, at most 64 characters.
-- **Documented residual risk:** a test could still read files inside the container via `os` (including the backend's environment via `/proc`) and start processes. The real fix is a per-job sandbox with a separate uid. Production hardening (a per-run sandbox with gVisor/Firecracker, no network) is in §11.
+- **Documented residual risk:** generated tests run inside the backend container with its privileges. They cannot modify the user's code (§10.5), but they could read the backend's environment (via `/proc`), write to the app's own folders (`/repos`, `/output`, the Go build cache), start processes or reach the network. The import guard is best-effort, not a sandbox. Production fix: a throwaway container per test run with `network: none` and no secrets (§11).
 
 ### 10.4 `.env.example`
 
-`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_WRITER_REASONING_EFFORT=medium`, `GROQ_FIXER_REASONING_EFFORT=medium`, `HOST_REPOS_DIR=./repos`, a commented `MAX_PROMPT_TOKENS=4500` for free-trial keys, and under Advanced the commented `GROQ_MAX_COMPLETION_TOKENS=65536`, `GROQ_TIMEOUT_S=240` and the upload limits `UPLOAD_MAX_FILES=3000`, `UPLOAD_MAX_BYTES=26214400`, `UPLOAD_MAX_FILE_BYTES=1048576`, and `HISTORY_MAX_RUNS=500`. Under Optional (whose header says the values are the defaults unless noted), the example prices `GROQ_PRICE_INPUT_PER_M=0.15` and `GROQ_PRICE_OUTPUT_PER_M=0.60` (openai/gpt-oss-120b on Groq at the time of writing; not code defaults).
+`GROQ_API_KEY=`, `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_WRITER_REASONING_EFFORT=medium`, `GROQ_FIXER_REASONING_EFFORT=medium`, `HOST_REPOS_DIR=./my-repos`, a commented `MAX_PROMPT_TOKENS=4500` for free-trial keys, and under Advanced the commented `GROQ_MAX_COMPLETION_TOKENS=65536`, `GROQ_TIMEOUT_S=240` and the upload limits `UPLOAD_MAX_FILES=3000`, `UPLOAD_MAX_BYTES=26214400`, `UPLOAD_MAX_FILE_BYTES=1048576`, and `HISTORY_MAX_RUNS=500`. Under Optional (whose header says the values are the defaults unless noted), the example prices `GROQ_PRICE_INPUT_PER_M=0.15` and `GROQ_PRICE_OUTPUT_PER_M=0.60` (openai/gpt-oss-120b on Groq at the time of writing; not code defaults).
+
+### 10.5 The user's code is mounted read-only
+
+- Two folders, kept apart: `./repos` → `/repos` (read-write, app-managed: downloaded samples and browser uploads) and `${HOST_REPOS_DIR:-./my-repos}` → `/host-repos:ro` (the user's own Go projects). `GET /api/repos` lists both; modules under `/host-repos` (two levels deep) come back as `host/<rel>` with `read_only: true`, and `host/...` always resolves into `/host-repos` (a `./repos/host` folder is not listed).
+- Nothing ever writes under `/host-repos`: a job only reads its source to copy it into `/work/<job_id>/repo`, and `Workspace.create` refuses a work folder inside it. The kernel enforces the rest: the mount is read-only, so a write by the app or by a generated test fails with `EROFS` (integration test `test_host_repos.py`).
+- "Your repository is never modified" is therefore precise: true for `HOST_REPOS_DIR` by the mount, and for uploads because they are copies sent by the browser. Generated tests are exported to `./output/<job_id>/tests` for the user to copy over.
+- It does not make generated code safe: tests still run inside the backend container with its privileges and could read its environment or reach the network (§10.3). Production fix: a throwaway container per test run with `network: none` and no secrets.
+- Migration: samples and uploads stay at `./repos` (same path). A `.env` that still sets the old default `HOST_REPOS_DIR=./repos` should point it at the user's code instead (otherwise the samples are also listed read-only under `host/`).
 
 ---
 
@@ -601,7 +611,7 @@ volumes: { gocache: {} }
 - Requirements: Docker; a Groq API key; Node 22 only if running the frontend outside Docker.
 - **Quick start:** copy `.env.example` → `.env`, add the key, `docker compose up --build`, open `http://localhost:3000`, click "Use sample repo", Start.
 - **Expected run time and Groq limits.**
-- Using your own repo (`./repos` or an absolute `HOST_REPOS_DIR`).
+- Using your own repo (`./my-repos` or an absolute `HOST_REPOS_DIR`, mounted read-only; or a browser upload).
 - **Model:** `openai/gpt-oss-120b` on Groq (fallback `openai/gpt-oss-20b`).
 - How it works (diagram + loop); configuration options; running the tests.
 - Design decisions and trade-offs; limitations (floating-point expectations, residual sandbox risk, source sent to Groq).

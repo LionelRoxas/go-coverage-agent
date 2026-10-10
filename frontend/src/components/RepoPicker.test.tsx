@@ -124,6 +124,19 @@ describe("RepoPicker", () => {
     expect(screen.queryByText(/No Go modules of your own/)).not.toBeInTheDocument();
   });
 
+  it("labels HOST_REPOS_DIR modules read-only and explains the read-only mount", async () => {
+    const user = userEvent.setup();
+    const host: RepoInfo = { path: "host/svc", module: "example.com/svc", go_files: 3, test_files: 1, read_only: true };
+    const upload: RepoInfo = { path: "uploads/mine", module: "example.com/mine", go_files: 4, test_files: 2, read_only: false };
+    render(<Harness start="folders" folders={[host, upload]} hostDir="C:\Users\me\code" />);
+    const hostCard = screen.getByRole("button", { name: /host\/svc/ });
+    expect(hostCard).toHaveTextContent("from HOST_REPOS_DIR (read-only)");
+    expect(screen.getByRole("button", { name: /uploads\/mine/ })).not.toHaveTextContent("read-only");
+    expect(screen.getByText(/mounted read-only: every run works on a copy/)).toBeInTheDocument();
+    await user.click(hostCard);
+    expect(screen.getByTestId("value")).toHaveTextContent("host/svc");
+  });
+
   it("has no free-text path input", () => {
     render(<Harness />);
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();

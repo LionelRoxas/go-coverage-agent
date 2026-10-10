@@ -146,7 +146,8 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
           <FolderUpload onUpload={onUpload} limits={uploadLimits} />
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted">
-              {hostDir ? <>Go modules in <code className="break-all font-mono text-text">{hostDir}</code></> : <>Go modules in <code className="font-mono text-text">./repos</code></>}
+              Go modules you uploaded (saved in <code className="font-mono text-text">./repos</code>) and in{" "}
+              <code className="break-all font-mono text-text">{hostDir ?? "HOST_REPOS_DIR"}</code> (read-only)
             </p>
             <Button size="sm" onClick={() => void refresh()} disabled={refreshing}>
               {refreshing ? "Refreshing…" : "Refresh"}
@@ -159,10 +160,14 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
               {folders.map((r) => (
                 <li key={r.path}>
                   <button type="button" onClick={() => onChange(r.path)} aria-pressed={value === r.path} className={cardCls(value === r.path)}>
-                    <span className="break-all font-mono text-sm font-medium">{r.path}</span>
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="min-w-0 break-all font-mono text-sm font-medium">{r.path}</span>
+                      {r.read_only && <Badge tone="neutral">read-only</Badge>}
+                    </span>
                     <span className="text-xs text-muted">
                       <span className="break-all font-mono">{r.module}</span>, {r.go_files} source files, {r.test_files} test files
                     </span>
+                    {r.read_only && <span className="text-xs text-muted">from HOST_REPOS_DIR (read-only)</span>}
                   </button>
                 </li>
               ))}
@@ -172,6 +177,7 @@ export function RepoPicker({ tab, onTabChange, samples, folders, value, onChange
             <p className="text-xs leading-relaxed text-muted">
               For large projects or to keep a folder in sync, point <code className="font-mono">HOST_REPOS_DIR</code> in{" "}
               <code className="font-mono">.env</code> at its parent folder and run <code className="font-mono">make up</code> again.
+              It is mounted read-only: every run works on a copy, so the app never changes your files.
             </p>
             <CopyLine text={ENV_LINE} />
           </div>

@@ -78,7 +78,8 @@ export type StartJobBody = { repo_path: string; target_coverage: number; options
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type JobEvent = { seq: number; ts: number; type: string; data: Record<string, any> };
 
-export type RepoInfo = { path: string; module: string; go_files: number; test_files: number };
+/** read_only: a module in HOST_REPOS_DIR (path `host/<rel>`), mounted read-only; absent on older backends. */
+export type RepoInfo = { path: string; module: string; go_files: number; test_files: number; read_only?: boolean };
 
 export type SkipReason = "git" | "vendor" | "node_modules" | "hidden" | "too_large" | "binary";
 export type SkipCounts = Record<SkipReason, number>;

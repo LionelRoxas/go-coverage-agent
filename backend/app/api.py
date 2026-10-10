@@ -49,7 +49,8 @@ async def health(request: Request) -> dict:
 
 @router.get("/repos")
 async def repos(request: Request) -> list[dict]:
-    found = await asyncio.to_thread(list_repos, request.app.state.settings.repos_dir)
+    s = request.app.state.settings
+    found = await asyncio.to_thread(list_repos, s.repos_dir, s.host_repos_dir)
     return [r.model_dump() for r in found]
 
 
@@ -90,7 +91,8 @@ async def upload_repo(request: Request) -> dict:
 @router.post("/jobs", status_code=201)
 async def create_job(body: JobRequest, request: Request) -> dict:
     try:
-        resolve_repo(request.app.state.settings.repos_dir, body.repo_path)
+        s = request.app.state.settings
+        resolve_repo(s.repos_dir, body.repo_path, s.host_repos_dir)
     except WorkspaceError as e:
         raise ApiError(400, "invalid_repo", str(e)) from e
     try:

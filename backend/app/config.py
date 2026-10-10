@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     daily_token_budget: int = 2_000_000
     min_daily_tokens_to_start: int = 20_000
 
-    repos_dir: Path = Path("/repos")
+    repos_dir: Path = Path("/repos")  # app-managed, read-write: downloaded samples and browser uploads
+    host_repos_dir: Path = Path("/host-repos")  # the user's own code (HOST_REPOS_DIR), mounted read-only; never written
     output_dir: Path = Path("/output")
     work_dir: Path = Path("/work")
     gocache: Path = Path("/home/app/.cache/go-build")

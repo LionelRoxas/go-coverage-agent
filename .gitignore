@@ -6,6 +6,8 @@ node_modules/
 .env
 repos/*
 !repos/.gitkeep
+my-repos/*
+!my-repos/.gitkeep
 output/*
 !output/.gitkeep
 compose.local*.yml
