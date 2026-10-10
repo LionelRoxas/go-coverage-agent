@@ -96,4 +96,11 @@ describe("WalkthroughPage", () => {
     expect(screen.getAllByRole("link", { name: /How it works/ })[0]).toHaveAttribute("href", "/how-it-works");
     expect(container.querySelector('a[href*="claude.ai"]')).toBeNull();
   });
+  it("explains prediction disagreements (about a test) and possible bugs (about the project's code)", () => {
+    render(<WalkthroughPage />);
+    expect(screen.getByRole("heading", { name: "Prediction disagreements and possible bugs" })).toBeInTheDocument();
+    expect(screen.getByText(/Prediction disagreement: about a generated test\./)).toBeInTheDocument();
+    expect(screen.getByText(/Possible bug: about the project’s code\./)).toBeInTheDocument();
+    expect(screen.getByText(/A test run cut short by a timeout or a kill is never counted/)).toBeInTheDocument();
+  });
 });
