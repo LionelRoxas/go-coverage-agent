@@ -84,6 +84,8 @@ The loop is plain, testable Python. The LLM writes and fixes tests and summarize
 
 All on a Developer-plan Groq key, each repo's own tests deleted first. Default options (20 rounds, min gain 1.0, 3 targets per round) unless noted.
 
+**Inspect and re-measure the tests yourself:** [docs/evidence](docs/evidence) holds the generated tests and `report.json` of two stats runs, `e2de1ca387cb` (sequential, goal 80%) and `73d630a6dd05` (parallel writers, goal 100%). `make verify-evidence` clones montanaflynn/stats at the runs' commit in a plain Go container, removes its tests, adds these and re-measures: **81.07%** and **99.68%**, the same as the app reported (`go vet` clean, every test passing).
+
 **montanaflynn/stats**
 
 | Run | Goal | Coverage | Rounds / time | Targets kept / rejected | Tokens | Stop reason |
@@ -222,6 +224,7 @@ Advanced settings (Groq timeout and output cap, outage window, per-stage Go time
 ```bash
 make test   # everything: Go helper, backend unit + integration (in Docker), frontend; or test-go, test-backend, test-integration, test-frontend
 make lint   # ruff (backend, in Docker), eslint + tsc --noEmit (frontend); or lint-backend, lint-frontend
+make verify-evidence   # re-measure docs/evidence on a fresh clone of montanaflynn/stats (needs network)
 ```
 
 CI (`.github/workflows/ci.yml`) runs these targets, the lint targets and `make build-frontend`; it installs frontend dependencies once with `make frontend-deps`, and the frontend targets run `npm ci` only when `frontend/node_modules` is missing. Backend tests run in the image's `test` stage (`gca-backend-test`: dev dependencies and tests); the default `runtime` stage that compose runs has neither. `test-integration` runs the container with the same hardening as compose (below). Without `make` (Git Bash; Go runs in Docker):
@@ -272,7 +275,7 @@ The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` i
 - Expected values for floating-point code are partly characterization tests: the Fixer may adopt an observed value, so real bugs can be encoded rather than flagged. Review generated assertions before trusting them.
 - Single-user by design: no accounts, and history lives in `./output`.
 - Run time and final coverage vary between runs and with the key's rate limits. Tokens billed for failed calls count toward the run.
-- Most cited runs live in the gitignored `./output`; only `e2de1ca387cb` and `fc080d7fc500` are committed (as backend test fixtures).
+- Most cited runs live in the gitignored `./output`. Committed: the generated tests and reports of `e2de1ca387cb` and `73d630a6dd05` in [docs/evidence](docs/evidence) (re-measurable with `make verify-evidence`), and the events and reports of `e2de1ca387cb` and `fc080d7fc500` as backend test fixtures.
 
 ## AI usage
 
