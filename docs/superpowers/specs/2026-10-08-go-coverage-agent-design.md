@@ -226,7 +226,7 @@ Formatting needs no separate step: `gohelper merge` writes `go/format` output, a
   - `finish_reason == "length"` (truncated, often from reasoning tokens) → automatic step-down: retry one effort level lower (`high` → `medium` → `low`). A truncation at the bottom of that step-down fails the item, since an identical retry would just re-spend the tokens. The effort a call actually used is reported as `llm_call.reasoning_effort`.
   - **Cancellation:** the client receives the job's cancel event, so a cancel interrupts a rate-limit pause or an in-flight request immediately.
   - 400 schema errors → fail the item, log, continue the loop.
-  - 5xx/network → exponential backoff, max 3.
+  - 5xx/network → exponential backoff, max 3, then `LLMUnavailable`. `LLMUnavailable` and `LLMTimeout` are transport failures (`LLMTransportError`): the orchestrator does not count them toward a function's 2-failure skip; it emits `llm_unreachable{seconds, unreachable_s}`, waits (15 s, doubling, at most 120 s, cancellable) and plans the item again in a later round. Once Groq has been unreachable for `LLM_UNAVAILABLE_AFTER_S` (default 600 s) in a row, measured from the start of the first failing call, the run stops with `llm_unavailable`; any answer from Groq (success or an error about the request) ends the outage.
   - **Timeout:** each request may take `GROQ_TIMEOUT_S` (default 240 s). After a timeout the request is retried **once at reasoning effort `low`**, whatever the role's configured effort, since the lowest effort answers fastest; the retry emits its own `llm_request` (effort `low`), so the UI's wait restarts, and it is not a fix attempt (it happens inside one `complete` call). A second timeout raises `LLMTimeout`; the orchestrator records it as `validation_result.kind = llm_timeout` with the output "Groq did not answer within 240 s, twice", and the UI labels it "Groq timed out". The worst case per call is therefore about 2 × `GROQ_TIMEOUT_S`. Two side effects: `APITimeoutError` also covers connection (connect-phase) timeouts, which were formerly retried as network errors and now follow this rule; and the SDK's float timeout is a per-phase httpx limit (the read limit is the time between bytes), which for these non-streaming calls behaves as roughly the total time.
   - **Visible waits:** `complete` takes an `on_request(effort)` hook, called right before each request to Groq (also after a retry or an effort step-down); the orchestrator uses it to emit `llm_request` (§5.8).
 - **Rate limiting:**
@@ -403,11 +403,15 @@ for iteration in 1..max_iterations:
         if result.accepted:
             report = result.report                # coverage only ever goes up
             emit candidate_accepted
+        elif groq_transport_failure:              # timeout after the retry, 5xx, connection error
+            ws.restore(snap); emit candidate_rejected   # NOT counted in failed: planned again in a later round
+            if groq unreachable for >= LLM_UNAVAILABLE_AFTER_S: stop("llm_unavailable")
+            back_off()                            # 15 s, doubling, at most 120 s; any answer from Groq resets it
         else:
             ws.restore(snap); failed[f] += 1 for f in item.functions
             emit candidate_rejected
         if report.total >= target: stop("target_reached")
-    gains.append(report.total - start_total)
+    gains.append(report.total - start_total)      # skipped for a round in which every item met a Groq outage
     if len(gains) >= patience and all(g < min_gain for g in gains[-patience:]):
         stop("marginal_gains")
 stop("max_iterations")
@@ -451,7 +455,7 @@ This guarantees coverage never regresses, the suite is never redundant, and the 
 
 ### 7.5 Stop reasons
 
-`target_reached`, `marginal_gains`, `max_iterations`, `no_remaining_targets`, `budget_exhausted`, `cancelled`, `error`. Each maps to one plain-language sentence in the UI.
+`target_reached`, `marginal_gains`, `max_iterations`, `no_remaining_targets`, `budget_exhausted`, `cancelled`, `llm_unavailable` (Groq stayed unreachable for `LLM_UNAVAILABLE_AFTER_S`, default 600 s: "Stopped: Groq was unreachable for N minutes; tests kept so far are saved."; UI label "Groq unreachable"), `error`. Each maps to one plain-language sentence in the UI.
 
 ---
 

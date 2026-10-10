@@ -207,6 +207,8 @@ export function reduce(state: RunState, ev: RunAction): RunState {
         return { ...i, steps: withLast(i.steps, (st) => ({ ...st, source })) };
       });
     }
+    case "llm_unreachable": // a Groq outage: the item is planned again in a later round
+      return { ...clearPending(s), activity: `Groq is unreachable; trying again in ${Math.round(d.seconds)}s (the item is retried later)…` };
     case "rate_limited":
       return { ...clearPending(s), aiSummary: s.aiSummary && { ...s.aiSummary, pending: undefined }, activity: `Waiting ${Math.round(d.seconds)}s for the Groq rate limit (${d.reason === "tpm" ? "tokens per minute" : "HTTP 429"})…` };
     case "candidate_generated":

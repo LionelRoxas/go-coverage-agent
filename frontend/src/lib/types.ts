@@ -21,7 +21,8 @@ export type StopReason =
   | "max_iterations"
   | "no_remaining_targets"
   | "budget_exhausted"
-  | "cancelled";
+  | "cancelled"
+  | "llm_unavailable";
 
 export type Summary = {
   stop_reason: StopReason;

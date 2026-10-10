@@ -15,6 +15,7 @@ export const STOP_REASON_LABEL: Record<StopReason, string> = {
   no_remaining_targets: "Nothing left to try",
   budget_exhausted: "Token budget used up",
   cancelled: "Cancelled",
+  llm_unavailable: "Groq unreachable",
 };
 
 // Why a single validation attempt did not pass (or was repaired without the model).

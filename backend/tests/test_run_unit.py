@@ -77,7 +77,7 @@ def _patch(monkeypatch, tmp_path, *, orchestrator_error=None):
         return _Prepared()
 
     class FakeOrchestrator:
-        def __init__(self, *a): pass
+        def __init__(self, *a, **k): pass
 
         async def run(self, baseline):
             raise orchestrator_error
@@ -131,7 +131,7 @@ def _patch_with_workspace(monkeypatch, tmp_path):
         return prepared
 
     class FakeOrchestrator:
-        def __init__(self, *a): pass
+        def __init__(self, *a, **k): pass
 
         async def run(self, baseline):
             return _summary(["mean_test.go"])

@@ -5,7 +5,8 @@ import pytest
 from pydantic import BaseModel
 
 from app.config import Settings
-from app.llm.client import GroqLLM, LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge, LLMTimeout
+from app.llm.client import (GroqLLM, LLMBudgetExhausted, LLMError, LLMFatal, LLMOutputTooLarge, LLMTimeout,
+                            LLMTransportError, LLMUnavailable)
 from app.llm.limits import RateLimiter, UsageLedger
 
 
@@ -180,9 +181,21 @@ async def test_network_errors_back_off_then_fail(tmp_path):
     req = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
     script = [groq.APIConnectionError(request=req) for _ in range(4)]
     llm, fake, slept = make(tmp_path, script)
-    with pytest.raises(LLMError, match="unreachable"):
+    with pytest.raises(LLMUnavailable, match="unreachable"):
         await call(llm)
     assert len(fake.calls) == 4 and slept == [2.0, 4.0, 8.0]
+
+
+async def test_server_errors_after_the_retries_are_a_transport_failure(tmp_path):
+    llm, _, _ = make(tmp_path, [http_error(groq.InternalServerError, 503, {}) for _ in range(4)])
+    with pytest.raises(LLMUnavailable) as exc:
+        await call(llm)
+    assert isinstance(exc.value, LLMTransportError)
+
+
+def test_timeouts_are_transport_failures_and_schema_errors_are_not():
+    assert issubclass(LLMTimeout, LLMTransportError) and issubclass(LLMUnavailable, LLMTransportError)
+    assert not issubclass(LLMOutputTooLarge, LLMTransportError)
 
 
 async def test_higher_effort_truncation_retries_once_at_low(tmp_path):

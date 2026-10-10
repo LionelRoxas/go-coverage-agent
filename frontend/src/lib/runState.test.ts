@@ -103,6 +103,13 @@ describe("reduce", () => {
     expect(reduce(once, first)).toBe(once);
   });
 
+  it("shows the backoff while Groq is unreachable", () => {
+    seq = 0;
+    const s = run([ev("job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" }),
+                   ev("llm_unreachable", { seconds: 30, unreachable_s: 15 })]);
+    expect(s.activity).toBe("Groq is unreachable; trying again in 30s (the item is retried later)…");
+  });
+
   it("shows rate-limit waits and terminal states", () => {
     seq = 0;
     let s = run([ev("job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" }),

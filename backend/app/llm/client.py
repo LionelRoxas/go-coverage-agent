@@ -31,8 +31,17 @@ class LLMOutputTooLarge(LLMError):
     """The answer did not fit in the output limit (truncated, or Groq could not finish the JSON): ask for less."""
 
 
-class LLMTimeout(LLMError):
-    """Groq did not answer within GROQ_TIMEOUT_S, and again on the one retry at low effort. The item fails."""
+class LLMTransportError(LLMError):
+    """Groq could not be reached or did not answer (not a problem with this item): the orchestrator retries the item
+    later instead of counting it as a failure, and stops the run if Groq stays unreachable."""
+
+
+class LLMTimeout(LLMTransportError):
+    """Groq did not answer within GROQ_TIMEOUT_S, and again on the one retry at low effort."""
+
+
+class LLMUnavailable(LLMTransportError):
+    """Connection errors or 5xx responses persisted through the network retries."""
 
 
 class LLMBudgetExhausted(LLMError):
@@ -211,7 +220,7 @@ class GroqLLM:
                     raise LLMTimeout(f"Groq did not answer within {self.s.groq_timeout_s:g} s, twice") from e
                 except (groq.APIConnectionError, groq.InternalServerError) as e:
                     if net_retries >= self.MAX_NET_RETRIES:
-                        raise LLMError(f"Groq is unreachable: {e}") from e
+                        raise LLMUnavailable(f"Groq is unreachable: {e}") from e
                     net_retries += 1
                     await self._sleep_cancellable(2.0 ** net_retries)
                     continue

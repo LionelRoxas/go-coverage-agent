@@ -16,3 +16,10 @@ def test_messages_are_plain_language():
     assert stop_message(StopReason.TARGET_REACHED, req) == "Reached the 80% coverage target."
     assert "2 iterations" in stop_message(StopReason.MARGINAL_GAINS, req)
     assert stop_message(StopReason.BUDGET_EXHAUSTED, req, "daily cap").endswith("daily cap")
+
+
+def test_llm_unavailable_message_names_the_minutes():
+    req = JobRequest(repo_path="x")
+    assert stop_message(StopReason.LLM_UNAVAILABLE, req, minutes=1) == (
+        "Stopped: Groq was unreachable for 1 minute; tests kept so far are saved.")
+    assert "for 10 minutes;" in stop_message(StopReason.LLM_UNAVAILABLE, req, minutes=10)

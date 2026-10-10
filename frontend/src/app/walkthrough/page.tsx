@@ -184,9 +184,10 @@ const STOP_RULES = [
   { term: <span className={m}>target_reached</span>, text: <>Coverage is at or above the target. Checked before each round and after every target, accepted or not, not only at the end of a round.</> },
   { term: <span className={m}>marginal_gains</span>, text: <>The last 2 rounds (<C>patience</C>) each gained less than 1 percentage point (<C>min_gain</C>).</> },
   { term: <span className={m}>max_iterations</span>, text: <>20 rounds by default (<C>max_iterations</C>, 1 to 30).</> },
-  { term: <span className={m}>no_remaining_targets</span>, text: <>Every function with uncovered statements has failed twice or is too large for one request.</> },
+  { term: <span className={m}>no_remaining_targets</span>, text: <>Every function with uncovered statements has failed twice or is too large for one request. Groq outages do not count as failures.</> },
   { term: <span className={m}>budget_exhausted</span>, text: <>The job’s own budget (<C>max_llm_tokens</C>, 1,000,000 by default) is spent; or the app’s daily cap <C>DAILY_TOKEN_BUDGET</C> (2,000,000 by default, reset at 00:00 UTC) has less than the 16,000 a call reserves; or Groq asks to wait more than 90 s, which usually means its own daily cap.</> },
   { term: <span className={m}>cancelled</span>, text: <>You pressed Cancel. Running commands, Groq requests and rate-limit pauses stop within seconds.</> },
+  { term: <span className={m}>llm_unavailable</span>, text: <>Groq stayed unreachable (timeouts, 5xx errors, connection errors) for 10 minutes in a row (<C>LLM_UNAVAILABLE_AFTER_S</C>). Such failures never count against a function: the run waits (15 s, doubling up to 2 minutes) and plans the item again later. Tests kept so far are saved.</> },
 ];
 
 const MEASURED = [
