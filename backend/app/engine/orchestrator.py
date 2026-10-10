@@ -14,7 +14,7 @@ from app.agents.history import AttemptRecord, attempt_record
 from app.agents.planner import plan
 from app.agents.repair import clean_imports, mechanical_repair
 from app.engine.policy import StopPolicy, stop_message
-from app.llm.client import (Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal,
+from app.llm.client import (LLM_CALL, Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal,
                             LLMOutputTooLarge, LLMTimeout, LLMTransportError, LLMUnavailable, OnRequest)
 from app.models import (CoverageReport, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem, StopReason,
                         Summary, SuspectedBug, TestSnippet, TokenUsage)
@@ -67,7 +67,8 @@ class Orchestrator:
         self._sleep, self.unavailable_after_s = sleep, unavailable_after_s
         # Job budget (max_llm_tokens): every call reserves this many tokens while it is in flight
         # (CALL_TOKEN_RESERVATION), so calls running at the same time never jointly overshoot the budget by more
-        # than one reservation.
+        # than one reservation, as long as each call stays within CALL_TOKEN_RESERVATION (a larger answer adds its
+        # excess, as a single call does in a sequential run).
         self.call_reservation = call_reservation
         self._reserved = 0
         # The current run of Groq transport failures: when the first failing call started, and how many in a row.
@@ -121,7 +122,13 @@ class Orchestrator:
             deferred_before = self.deferred
             written: list[_Written] | list[None] = (await self._write_round(items) if self.parallel
                                                     else [None] * len(items))
+            refused: LLMBudgetExhausted | None = None
             for item, answer in zip(items, written):  # validation: one item at a time, in plan order
+                if answer is not None and isinstance(answer.error, LLMBudgetExhausted) and answer.error.local:
+                    # Refused before it was sent (budget reserved by the round's other requests): skip it, check
+                    # the answers already paid for, then stop for the budget.
+                    refused = refused or answer.error
+                    continue
                 before = self.deferred
                 if await self._attempt(item, answer):
                     accepted += 1
@@ -130,6 +137,8 @@ class Orchestrator:
                 if self.policy.target_reached(self.report.percent):
                     await self._record(index, start, accepted, rejected, self.deferred - deferred_before)
                     return StopReason.TARGET_REACHED
+            if refused is not None:
+                raise refused
             deferred = self.deferred - deferred_before
             if self.parallel and deferred and self._outage_since is not None:
                 await self._back_off()  # once per round: the round's requests all went out together
@@ -219,8 +228,14 @@ class Orchestrator:
 
         async def write(item: PlanItem) -> _Written:
             out = _Written()
+            # rate_limited events of this request name its item, so the UI pauses only that one (a task's own context)
+            LLM_CALL.set({"index": self.index, "file": item.file, "role": "writer"})
             try:
+                if self.cancel.is_set():  # Cancel pressed before this request went out: never send it
+                    raise Cancelled()
                 inputs = await self.deps.contexts.inputs_for(item, self.report)
+                if self.cancel.is_set():
+                    raise Cancelled()
                 out.started = self.clock()
                 out.snip = await self._call("writer", item, self._write(item, inputs), track_outage=False)
             except (LLMError, ContextTooLarge, Cancelled) as e:

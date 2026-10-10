@@ -332,3 +332,87 @@ async def test_naming_line_only_when_parallel():
     line = parallel_naming_rule(item)
     assert line not in off and on == f"{off}\n{line}"
     assert "`norm`" in line and "`normApproxEqual`" in line and "Test function" in line
+
+
+async def test_a_budget_refused_writer_is_skipped_and_later_answers_are_still_checked(ws):
+    """f0's context takes longest, so the round's other writers reserve the budget first and f0 is refused. The
+    answers after it in plan order were paid for: they are checked before the run stops for the budget."""
+    funcs = tuple((f"f{i}.go", f"F{i}") for i in range(5))
+
+    class SlowFirst(FakeContexts):
+        async def inputs_for(self, item, rep):
+            if item.file == "f0.go":
+                await asyncio.sleep(0.02)
+            return await super().inputs_for(item, rep)
+
+    agents = KeyedAgents({f"f{i}.go": [GOOD] for i in range(5)}, delays={f"f{i}.go": 0.05 for i in range(5)},
+                         usage=2995)
+    v = OrderedValidator(ws, {f"f{i}_test.go": [accepted({f"F{i}:1"}, tests=[f"T{i}"], funcs=funcs)] for i in range(5)})
+    orch, events = make(ws, v, agents, max_iterations=1, targets_per_iteration=5, max_llm_tokens=10_000,
+                        reservation=4000, contexts=SlowFirst(), parallel_writers=True)
+    summary = await orch.run(report(set(), funcs=funcs))
+    assert sorted(agents.started) == ["f1.go", "f2.go", "f3.go"]
+    assert v.order == ["f1_test.go", "f2_test.go", "f3_test.go"]
+    assert summary.stop_reason is StopReason.BUDGET_EXHAUSTED and summary.tests_added == ["T1", "T2", "T3"]
+    assert not any(d.get("file") in ("f0.go", "f4.go") for _, d in events if "file" in d)  # skipped quietly
+
+
+async def test_a_writer_still_building_its_context_never_sends_after_cancel(ws):
+    cancel = asyncio.Event()
+    gate = asyncio.Event()
+
+    class GatedContexts(FakeContexts):
+        async def inputs_for(self, item, rep):
+            if item.file == "c.go":
+                await gate.wait()
+            return await super().inputs_for(item, rep)
+
+    class Hanging(KeyedAgents):
+        async def write(self, item, inputs, on_request=None, parallel=False):
+            self.started.append(item.file)
+            await on_request("medium")
+            if len(self.started) == 2:
+                cancel.set()
+                gate.set()  # c.go's context is ready only after Cancel
+            await cancel.wait()
+            raise LLMCancelled("cancelled during an LLM request")
+
+    agents = Hanging({})
+    orch, events = make(ws, FakeValidator(ws, []), agents, cancel=cancel, contexts=GatedContexts(),
+                        parallel_writers=True)
+    summary = await asyncio.wait_for(orch.run(report(set(), funcs=ABC)), timeout=2)
+    assert summary.stop_reason is StopReason.CANCELLED
+    assert agents.started == ["a.go", "b.go"]
+    assert [d["file"] for t, d in events if t == "llm_request"] == ["a.go", "b.go"]
+
+
+def _snippet_json():
+    return json.dumps({"test_plan": [], "imports": ["testing"], "code": "func TestA(t *testing.T) {}",
+                       "suspected_bugs": []})
+
+
+async def test_rate_limit_waits_of_parallel_writers_name_their_item(ws, tmp_path):
+    from tests.test_llm_client import Completion, Raw, SlowGroq, http_error
+    import groq
+    fake = SlowGroq([http_error(groq.RateLimitError, 429, {"retry-after": "0.01"}),
+                     Raw(Completion(_snippet_json(), "stop")), Raw(Completion(_snippet_json(), "stop"))], delay=0.01)
+    events: list = []
+
+    async def emit_llm(t, d):
+        events.append((t, d))
+
+    llm = GroqLLM(Settings(groq_api_key="k"), UsageLedger(tmp_path / "u.json", 1_000_000), RateLimiter(),
+                  emit=emit_llm, client=fake, sleep=asyncio.sleep)
+
+    class ClientAgents:
+        last_effort = None
+
+        async def write(self, item, inputs, on_request=None, parallel=False):
+            return await llm.complete(role="writer", system="s", user=item.file, schema=type(GOOD),
+                                      on_request=on_request)
+
+    v = OrderedValidator(ws, {"a_test.go": [accepted({"A:1"})], "b_test.go": [accepted({"A:1", "B:1"})]})
+    orch, _ = make(ws, v, ClientAgents(), max_iterations=1, parallel_writers=True)
+    await asyncio.wait_for(orch.run(report(set())), timeout=5)
+    waits = [d for t, d in events if t == "rate_limited"]
+    assert waits and all(d["file"] == "a.go" and d["index"] == 1 and d["role"] == "writer" for d in waits)

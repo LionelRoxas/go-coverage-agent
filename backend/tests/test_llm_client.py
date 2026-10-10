@@ -469,3 +469,47 @@ async def test_after_a_429_one_request_probes_before_the_others_retry(tmp_path):
     assert fake.seen[3] == 0  # the probe went alone; the others waited for it to succeed
     assert not llm.limiter.probing and llm.limiter._inflight == 0
     assert sum(1 for t, _ in events if t == "rate_limited") >= 3
+
+
+async def test_callers_waiting_on_the_same_window_send_one_reservation_at_a_time(tmp_path):
+    """Headroom for one 16K reservation and three callers: the two that wait must not wake and send together."""
+    import asyncio
+    now = [100.0]
+
+    async def sleep(s):  # the test clock moves by the wait; real time by a few ms
+        now[0] += s
+        await asyncio.sleep(0.005)
+
+    limiter = RateLimiter(clock=lambda: now[0])
+    limiter.update({"x-ratelimit-limit-tokens": "16000", "x-ratelimit-remaining-tokens": "16000",
+                    "x-ratelimit-reset-tokens": "10s"})
+    fake = SlowGroq([_ok(), _ok(), _ok()])
+    llm = GroqLLM(Settings(groq_api_key="k"), UsageLedger(tmp_path / "u.json", 1_000_000), limiter,
+                  client=fake, sleep=sleep)
+    results = await asyncio.wait_for(asyncio.gather(call(llm), call(llm), call(llm)), timeout=5)
+    assert [r[0].answer for r in results] == ["ok"] * 3
+    assert fake.seen == [0, 0, 0]  # every request was sent with nothing else in flight
+
+
+async def test_a_caller_already_waiting_respects_a_429_pause_set_while_it_slept(tmp_path):
+    import asyncio
+    import time
+    sent: list[float] = []
+
+    class Timed(SlowGroq):
+        async def create(self, **kwargs):
+            sent.append(time.monotonic())
+            return await super().create(**kwargs)
+
+    fake = Timed([http_error(groq.RateLimitError, 429, {"retry-after": "0.3"}), _ok(), _ok()], delay=0.01)
+    limiter = RateLimiter()
+    llm = GroqLLM(Settings(groq_api_key="k"), UsageLedger(tmp_path / "u.json", 1_000_000), limiter,
+                  client=fake, sleep=asyncio.sleep)
+    start = time.monotonic()
+    first = asyncio.ensure_future(call(llm))  # sent at once; Groq answers 429 with Retry-After 0.3 s
+    await asyncio.sleep(0)
+    limiter.update({"x-ratelimit-remaining-tokens": "0", "x-ratelimit-reset-tokens": "0.05s"})
+    second = asyncio.ensure_future(call(llm))  # waits 0.05 s for the window, while the 429 pause starts
+    await asyncio.wait_for(asyncio.gather(first, second), timeout=5)
+    assert len(sent) == 3
+    assert all(t - start >= 0.3 for t in sent[1:])  # nobody sent again before the Retry-After ended

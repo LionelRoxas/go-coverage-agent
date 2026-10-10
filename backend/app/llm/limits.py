@@ -22,7 +22,9 @@ class RateLimiter:
     """Shared by every call. Calls in flight at the same time (PARALLEL_WRITERS) keep the pacing: each holds its
     reservation (`begin`/`end`) until it is answered, so others see the headroom it may still use; a 429 pauses
     everyone for its Retry-After (`pause`), and until a request succeeds again only one call at a time is sent
-    (`probe`), so the waiting calls do not all retry at once."""
+    (`probe`), so the waiting calls do not all retry at once. A caller that waited checks again before sending
+    (`waited`, then `wait_needed`): a window that has passed rolls over to the key's full limit instead of being
+    forgotten, so callers waking together still share the headroom one reservation at a time."""
 
     def __init__(self, clock: Callable[[], float] = time.monotonic):
         self._clock = clock
@@ -30,6 +32,7 @@ class RateLimiter:
         self._reset_at = 0.0
         self.limit_tokens: int | None = None
         self._inflight = 0  # tokens reserved by requests sent and not answered yet
+        self._rolled = False  # the headroom is an assumed fresh window (rolled over), not one Groq reported
         self._paused_until = 0.0
         self.probing = False  # after a 429, until a request succeeds
         self.probe = asyncio.Lock()  # held by the one call sent while probing
@@ -48,22 +51,39 @@ class RateLimiter:
             self._remaining = int(float(remaining))
         except ValueError:
             return
+        self._rolled = False
         reset = headers.get("x-ratelimit-reset-tokens")
         self._reset_at = self._clock() + (parse_duration(reset) if reset else 60.0)
+
+    def now(self) -> float:
+        return self._clock()
 
     def wait_needed(self, tokens: int) -> float:
         if self.paused():
             return self._paused_until - self._clock()
         if self._remaining is None or self._remaining - self._inflight >= tokens:
             return 0.0
-        wait = self._reset_at - self._clock()
-        if wait <= 0:
-            self.reset()
+        if self._rolled and self._inflight == 0:  # a fresh window and nothing in flight: a lone caller always goes
             return 0.0
-        return wait
+        now = self._clock()
+        if self._reset_at <= now:
+            self._roll(now)
+            return self.wait_needed(tokens)
+        return self._reset_at - now
 
-    def reset(self) -> None:
-        self._remaining = None
+    def _roll(self, now: float) -> None:
+        """The window has passed: assume the key's full limit for the next one (unknown limit: no pacing)."""
+        self._remaining = self.limit_tokens
+        self._reset_at = now + 60.0
+        self._rolled = True
+
+    def waited(self, until: float) -> None:
+        """A caller slept until `until` (by its own timer, which a test clock may not show): a pause or a window that
+        ended by then is over. The caller then asks `wait_needed` again before it sends."""
+        if self._paused_until and self._paused_until <= until + 1e-3:
+            self._paused_until = 0.0
+        if self._remaining is not None and self._reset_at <= until + 1e-3:
+            self._roll(until)
 
     def begin(self, tokens: int) -> None:
         """A request is about to be sent (call right after `wait_needed` returned 0, with no await in between)."""

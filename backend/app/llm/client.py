@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import math
 import re
+from contextvars import ContextVar
 from typing import Any, Awaitable, Callable, Protocol, TypeVar
 
 import groq
@@ -18,6 +19,9 @@ from app.models import TokenUsage
 T = TypeVar("T", bound=BaseModel)
 Emit = Callable[[str, dict[str, Any]], Awaitable[None]]
 OnRequest = Callable[[str], Awaitable[None]]  # called with the reasoning effort right before each request to Groq
+# Set by a caller running concurrently with others (PARALLEL_WRITERS): `rate_limited` then names its item
+# ({index, file, role}). Unset (sequential runs, the summary): the event is unchanged.
+LLM_CALL: ContextVar[dict[str, Any] | None] = ContextVar("LLM_CALL", default=None)
 
 
 class LLMError(Exception):
@@ -114,7 +118,7 @@ class GroqLLM:
 
     async def _wait(self, seconds: float, reason: str) -> None:
         if self._emit:
-            await self._emit("rate_limited", {"seconds": round(seconds, 1), "reason": reason})
+            await self._emit("rate_limited", {"seconds": round(seconds, 1), "reason": reason, **(LLM_CALL.get() or {})})
         await self._sleep_cancellable(seconds)
 
     async def _sleep_cancellable(self, seconds: float) -> None:
@@ -271,20 +275,27 @@ class GroqLLM:
     async def _send(self, on_request: OnRequest | None, effort: str, request: Callable[[], dict[str, Any]]) -> Any:
         """Pace, then send one request. Its reservation counts against the TPM headroom until it is answered. After
         a 429, until a request succeeds again, one request is sent at a time (the probe)."""
-        probe = self.limiter.probe if self.limiter.probing else None
-        if probe is not None:
-            await probe.acquire()
-            if not self.limiter.probing:  # the probe ahead of this call succeeded: requests go out together again
-                probe.release()
-                probe = None
+        reservation = self.s.call_token_reservation
+        probe: asyncio.Lock | None = None
         try:
-            if probe is not None and self._cancel is not None and self._cancel.is_set():
-                raise LLMCancelled("cancelled while waiting")
-            reservation = self.s.call_token_reservation
-            wait = self.limiter.wait_needed(reservation)
-            if wait > 0:
+            while True:  # every pass re-reads the pause, the probe and the headroom: others may have changed them
+                if probe is None and self.limiter.probing:
+                    await self.limiter.probe.acquire()
+                    probe = self.limiter.probe
+                if probe is not None and not self.limiter.probing:  # the probe ahead succeeded: go together again
+                    probe.release()
+                    probe = None
+                if probe is not None and self._cancel is not None and self._cancel.is_set():
+                    raise LLMCancelled("cancelled while waiting")
+                wait = self.limiter.wait_needed(reservation)
+                if wait <= 0:
+                    break
+                if probe is not None:  # never hold the probe while sleeping
+                    probe.release()
+                    probe = None
+                until = self.limiter.now() + wait
                 await self._wait(wait, "429" if self.limiter.paused() else "tpm")
-                self.limiter.reset()
+                self.limiter.waited(until)
             self.limiter.begin(reservation)  # no await since wait_needed: the check and the reservation are one step
             try:
                 if on_request is not None:
