@@ -5,7 +5,7 @@ WORKDIR /src
 COPY tools/gohelper/ ./
 RUN CGO_ENABLED=0 go build -o /out/gohelper .
 
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
