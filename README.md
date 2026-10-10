@@ -180,7 +180,7 @@ cd frontend && npm ci && npm test && npm run lint && npx tsc --noEmit
 
 ## Why Groq instead of a local model
 
-Groq only was my decision; the brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` is an open-weight model (Ollama ships it as `gpt-oss:120b` and the smaller `gpt-oss:20b`), served fast on Groq: a stats run to 80% takes about 5 minutes. A run makes dozens of model calls, and I judged CPU-only inference of a model good enough for this loop far too slow for that; I did not measure it. The trade-off: you need a key (or the `.env` I send), and your code is sent to Groq (see [Limitations](#limitations)). What would change it is the first item on my [production list](#what-i-would-do-differently-in-production): an OpenAI-compatible base URL.
+The brief suggests an open-source model on LocalAI/Ollama, or Anthropic/OpenAI as hosted options; it does not name Groq, so this is a deliberate deviation. The model itself fits the brief: `openai/gpt-oss-120b` is OpenAI's open-source (open-weight) model, which Ollama ships as `gpt-oss:120b` and the smaller `gpt-oss:20b`. I chose to serve it from Groq instead of a local CPU because it is fast there: a stats run to 80% takes about 5 minutes. A run makes dozens of model calls, and I judged CPU-only inference of a model good enough for this loop far too slow for that; I did not measure it. The trade-off: you need a key (or the `.env` I send), and your code is sent to Groq (see [Limitations](#limitations)). What would change it is the first item on my [production list](#what-i-would-do-differently-in-production): an OpenAI-compatible base URL.
 
 ## Design decisions and trade-offs
 
