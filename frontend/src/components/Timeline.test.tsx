@@ -182,6 +182,35 @@ describe("Timeline attempt trace", () => {
     expect(screen.queryByText(/failing test/)).not.toBeInTheDocument();
   });
 
+  it("shows what go test observed in each pruned failing test, and nothing of the kind for tests without assertions", () => {
+    let n = 0;
+    const e = (type: string, data: Record<string, unknown>): JobEvent => ({ seq: n++, ts: 1, type, data: { index: 1, file: "ttest.go", ...data } });
+    const observed = "TestTTest_Edge/equal_means: ttest_test.go:41: t statistic = 0.5477225575051661, want 0";
+    renderRun([
+      e("job_started", { repo_path: "r", target_coverage: 80, model: "m", options: { max_fix_attempts: 2 } }),
+      e("iteration_started", { percent: 0 }),
+      e("plan_created", { items: [{ file: "ttest.go", functions: ["TTest"], uncovered_statements: 1 }] }),
+      e("candidate_generated", { code: "func TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}\nfunc TestTTest_Edge(t *testing.T) {}\n" }),
+      e("validation_result", { kind: "no_assertions", output: "x", failed_tests: [], no_assertions: ["TestB"] }),
+      e("tests_pruned", { tests: ["TestB"], reason: "no_assertions" }),
+      e("validation_result", { kind: "test_failure", output: "--- FAIL: TestTTest_Edge (0.00s)\nFAIL", failed_tests: ["TestTTest_Edge"] }),
+      e("tests_pruned", { tests: ["TestTTest_Edge"], disagreements: [
+        { file: "ttest.go", functions: ["TTest"], test: "TestTTest_Edge", lines: [observed] }] }),
+      e("validation_result", { kind: "accepted", output: "", failed_tests: [] }),
+      e("candidate_accepted", { tests: ["TestA"], percent: 50, gain: 50 }),
+    ]);
+    expect(within(steps()[1]).queryByRole("list", { name: "Prediction disagreements" })).not.toBeInTheDocument();
+    const found = within(steps()[2]).getByRole("list", { name: "Prediction disagreements" });
+    expect(within(found).getByText("TestTTest_Edge")).toBeInTheDocument();
+    expect(within(found).getByText(observed)).toBeInTheDocument();
+    expect(within(steps()[2]).getByText("Prediction disagreements (what the code returned):")).toBeInTheDocument();
+  });
+
+  it("shows a pruned failing test from an older log (no disagreements field) as before", () => {
+    renderRun(normPruned);
+    expect(screen.queryByRole("list", { name: "Prediction disagreements" })).not.toBeInTheDocument();
+  });
+
   it("shows two duplicate-name auto-fixes", () => {
     renderRun(constraintsRenamed);
     expect(screen.getByText("4 attempts · 2 auto-fixes · removed 1 test")).toBeInTheDocument();

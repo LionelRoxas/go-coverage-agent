@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { AiSummary } from "@/components/AiSummary";
 import { CoverageChart } from "@/components/CoverageChart";
 import { CoverageMeter } from "@/components/CoverageMeter";
+import { Disagreements } from "@/components/Disagreements";
 import { FileTable } from "@/components/FileTable";
 import { GroqWait } from "@/components/GroqWait";
 import { SummaryCard } from "@/components/SummaryCard";
@@ -170,6 +171,7 @@ export default function JobPage() {
               </ul>
             </section>
           )}
+          <Disagreements items={state.summary.disagreements ?? []} />
           <section className="space-y-3">
             <SectionHeading>Generated tests</SectionHeading>
             <TestFiles jobId={id} files={state.summary.test_files} />

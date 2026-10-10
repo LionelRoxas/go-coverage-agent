@@ -169,6 +169,32 @@ describe("JobPage", () => {
     expect(document.querySelector('[aria-live="polite"]')).toBeNull();
   });
 
+  it.each([
+    ["with", [{ file: "ttest.go", functions: ["TTest"], test: "TestTTest_Edge", lines: ["TestTTest_Edge: t_test.go:4: got 1, want 0"] }]],
+    ["with an empty list of", []],
+    ["without (older run)", undefined],
+  ] as const)("shows the prediction disagreements section only when there are some (%s disagreements)", async (_, disagreements) => {
+    vi.mocked(api.job).mockResolvedValue({} as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    act(() => {
+      const send = (seq: number, type: string, data: object) =>
+        FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq, ts: 1, type, data }) });
+      send(0, "job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" });
+      send(1, "job_completed", { stop_reason: "target_reached", message: "Reached the 80% coverage target.", target: 80,
+        baseline_percent: 0, final_percent: 81, iterations: [], test_files: [], tests_added: [], suspected_bugs: [], per_file: [],
+        tokens: { prompt_tokens: 1, completion_tokens: 1 }, duration_s: 5, ...(disagreements ? { disagreements } : {}) });
+    });
+    expect(await screen.findByText("Completed")).toBeInTheDocument();
+    const heading = screen.queryByRole("heading", { name: /^Prediction disagreements/ });
+    if (disagreements?.length) {
+      expect(heading).toHaveTextContent("Prediction disagreements (1)");
+      expect(screen.getByText("TestTTest_Edge: t_test.go:4: got 1, want 0")).toBeInTheDocument();
+    } else {
+      expect(heading).not.toBeInTheDocument();
+    }
+  });
+
   // A failed run's message is in the failure card and a cancelled run's in its summary, so neither keeps the line.
   it.each([
     ["job_failed", { reason: "repo_does_not_build", message: "The repository does not build.", output: "x" }, "Failed"],

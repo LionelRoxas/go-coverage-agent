@@ -14,6 +14,11 @@ export type CoverageReport = {
 
 export type Scenario = { scenario: string; target: string };
 export type SuspectedBug = { function: string; description: string };
+/**
+ * A failing new test pruned so the rest of its candidate could be kept: the value the model predicted and the value the
+ * code returned differ. Either may be wrong. `lines`: its first got/want (or panic) lines from go test, clipped.
+ */
+export type Disagreement = { file: string; functions: string[]; test: string; lines: string[] };
 
 export type StopReason =
   | "target_reached"
@@ -34,6 +39,8 @@ export type Summary = {
   test_files: string[];
   tests_added: string[];
   suspected_bugs: SuspectedBug[];
+  /** Older runs lack it. */
+  disagreements?: Disagreement[];
   per_file: { file: string; before: number; after: number }[];
   tokens: { prompt_tokens: number; completion_tokens: number };
   duration_s: number;
@@ -73,6 +80,8 @@ export type SummaryGenerated = {
   tokens: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
   /** Only when GROQ_PRICE_*_PER_M are set. */
   cost_usd?: CostUsd;
+  /** The run's prediction disagreements, one line each, written by the backend (not the model). Older payloads lack it. */
+  disagreements?: string[];
 };
 
 export type StartJobBody = { repo_path: string; target_coverage: number; options?: Partial<JobOptions> };

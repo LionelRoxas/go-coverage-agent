@@ -1,7 +1,7 @@
 // AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 // Same payload and expected Markdown as backend/tests/test_summary_report.py: Copy as Markdown equals SUMMARY.md.
 import { describe, expect, it } from "vitest";
-import { EMPTY_PART, tidy, toMarkdown, usd } from "./aiSummary";
+import { DISAGREEMENTS, EMPTY_PART, tidy, toMarkdown, usd } from "./aiSummary";
 import type { SummaryGenerated } from "./types";
 
 const PAYLOAD: SummaryGenerated = {
@@ -56,6 +56,16 @@ Run cost $0.0674 · summary $0.0014 · total $0.0688 (input $0.0130, output $0.0
 describe("toMarkdown", () => {
   it("matches SUMMARY.md: both sections, the note, and no empty parts", () => {
     expect(toMarkdown(PAYLOAD, { repo: "stats", model: "openai/gpt-oss-120b", generatedAt: 1791547516.4 })).toBe(EXPECTED);
+  });
+
+  it("lists the disagreements after the suspected bugs, as SUMMARY.md does, and nothing when there are none", () => {
+    const line = "`TestTTest_Edge` (ttest.go: TTest): TestTTest_Edge/a: x_test.go:4: got 1, want 0";
+    const md = toMarkdown({ ...PAYLOAD, technical: { ...PAYLOAD.technical, suspected_bugs: ["Mean: odd"] }, disagreements: [line] },
+                          { repo: "stats", model: "openai/gpt-oss-120b", generatedAt: 1791547516.4 });
+    expect(md).toContain(`**Suspected bugs**\n\n- Mean: odd\n\n**${DISAGREEMENTS}**\n\n- ${line}\n\n**How to run:**`);
+    expect(DISAGREEMENTS).toContain("not confirmed bugs");
+    expect(toMarkdown({ ...PAYLOAD, disagreements: [] }, { repo: "stats", model: "openai/gpt-oss-120b", generatedAt: 1791547516.4 }))
+      .toBe(EXPECTED);
   });
 
   it("leaves the cost out when prices are not set", () => {

@@ -4,6 +4,7 @@ import type { CostUsd, SummaryGenerated } from "./types";
 
 export const AI_NOTE = "AI-written from this run's measured data.";
 export const EMPTY_PART = "Nothing in this part could be checked against the run's data.";
+export const DISAGREEMENTS = "Prediction disagreements (not confirmed bugs: the test was dropped; the prediction or the code is wrong)";
 
 /** One rule for every amount: 4 decimals below $1, 2 from $1 up (as report.py). */
 export const usd = (v: number) => `$${v < 1 ? v.toFixed(4) : v.toFixed(2)}`;
@@ -46,6 +47,7 @@ export function toMarkdown(ai: SummaryGenerated, { repo, model, generatedAt }: {
   add(t.where_tests_live, "**Where the tests live:** ");
   bullets("Gaps", t.gaps.map((g) => `\`${g.file}\`: ${g.detail}`));
   bullets("Suspected bugs", t.suspected_bugs);
+  bullets(DISAGREEMENTS, ai.disagreements ?? []); // deterministic, from the run (older payloads lack it)
   add(t.rejected_or_failed, "**Rejected or failed:** ");
   add(t.how_to_run, "**How to run:** ");
   bullets("Next steps", t.next_steps);

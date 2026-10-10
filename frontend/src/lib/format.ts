@@ -82,6 +82,11 @@ export const FIX_GIVEN: Record<string, string> = {
   no_assertions: "the tests without assertions",
 };
 
+// The run page's "Prediction disagreements" section: what a pruned failing test means, in one plain sentence.
+export const DISAGREEMENT_NOTE =
+  "The model predicted one value and the code returned another, so the test was dropped rather than changed. " +
+  "Worth a human look: either the prediction or the code is wrong.";
+
 // ① … ⑳ for step numbers; plain digits after that.
 export const circled = (n: number) => (n >= 1 && n <= 20 ? String.fromCodePoint(0x2460 + n - 1) : `(${n})`);
 

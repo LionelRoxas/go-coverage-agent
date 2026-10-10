@@ -13,8 +13,10 @@ export type StepSource =
   | { type: "writer"; outputTokens?: number }
   | { type: "auto_fix"; description: string }
   // reason "no_assertions": the tests checked nothing (no t.Error/t.Fatal); otherwise they failed
-  | { type: "prune"; tests: string[]; kept?: number; reason?: "no_assertions" }
+  // disagreements: per failing test, what go test observed (its got/want lines); older logs lack it
+  | { type: "prune"; tests: string[]; kept?: number; reason?: "no_assertions"; disagreements?: PrunedFailure[] }
   | { type: "llm_fix"; attempt: number; max?: number; given: string; givenStep?: number; outputTokens?: number };
+export type PrunedFailure = { test: string; lines: string[] };
 // One attempt: a version of the test code plus the result of checking it (no check yet while it runs).
 export type Step = { source: StepSource; code?: string; testCount?: number; check?: Check };
 
@@ -246,7 +248,9 @@ export function reduce(state: RunState, ev: RunAction): RunState {
         const before = last(i.steps)?.testCount;
         const kept = before != null && before > tests.length ? before - tests.length : undefined;
         const reason = d.reason === "no_assertions" ? { reason: "no_assertions" as const } : {};
-        return { ...i, steps: [...i.steps, { source: { type: "prune", tests, kept, ...reason }, testCount: kept }] };
+        const found = Array.isArray(d.disagreements)
+          ? { disagreements: d.disagreements.map((x: PrunedFailure) => ({ test: x.test, lines: x.lines ?? [] })) } : {};
+        return { ...i, steps: [...i.steps, { source: { type: "prune", tests, kept, ...reason, ...found }, testCount: kept }] };
       });
     case "fix_attempt":
       return { ...withItem(s, d.index, d.file, (i) => ({

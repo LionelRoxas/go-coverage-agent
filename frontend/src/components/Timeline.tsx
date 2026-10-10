@@ -5,7 +5,7 @@ import { GroqWait } from "@/components/GroqWait";
 import {
   ATTEMPT_LABEL, checkLabel, circled, count, DEFERRED_LABEL, delta, FIX_GIVEN, parseTestFailures, pct, REJECTION_LABEL,
 } from "@/lib/format";
-import type { Check, ItemView, IterationView, Step } from "@/lib/runState";
+import type { Check, ItemView, IterationView, PrunedFailure, Step } from "@/lib/runState";
 import { Button, cardClass, codeBlockClass, EmptyState } from "./ui";
 
 const SHOWN_FUNCTIONS = 3;
@@ -112,6 +112,25 @@ function TestFailures({ output }: { output: string }) {
   );
 }
 
+// A failing-test prune: what go test observed in each removed test, where the model's prediction and the code disagree.
+function PrunedFailures({ found }: { found: PrunedFailure[] }) {
+  return (
+    <div className="mt-1 text-xs">
+      <p className="text-muted">Prediction disagreements (what the code returned):</p>
+      <ul className="mt-1 space-y-1" aria-label="Prediction disagreements">
+        {found.map((f) => (
+          <li key={f.test}>
+            <span className="break-all font-mono">{f.test}</span>
+            {f.lines.length > 0
+              ? f.lines.map((line, k) => <span key={k} className="block break-words pl-3 font-mono text-muted">{line}</span>)
+              : <span className="block pl-3 text-muted">No assertion lines in the output.</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function CheckView({ step, final }: { step: Step; final: boolean }) {
   const check = step.check as Check;
   if (step.code == null && step.source.type !== "prune") {
@@ -161,6 +180,9 @@ function StepView({ step, n, item, next }: { step: Step; n: number; item: ItemVi
         )}
       </div>
       {step.source.type === "prune" && <p className="text-xs text-muted">Same code minus the removed tests.</p>}
+      {step.source.type === "prune" && step.source.disagreements && step.source.disagreements.length > 0 && (
+        <PrunedFailures found={step.source.disagreements} />
+      )}
       {showCode && step.code != null && (
         <pre id={codeId} className={`mt-1 max-h-80 ${codeBlockClass()}`}>{step.code}</pre>
       )}
