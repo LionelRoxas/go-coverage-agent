@@ -210,7 +210,7 @@ describe("JobPage", () => {
     const heading = screen.queryByRole("heading", { name: /^Prediction disagreements/ });
     if (disagreements?.length) {
       expect(heading).toHaveTextContent("Prediction disagreements (1)");
-      expect(screen.getByText("TestTTest_Edge: t_test.go:4: got 1, want 0")).toBeInTheDocument();
+      expect(screen.getByText("t_test.go:4: got 1, want 0")).toBeInTheDocument();
     } else {
       expect(heading).not.toBeInTheDocument();
     }

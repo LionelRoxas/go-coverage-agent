@@ -3,7 +3,8 @@
 import { useId, useState } from "react";
 import { GroqWait } from "@/components/GroqWait";
 import {
-  ATTEMPT_LABEL, checkLabel, circled, count, DEFERRED_LABEL, delta, FIX_GIVEN, parseTestFailures, pct, REJECTION_LABEL,
+  ATTEMPT_LABEL, checkLabel, circled, count, DEFERRED_LABEL, delta, FIX_GIVEN, observedLine, parseTestFailures, pct,
+  REJECTION_LABEL,
 } from "@/lib/format";
 import type { Check, ItemView, IterationView, PrunedFailure, Step } from "@/lib/runState";
 import { Button, cardClass, codeBlockClass, EmptyState } from "./ui";
@@ -122,7 +123,7 @@ function PrunedFailures({ found }: { found: PrunedFailure[] }) {
           <li key={f.test}>
             <span className="break-all font-mono">{f.test}</span>
             {f.lines.length > 0
-              ? f.lines.map((line, k) => <span key={k} className="block break-words pl-3 font-mono text-muted">{line}</span>)
+              ? f.lines.map((line, k) => <span key={k} className="block break-words pl-3 font-mono text-muted">{observedLine(f.test, line)}</span>)
               : <span className="block pl-3 text-muted">No assertion lines in the output.</span>}
           </li>
         ))}

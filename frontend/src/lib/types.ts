@@ -15,10 +15,16 @@ export type CoverageReport = {
 export type Scenario = { scenario: string; target: string };
 export type SuspectedBug = { function: string; description: string };
 /**
- * A failing new test pruned so the rest of its candidate could be kept: the value the model predicted and the value the
- * code returned differ. Either may be wrong. `lines`: its first got/want (or panic) lines from go test, clipped.
+ * A new test that failed because the value the model predicted and the value the code returned differ; at that point it
+ * was pruned (or, when every new test failed, sent to the Fixer). Either may be wrong. `lines`: its first got/want (or panic) lines from go test, clipped.
  */
-export type Disagreement = { file: string; functions: string[]; test: string; lines: string[] };
+export type Disagreement = {
+  file: string; functions: string[]; test: string; lines: string[];
+  /** false: every new test failed and all went to the Fixer (no prune). Older runs lack it (a prune). */
+  pruned?: boolean;
+  /** "kept" | "dropped" | "not_accepted"; "" or missing in older runs. */
+  outcome?: string;
+};
 
 export type StopReason =
   | "target_reached"

@@ -4,7 +4,7 @@ import type { CostUsd, SummaryGenerated } from "./types";
 
 export const AI_NOTE = "AI-written from this run's measured data.";
 export const EMPTY_PART = "Nothing in this part could be checked against the run's data.";
-export const DISAGREEMENTS = "Prediction disagreements (not confirmed bugs: the test was dropped; the prediction or the code is wrong)";
+export const DISAGREEMENTS = "Prediction disagreements (not confirmed bugs: the prediction or the code is wrong)";
 
 /** One rule for every amount: 4 decimals below $1, 2 from $1 up (as report.py). */
 export const usd = (v: number) => `$${v < 1 ? v.toFixed(4) : v.toFixed(2)}`;

@@ -96,8 +96,24 @@ export const FIX_GIVEN: Record<string, string> = {
 
 // The run page's "Prediction disagreements" section: what a pruned failing test means, in one plain sentence.
 export const DISAGREEMENT_NOTE =
-  "The model predicted one value and the code returned another, so the test was dropped rather than changed. " +
-  "Worth a human look: either the prediction or the code is wrong.";
+  "The model predicted one value and the code returned another, and at that point the failing test was removed " +
+  "(or, when every new test failed, sent to the Fixer). Nothing decided which is right: worth a human look, " +
+  "because either the prediction or the code is wrong.";
+// What happened to the test then, and what became of its candidate (as backend/app/summary/report.py HOW / OUTCOME).
+export const disagreementHow = (pruned?: boolean) =>
+  pruned === false ? "Sent to the Fixer when it failed" : "Removed when it failed";
+export const DISAGREEMENT_OUTCOME: Record<string, string> = {
+  kept: "a test of this name was kept after a fix and may now expect the code's value",
+  dropped: "not in the accepted tests",
+  not_accepted: "its attempt was not accepted",
+};
+// A go test line without its leading top-level test name, which the entry already shows: "TestX/sub: f.go:3: …"
+// becomes "/sub: f.go:3: …", "TestX: f.go:3: …" becomes "f.go:3: …".
+export function observedLine(test: string, line: string): string {
+  if (line.startsWith(`${test}: `)) return line.slice(test.length + 2);
+  if (line.startsWith(`${test}/`)) return line.slice(test.length);
+  return line;
+}
 
 // ① … ⑳ for step numbers; plain digits after that.
 export const circled = (n: number) => (n >= 1 && n <= 20 ? String.fromCodePoint(0x2460 + n - 1) : `(${n})`);

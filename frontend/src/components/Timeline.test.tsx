@@ -202,7 +202,7 @@ describe("Timeline attempt trace", () => {
     expect(within(steps()[1]).queryByRole("list", { name: "Prediction disagreements" })).not.toBeInTheDocument();
     const found = within(steps()[2]).getByRole("list", { name: "Prediction disagreements" });
     expect(within(found).getByText("TestTTest_Edge")).toBeInTheDocument();
-    expect(within(found).getByText(observed)).toBeInTheDocument();
+    expect(within(found).getByText("/equal_means: ttest_test.go:41: t statistic = 0.5477225575051661, want 0")).toBeInTheDocument();
     expect(within(steps()[2]).getByText("Prediction disagreements (what the code returned):")).toBeInTheDocument();
   });
 
