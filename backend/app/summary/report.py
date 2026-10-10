@@ -25,8 +25,10 @@ def usd(value: float) -> str:
 
 
 def cost_line(cost: dict[str, float]) -> str:
-    """The run's cost (what the text talks about), this summary call's, and both together."""
-    return (f"Run cost {usd(cost['run'])} · summary {usd(cost['summary'])} · total {usd(cost['total'])} "
+    """The run's cost (what the text talks about), this summary call's, and both together. "This summary call" and
+    "run + this call" say the scope: after Write again the page's token total also counts the earlier summary calls."""
+    return (f"Run cost {usd(cost['run'])} · this summary call {usd(cost['summary'])} · "
+            f"run + this call {usd(cost['total'])} "
             f"(input {usd(cost['input'])}, output {usd(cost['output'])})")
 
 

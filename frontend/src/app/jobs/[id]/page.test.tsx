@@ -171,6 +171,11 @@ describe("JobPage", () => {
     expect(await screen.findByText(/351\.4k tokens \(337\.7k run \+ 13\.7k summary\)$/)).toBeInTheDocument();
     const card = screen.getByText("Tokens").nextSibling;
     expect(card).toHaveTextContent("351.4k337.7k run + 13.7k summary");
+    // Write again: a second summary call adds to the summary part, in the header and the card alike
+    send(5, "llm_request", { role: "summarizer", reasoning_effort: "medium" });
+    send(6, "summary_generated", { ...statsSummary, tokens: { prompt_tokens: 10_000, completion_tokens: 3_700, total_tokens: 13_700 } });
+    expect(await screen.findByText(/365\.1k tokens \(337\.7k run \+ 27\.4k across 2 summaries\)$/)).toBeInTheDocument();
+    expect(screen.getByText("Tokens").nextSibling).toHaveTextContent("365.1k337.7k run + 27.4k across 2 summaries");
   });
 
   it("drops the live activity line once the run has a summary, so the result is not said twice", async () => {

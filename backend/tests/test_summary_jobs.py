@@ -152,7 +152,7 @@ async def test_cost_separates_the_run_and_the_summary_call(tmp_path):
     assert job.events[-1].data["cost_usd"] == {"run": 0.045, "summary": 0.0045, "input": 0.0165, "output": 0.033,
                                                "total": 0.0495}
     md = (tmp_path / job.id / "SUMMARY.md").read_text(encoding="utf-8")
-    assert "Run cost $0.0450 · summary $0.0045 · total $0.0495 (input $0.0165, output $0.0330)" in md
+    assert "Run cost $0.0450 · this summary call $0.0045 · run + this call $0.0495 (input $0.0165, output $0.0330)" in md
     report = json.loads((tmp_path / job.id / "report.json").read_text(encoding="utf-8"))
     assert report["tokens"] == {"prompt_tokens": 100_000, "completion_tokens": 50_000}  # the run's own
     assert report["summary_tokens"] == {"prompt_tokens": 10_000, "completion_tokens": 5_000, "total_tokens": 15_000}

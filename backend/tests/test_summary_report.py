@@ -27,7 +27,7 @@ The 80% goal was reached.
 
 It took 5.2 minutes.
 
-Run cost $0.0674 · summary $0.0014 · total $0.0688 (input $0.0130, output $0.0558)
+Run cost $0.0674 · this summary call $0.0014 · run + this call $0.0688 (input $0.0130, output $0.0558)
 
 **Risks**
 

@@ -41,7 +41,7 @@ describe("AiSummary", () => {
     expect(panel).toHaveTextContent(statsSummary.business.headline);
     expect(within(panel).getByText("Recommendation")).toBeInTheDocument();
     expect(within(panel).getAllByRole("listitem")).toHaveLength(2);
-    expect(panel).toHaveTextContent("Run cost $0.0674 · summary $0.0013 · total $0.0688 (input $0.0130, output $0.0558)");
+    expect(panel).toHaveTextContent("Run cost $0.0674 · this summary call $0.0013 · run + this call $0.0688 (input $0.0130, output $0.0558)");
     expect(panel).toHaveAttribute("tabindex", "0");
   });
 

@@ -9,9 +9,11 @@ export const DISAGREEMENTS = "Prediction disagreements (not confirmed bugs: the 
 /** One rule for every amount: 4 decimals below $1, 2 from $1 up (as report.py). */
 export const usd = (v: number) => `$${v < 1 ? v.toFixed(4) : v.toFixed(2)}`;
 
-/** The run's cost (what the text talks about), the summary call's, and both together. */
+/** The run's cost (what the text talks about), this summary call's, and both together. The labels say the scope: after
+ *  Write again the header's token total also counts earlier summary calls, which this line does not. Same text as
+ *  cost_line in backend/app/summary/report.py (SUMMARY.md). */
 export const costLine = (c: CostUsd) =>
-  `Run cost ${usd(c.run)} · summary ${usd(c.summary)} · total ${usd(c.total)} (input ${usd(c.input)}, output ${usd(c.output)})`;
+  `Run cost ${usd(c.run)} · this summary call ${usd(c.summary)} · run + this call ${usd(c.total)} (input ${usd(c.input)}, output ${usd(c.output)})`;
 
 /** "83.33 %" (also with a no-break space) as "83.33%"; the backend already does this for new summaries. */
 export const tidy = (text: string) => text.replace(/(\d)[ \u00a0\u202f]+%/g, "$1%");
