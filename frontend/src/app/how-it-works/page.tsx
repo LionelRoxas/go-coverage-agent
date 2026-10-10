@@ -6,7 +6,7 @@ import { type SectionId, walkthroughHref } from "../walkthrough/sections";
 
 export const metadata: Metadata = {
   title: "How it works",
-  description: "What the Go Coverage Agent does in a run, in plain words, and how far it got on real projects.",
+  description: "What the Go Coverage Agent does in a run, how it decides a test adds coverage, and what it flags for a person to check, in plain words.",
 };
 
 type Step = { title: string; plain: string; more: SectionId };
@@ -49,10 +49,24 @@ const STOPS = [
   { rule: "The AI service could not be reached", why: "Groq, the AI service, did not answer for 10 minutes in a row. Until then it keeps waiting a little longer each time and tries the same gaps again; they never count as failed. The tests kept so far are saved." },
 ];
 
-const RESULTS = [
-  { id: "stats", name: "stats", what: "a statistics library", goal: 80, from: 0, to: 81.07, label: "0% → 81.1%", detail: "11 rounds, about 5 minutes" },
-  { id: "stats-100", name: "stats", what: "a statistics library", goal: 100, from: 0, to: 100, label: "0% → 100%", detail: "22 rounds, about 10 minutes (round limit raised to 30)" },
-  { id: "btree", name: "btree", what: "a data-structure library", goal: 100, from: 0, to: 87.09, label: "0% → 87.1%", detail: "stopped when new rounds added very little, under 0.5 points each, a setting lowered from 1 (11 rounds, about 6 minutes)" },
+// The two things a run flags for a person: one points at the generated tests' results, the other at the project's code.
+const FLAGS = [
+  {
+    id: "disagreements",
+    title: "Prediction disagreements",
+    what: "A new test expected one answer and the code gave another, so either the AI’s prediction or the code is wrong.",
+    about: "The tests it wrote",
+    example: "The AI expected the average of 1, 2 and 6 to be 2; the code returned 3. Here the AI was wrong.",
+    next: "The run says what happened to each one: the test was dropped, or it was fixed (possibly to expect the code’s answer), or the change was undone. Look at the ones marked as kept after a fix: those tests now expect whatever the code does today.",
+  },
+  {
+    id: "bugs",
+    title: "Possible bugs found",
+    what: "While reading a function, the AI noticed that the code seems to contradict its own description, and reported it instead of writing a test that expects it.",
+    about: "Your project’s code",
+    example: "A function’s description says it returns values between -1 and 1, but the code returns values between 0 and 1.",
+    next: "Treat it as a lead, not a verdict: check the code or its description. A claim that a later test run proves wrong is removed automatically.",
+  },
 ];
 
 // Ten "lines of code", eight of them run by a test. Widths vary so it reads as code, not a progress bar.
@@ -116,6 +130,28 @@ export default function HowItWorksPage() {
           </p>
         </div>
         <CoverageLines />
+      </section>
+
+      <section aria-labelledby="new-coverage-heading" className="space-y-4">
+        <h2 id="new-coverage-heading" className={h2}>How it knows a new test adds coverage</h2>
+        <p className="leading-relaxed text-muted">
+          The AI never decides this. When the new tests run, Go (the language’s own tools) records exactly which pieces of the code ran.
+          The tool keeps the list from before and compares it with the list from after:
+        </p>
+        <ul data-testid="coverage-compare" className={`divide-y divide-border text-sm ${cardClass({ padded: false })}`}>
+          <li className="grid gap-1 p-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-4">
+            <span className="font-medium">Kept</span>
+            <span className="text-muted">Everything that ran before still runs, <strong className="font-medium text-text">and</strong> at least one piece that no test ran before now runs.</span>
+          </li>
+          <li className="grid gap-1 p-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-4">
+            <span className="font-medium">Not kept</span>
+            <span className="text-muted">The new tests only ran pieces that were already checked, or something that ran before stopped running. The change is undone.</span>
+          </li>
+        </ul>
+        <p className="text-sm leading-relaxed text-muted">
+          For example, if the tests so far never tried an empty list, a new test that does runs the “empty list” code for the first time, so it is kept.
+          A test that only repeats an input already tried adds nothing and is not kept. Comparing the lists, rather than just the percentage, means a gain in one place can never hide a loss in another.
+        </p>
       </section>
 
       <section id="loop" aria-labelledby="loop-heading" className="space-y-6">
@@ -205,28 +241,33 @@ export default function HowItWorksPage() {
         </section>
       </div>
 
-      <section aria-labelledby="result-heading" className="space-y-4">
+      <section aria-labelledby="flags-heading" className="space-y-4">
         <div className="space-y-2">
-          <h2 id="result-heading" className={h2}>Measured results</h2>
-          <p className="leading-relaxed text-muted">Real open-source Go projects with their own tests removed first, so each starts at 0%.</p>
+          <h2 id="flags-heading" className={h2}>What the run flags for a person to check</h2>
+          <p className="leading-relaxed text-muted">Besides the tests, a run lists two kinds of leads. Neither is a confirmed bug; both are worth a look.</p>
         </div>
-        <ul className={`divide-y divide-border ${cardClass({ padded: false })}`}>
-          {RESULTS.map((r) => (
-            <li key={r.id} data-testid={`result-${r.id}`} className="grid gap-x-6 gap-y-2 p-4 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center">
-              <div className="min-w-0">
-                <p className="font-mono text-sm">{r.name} <span className="font-sans text-muted">({r.what}), goal {r.goal}%</span></p>
-                <p className="text-sm text-muted">{r.detail}</p>
-              </div>
-              <div className="space-y-1.5">
-                <p className="font-mono font-semibold tabular-nums sm:text-right">{r.label}</p>
-                <div aria-hidden className="relative h-1.5 rounded-full bg-border">
-                  <span className="absolute inset-y-0 rounded-full bg-accent" style={{ left: `${r.from}%`, width: `${r.to - r.from}%` }} />
-                  <span className="absolute -inset-y-1 w-0.5 bg-text" style={{ left: `${r.goal}%` }} title={`${r.goal}% goal`} />
+        <div className="grid gap-4 md:grid-cols-2">
+          {FLAGS.map((f) => (
+            <article key={f.id} data-testid={`flag-${f.id}`} aria-labelledby={`flag-${f.id}-heading`} className={`space-y-3 ${cardClass()}`}>
+              <h3 id={`flag-${f.id}-heading`} className="font-semibold">{f.title}</h3>
+              <p className="leading-relaxed">{f.what}</p>
+              <dl className="space-y-2 text-sm">
+                <div>
+                  <dt className="font-medium">Points at</dt>
+                  <dd className="text-muted">{f.about}</dd>
                 </div>
-              </div>
-            </li>
+                <div>
+                  <dt className="font-medium">Example</dt>
+                  <dd className="text-muted">{f.example}</dd>
+                </div>
+                <div>
+                  <dt className="font-medium">What to do</dt>
+                  <dd className="text-muted">{f.next}</dd>
+                </div>
+              </dl>
+            </article>
           ))}
-        </ul>
+        </div>
       </section>
 
       <footer className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-border pt-6">

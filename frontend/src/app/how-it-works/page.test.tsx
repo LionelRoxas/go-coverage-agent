@@ -76,7 +76,7 @@ describe("HowItWorksPage", () => {
     expect(narrow).toHaveTextContent("Back to step 2: repeat until the goal or a stop rule");
   });
 
-  it("keeps the stop rules, a short trust list with the no-new-coverage sentence, and the measured results", () => {
+  it("keeps the stop rules, and a short trust list with the no-new-coverage sentence, and no measured-results list", () => {
     render(<HowItWorksPage />);
     for (const t of ["It reached the goal", "The last rounds added very little", "It ran out of rounds (20 by default)",
                      "It used up its AI budget", "Nothing is left that it can work on", "The AI service could not be reached"]) {
@@ -85,20 +85,31 @@ describe("HowItWorksPage", () => {
     expect(screen.getByText(/Each new batch of tests also has to run at least one piece of code that no earlier test ran/)).toBeInTheDocument();
     expect(screen.getByText(/never checks the result is not kept/)).toBeInTheDocument();
     expect(screen.getByText(/re-run in a fresh copy of the project/)).toBeInTheDocument();
-    const stats = screen.getByTestId("result-stats");
-    expect(stats).toHaveTextContent("goal 80%");
-    expect(stats).toHaveTextContent("0% → 81.1%");
-    expect(stats).toHaveTextContent("11 rounds, about 5 minutes");
-    const stats100 = screen.getByTestId("result-stats-100");
-    expect(stats100).toHaveTextContent("goal 100%");
-    expect(stats100).toHaveTextContent("0% → 100%");
-    expect(stats100).toHaveTextContent("22 rounds, about 10 minutes (round limit raised to 30)");
-    const btree = screen.getByTestId("result-btree");
-    expect(btree).toHaveTextContent("0% → 87.1%");
-    expect(btree).toHaveTextContent("stopped when new rounds added very little");
-    expect(screen.getByText(/each starts at 0%/)).toBeInTheDocument();
-    expect(screen.queryByText(/at or near 0%/)).toBeNull();
-    expect(screen.queryByText(/semver/i)).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Measured results" })).toBeNull();
+  });
+
+  it("explains in plain words how a new test is judged to add coverage", () => {
+    render(<HowItWorksPage />);
+    expect(screen.getByRole("heading", { name: "How it knows a new test adds coverage" })).toBeInTheDocument();
+    expect(screen.getByText(/The AI never decides this/)).toBeInTheDocument();
+    const compare = screen.getByTestId("coverage-compare");
+    expect(compare).toHaveTextContent(/KeptEverything that ran before still runs, and at least one piece that no test ran before now runs/);
+    expect(compare).toHaveTextContent(/Not keptThe new tests only ran pieces that were already checked/);
+    expect(screen.getByText(/a gain in one place can never hide a loss in another/)).toBeInTheDocument();
+  });
+
+  it("explains prediction disagreements and possible bugs, and what each one points at", () => {
+    render(<HowItWorksPage />);
+    expect(screen.getByRole("heading", { name: "What the run flags for a person to check" })).toBeInTheDocument();
+    const dis = screen.getByTestId("flag-disagreements");
+    expect(within(dis).getByRole("heading", { name: "Prediction disagreements" })).toBeInTheDocument();
+    expect(dis).toHaveTextContent(/Points atThe tests it wrote/);
+    expect(dis).toHaveTextContent(/either the AI’s prediction or the code is wrong/);
+    const bugs = screen.getByTestId("flag-bugs");
+    expect(within(bugs).getByRole("heading", { name: "Possible bugs found" })).toBeInTheDocument();
+    expect(bugs).toHaveTextContent(/Points atYour project’s code/);
+    expect(bugs).toHaveTextContent(/removed automatically/);
+    expect(screen.getByText(/Neither is a confirmed bug/)).toBeInTheDocument();
   });
 
   it("ends with Start a run and an internal link to the full walkthrough, and no external artifact link", () => {
