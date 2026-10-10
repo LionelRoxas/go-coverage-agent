@@ -33,7 +33,7 @@ class Prepared:
 async def prepare(job_id: str, request: JobRequest, settings: Settings, llm: LLMClient | None,
                   emit: Emit, cancel: asyncio.Event) -> Prepared:
     try:
-        source = resolve_repo(settings.repos_dir, request.repo_path, settings.host_repos_dir)
+        source = resolve_repo(settings.repos_dir, request.repo_path, settings.host_repos_mount)
     except WorkspaceError as e:
         raise JobFailed("invalid_repo", str(e)) from e
 
@@ -49,7 +49,7 @@ async def prepare(job_id: str, request: JobRequest, settings: Settings, llm: LLM
         async with repos.repo_lock:  # an upload must not swap the folder while it is being copied
             # The copy only reads `source`; HOST_REPOS_DIR is read-only and never a write target.
             ws = await asyncio.to_thread(Workspace.create, settings.work_dir, job_id, source,
-                                         (settings.host_repos_dir,))
+                                         (settings.host_repos_mount,))
         removed = ws.delete_existing_tests() if request.options.delete_existing_tests else []
     except (WorkspaceError, OSError) as e:
         raise JobFailed("invalid_repo", str(e)) from e

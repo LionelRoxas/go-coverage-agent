@@ -67,7 +67,7 @@ Step 1 of the setup page, **Choose a repository**, has two tabs.
 - `.git`, `vendor`, `node_modules` and hidden files or folders are skipped, as are files over 1 MB and binary files.
 - At most 3,000 files and 25 MB in total after skipping (`UPLOAD_MAX_FILES`, `UPLOAD_MAX_BYTES`); a larger folder is stopped before anything is sent.
 - An upload only ever replaces a folder that an earlier upload created; any other folder with the same name is left untouched and you are asked for a different name.
-- If the mounted folder already has an `uploads` folder of its own, the app leaves it alone and refuses to upload until it is renamed.
+- If `./repos` already has an `uploads` folder of its own, the app leaves it alone and refuses to upload until it is renamed.
 
 The tab also lists your own Go projects: every Go module (a folder with a `go.mod`, up to two levels deep) in `HOST_REPOS_DIR`, shown as `host/<path>` with a **read-only** label. For large projects, or to keep a folder in sync while you edit it, use this instead of uploading:
 
@@ -306,6 +306,8 @@ Environment variables (`.env`, same layout as `.env.example`). Only the key is r
 | `GROQ_MAX_COMPLETION_TOKENS` | 65536 | Output-token cap per call (the model maximum). Empty does not mean unlimited: Groq then applies a smaller default |
 | `GROQ_TIMEOUT_S` | 240 | Seconds one Groq request may take. A timed-out request is retried once at `low` reasoning effort; a second timeout fails the item as "Groq timed out" |
 | `COMPILE_TIMEOUT_S` / `VET_TIMEOUT_S` / `TEST_TIMEOUT_S` | 300 / 180 / 300 | Seconds the compile step (`go test -run=^$`), `go vet` and `go test -cover` may each take over the whole module before they are stopped. A baseline timeout names the stage; raise the value for a large module or a cold module cache |
+| `COMMAND_TIMEOUT_S` | 120 | Seconds for the other commands: `go list` (loading the module) and the Go helper |
+| `TEST_TIMEOUT` | `60s` | Go's own `-timeout` for each test binary (a Go duration), not the same as `TEST_TIMEOUT_S` |
 | `LLM_UNAVAILABLE_AFTER_S` | 600 | Seconds Groq may stay unreachable (timeouts, 5xx, connection errors, in a row) before the run stops with `llm_unavailable`; meanwhile affected items are retried later with backoff and never count as failed |
 | `HISTORY_MAX_RUNS` | 500 | How many of the most recent runs in `./output` Run history reloads on startup; older folders stay on disk but are not listed |
 

@@ -231,7 +231,7 @@ async def test_repos_lists_host_modules_read_only_and_jobs_accept_them(tmp_path)
     host = tmp_path / "host-repos"
     (host / "mine").mkdir(parents=True)
     (host / "mine" / "go.mod").write_text("module example.com/mine\n")
-    app, manager = make_env(tmp_path, noop_runner, host_repos_dir=host)
+    app, manager = make_env(tmp_path, noop_runner, host_repos_mount=host)
     async with client_for(app) as client:
         listed = (await client.get("/api/repos")).json()
         assert [(r["path"], r["read_only"]) for r in listed] == [("host/mine", True), ("stats", False)]
