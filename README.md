@@ -119,6 +119,24 @@ The last two runs needed one LLM fix each (12.8 s at `medium`, 9.6 s at `low`), 
 
 With the cap of 5 more targets passed on the first check and fewer LLM fixes were needed; semver used 34% fewer tokens, stats about the same. These are single runs, so a few seconds or a percentage point is within normal variation.
 
+**Parallel writers (2026-10-10)** (stats, same settings, cap of 5; only `PARALLEL_WRITERS` changed):
+
+| | Sequential | Parallel |
+|---|---|---|
+| Run | `e2de1ca387cb` | `adb390243460` |
+| Coverage | 0% → 81.07% (target reached) | 0% → 80.27% (target reached) |
+| Rounds | 11 | 11 |
+| Time | 310 s | 147 s (−53%) |
+| Targets accepted / rejected | 31 / 0 | 33 / 0 |
+| Passed on the first check | 27 | 25 |
+| LLM fixes | 1 | 2 |
+| Duplicate-name errors / renames | 0 / 0 | 0 / 0 |
+| `no_gain` rejections | 0 | 0 |
+| Rate-limit waits | 0 | 0 |
+| Tokens | 175K | 187K |
+
+These are single runs: the time halved with no loss of quality, for about 7% more tokens. `PARALLEL_WRITERS` is off by default and meant to be turned on for paid keys.
+
 ### Issues I found in testing and fixed
 
 I had the system run end to end (Claude ran the live runs I approved), read the results, spotted these problems and decided the fixes. Claude Code implemented them under review.
@@ -139,15 +157,13 @@ I had the system run end to end (Claude ran the live runs I approved), read the 
 <table>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-setup.png"><img src="docs/screenshots/gallery-setup.png" width="100%" alt="New run page at step 1 of the wizard: the header, the four-step stepper, the Sample repos tab with montanaflynn/stats selected, and the Run history panel listing 31 runs"></a><br><b>New run, step 1:</b> the wizard beside Run history.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-runs-dark.png"><img src="docs/screenshots/gallery-runs-dark.png" width="100%" alt="The review step of the New run wizard and the Run history panel in the dark theme"></a><br><b>Review &amp; start</b>, dark theme.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-folders.png"><img src="docs/screenshots/gallery-folders.png" width="100%" alt="Step 1 of the New run wizard on the Your folders tab after uploading a copy of stats: the drop area, the upload result, the uploaded module selected and the HOST_REPOS_DIR note"></a><br><b>Your folders:</b> after uploading a local copy of stats.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-live.png"><img src="docs/screenshots/gallery-live.png" width="100%" alt="Run in progress at 17.2 percent with a Cancel button and the Activity list ending in a running item"></a><br><b>Run in progress</b>, with Cancel and the Activity list.</td></tr>
-<tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage after each of 20 iterations rising towards the dashed 100 percent target line, with the Possible bugs found list below it"></a><br><b>Coverage by round</b> and the possible bug the run reported.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for histogram.go with three numbered attempts: rejected by the safety guard, one failing test after the LLM fix, then the failing test removed and the rest passing"></a><br><b>Attempt trace:</b> guard rejection, LLM fix, prune, accepted.</td></tr>
+<tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-chart.png"><img src="docs/screenshots/gallery-chart.png" width="100%" alt="Line chart of coverage after each of 11 iterations rising from 0 percent to the dashed 80 percent target line, with the Generated tests section below it"></a><br><b>Coverage by round</b> for the parallel-writers run of stats (<code>adb390243460</code>), above the generated tests.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-trace.png"><img src="docs/screenshots/gallery-trace.png" width="100%" alt="Expanded Activity item for histogram.go with three numbered attempts: rejected by the safety guard, one failing test after the LLM fix, then the failing test removed and the rest passing"></a><br><b>Attempt trace:</b> guard rejection, LLM fix, prune, accepted.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-testfile.png"><img src="docs/screenshots/gallery-testfile.png" width="100%" alt="Generated tests section with clip_test.go selected and highlighted Go code"></a><br><b>Generated tests</b>, syntax-highlighted.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-dark.png"><img src="docs/screenshots/gallery-dark.png" width="100%" alt="Iteration limit reached summary card and the AI summary below it, on the For stakeholders tab, in the dark theme"></a><br><b>Run page</b>, dark theme.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-summary-ai.png"><img src="docs/screenshots/gallery-summary-ai.png" width="100%" alt="The Summary section of run f910d155f3cd on the For stakeholders tab: a headline about coverage rising from 0.0% to 97.83%, then Outcome, Efficiency with an estimated cost, Risks and Recommendation, with Copy as Markdown and Write again buttons"></a><br><b>AI summary</b> for stakeholders, with the cost line.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-summary-tech.png"><img src="docs/screenshots/gallery-summary-tech.png" width="100%" alt="The same Summary section on the For engineering teams tab: what was tested, where the tests live, how to run them, and a table of the files with uncovered statements"></a><br><b>AI summary</b> for engineering teams.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-howitworks.png"><img src="docs/screenshots/gallery-howitworks.png" width="100%" alt="How it works page: the five steps of a run side by side, steps 2 to 5 marked as one round with an arrow back to step 2"></a><br><b>How it works</b>, in plain words.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-walkthrough.png"><img src="docs/screenshots/gallery-walkthrough.png" width="100%" alt="Walkthrough page with a table of contents that follows the run beside the Start a run section"></a><br><b>Walkthrough</b>, the technical version.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-setup-mobile.png"><img src="docs/screenshots/gallery-setup-mobile.png" width="100%" alt="The New run wizard at step 1 on a 390 pixel wide phone screen"></a><br><b>New run</b> on a phone.</td><td valign="top" width="50%"><a href="docs/screenshots/gallery-mobile.png"><img src="docs/screenshots/gallery-mobile.png" width="100%" alt="Run page on a 390 pixel wide phone screen"></a><br><b>Run page</b> on a phone.</td></tr>
 <tr><td valign="top" width="50%"><a href="docs/screenshots/gallery-howitworks-mobile.png"><img src="docs/screenshots/gallery-howitworks-mobile.png" width="100%" alt="How it works page on a 390 pixel wide phone screen"></a><br><b>How it works</b> on a phone.</td><td></td></tr>
 </table>
-
-The chart, AI summary and dark run-page shots of run f910d155f3cd still show its refuted `Mode` suspected bug; they will be retaken.
 
 ## Configuration
 
