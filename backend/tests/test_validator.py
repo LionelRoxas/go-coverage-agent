@@ -26,7 +26,9 @@ class FakeTools:
         self.pruned: list[str] = []
 
     async def merge(self, test_file, snippet): return self.merge_r
-    async def prune(self, test_file, names): self.pruned = names; return ok()
+    async def prune(self, test_file, names):
+        self.pruned = names
+        return ok()
     async def compile(self, pkgs): return self.compile_r
     async def vet(self, pkgs): return self.vet_r
 

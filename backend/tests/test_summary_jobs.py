@@ -16,7 +16,10 @@ from app.summary.report import NOTE
 from tests.fakes import FakeLLM, run_summary
 
 
-def summary(reason=StopReason.TARGET_REACHED, tokens=TokenUsage(prompt_tokens=1000, completion_tokens=500)):
+TOKENS = TokenUsage(prompt_tokens=1000, completion_tokens=500)
+
+
+def summary(reason=StopReason.TARGET_REACHED, tokens=TOKENS):
     return Summary(stop_reason=reason, message="m", target=80, baseline_percent=0, final_percent=80, iterations=[],
                    test_files=["mean_test.go"], tests_added=["TestMean"], suspected_bugs=[], per_file=[],
                    tokens=tokens, duration_s=0.1)

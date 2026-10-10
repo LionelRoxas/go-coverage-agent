@@ -62,7 +62,7 @@ def _relevant_parts(snippet: TestSnippet, result: ValidationResult, limit: int,
     if not starts:
         return code if len(code) <= limit else None
     starts[0] = 0
-    chunks = [code[a:b].strip("\n") for a, b in zip(starts, starts[1:] + [len(code)])]
+    chunks = [code[a:b].strip("\n") for a, b in zip(starts, starts[1:] + [len(code)], strict=True)]
     named = set(result.failed_tests) | set(result.error_decls) | set(_WORD.findall(result.output)) | set(extra)
     pointed = [c for c in chunks if (m := _DECL_NAME.match(c.lstrip())) and m.group(1) in named]
     kept: list[str] = []

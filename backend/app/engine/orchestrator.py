@@ -123,7 +123,7 @@ class Orchestrator:
             written: list[_Written] | list[None] = (await self._write_round(items) if self.parallel
                                                     else [None] * len(items))
             refused: LLMBudgetExhausted | None = None
-            for item, answer in zip(items, written):  # validation: one item at a time, in plan order
+            for item, answer in zip(items, written, strict=False):  # validation: one item at a time, in plan order
                 if answer is not None and isinstance(answer.error, LLMBudgetExhausted) and answer.error.local:
                     # Refused before it was sent (budget reserved by the round's other requests): skip it, check
                     # the answers already paid for, then stop for the budget.
