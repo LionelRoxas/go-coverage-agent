@@ -474,15 +474,18 @@ class Orchestrator:
                        pruned: bool = True) -> list[Disagreement]:
         """Each failing new test about to be pruned (or, when no prune applies, sent to the Fixer), with its observed
         got/want lines: the model's prediction and the code disagree, and nobody has decided which is wrong.
-        Recorded once per (file, test, lines) for the report; a new record starts as `not_accepted` and joins `mine`,
-        whose outcome the attempt sets when its candidate is accepted."""
+        Recorded once per (file, test, lines) for the report; a new record starts as `not_accepted`. The record (new,
+        or the one an earlier attempt made of the same observation) joins `mine`, whose outcome the attempt sets when
+        its candidate is accepted."""
         functions = [k.label() for k in item.functions]
         found = [Disagreement(file=item.file, functions=functions, test=t, lines=observed_lines(output, t),
                               pruned=pruned, outcome="not_accepted") for t in tests]
         for d in found:
-            if not any((o.file, o.test, o.lines) == (d.file, d.test, d.lines) for o in self.disagreements):
-                self.disagreements.append(d)
-                mine.append(d)
+            record = next((o for o in self.disagreements if (o.file, o.test, o.lines) == (d.file, d.test, d.lines)), None)
+            if record is None:
+                self.disagreements.append(record := d)
+            if not any(m is record for m in mine):
+                mine.append(record)
         return found
 
     def _summary(self, reason: StopReason, detail: str, duration: float, minutes: int = 0) -> Summary:

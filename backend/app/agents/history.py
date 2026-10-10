@@ -15,7 +15,7 @@ HISTORY_TOKENS = 1500  # the whole rendered history
 LINES_PER_TEST = 3
 CONTINUATION_LINES = 2  # of a multi-line failure message (e.g. got:/want: lines)
 ERROR_LINES = 3
-DISAGREEMENT_LINE_CHARS = 300  # one observed line of a pruned test, as reported for review
+DISAGREEMENT_LINE_CHARS = 300  # one observed line of a failing test (pruned or handed to the Fixer), for review
 HEADER = ("## Earlier attempts for these functions\n"
           "Oldest first; each was rejected. In a test failure, the observed value is what the code actually does.\n")
 

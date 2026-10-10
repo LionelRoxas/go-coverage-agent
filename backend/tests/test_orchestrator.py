@@ -201,6 +201,22 @@ async def test_when_every_new_test_fails_the_failures_sent_to_the_fixer_are_disa
     assert all("pruned" not in f["disagreements"][0] for f in fixes)
 
 
+async def test_a_disagreement_seen_again_by_a_later_accepted_attempt_takes_that_attempts_outcome(ws):
+    """The first attempt's record is listed once; a later attempt that observes the same failure and is accepted
+    sets the outcome of that record (it does not stay `not_accepted`)."""
+    failing = ValidationResult(ValidationKind.TEST_FAILURE, TTEST_OUTPUT, failed_tests=["TestTTest_ErrorsAndEdgeCases"],
+                               new_tests=["TestTTest_ErrorsAndEdgeCases"])
+    kept = accepted({"A:1"}, tests=["TestTTest_ErrorsAndEdgeCases"], funcs=(("a.go", "A"),))
+    v = FakeValidator(ws, [failing, failing, failing, kept])  # round 1: write + fix fail; round 2: write fails, fix ok
+    agents = FakeAgents([GOOD, GOOD], fixes=[GOOD, GOOD])
+    orch, events = run(ws, v, agents, max_iterations=2, targets_per_iteration=1, max_fix_attempts=1)
+    summary = await orch.run(report(set(), funcs=(("a.go", "A"),)))
+    assert [t for t, _ in events if t in ("candidate_rejected", "candidate_accepted")] == [
+        "candidate_rejected", "candidate_accepted"]
+    [d] = summary.disagreements
+    assert (d.test, d.pruned, d.outcome) == ("TestTTest_ErrorsAndEdgeCases", False, "kept")
+
+
 async def test_a_compile_error_sent_to_the_fixer_is_no_disagreement(ws):
     bad = ValidationResult(ValidationKind.COMPILE_ERROR, "undefined: x")
     v = FakeValidator(ws, [bad, accepted({"A:1"})])
