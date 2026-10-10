@@ -71,7 +71,9 @@ function sourceLine(step: Step): string {
     case "auto_fix": // StepView shows the same text with the prefix in the accent colour
       return s.description ? `Auto-fixed, no LLM call: ${s.description}` : "Auto-fixed, no LLM call";
     case "prune": {
-      const removed = s.tests.length === 1 ? "Removed the failing test" : `Removed the ${s.tests.length} failing tests`;
+      const which = s.reason === "no_assertions" ? ["test", "tests"].map((w) => `${w} without assertions`)
+        : ["failing test", "failing tests"];
+      const removed = s.tests.length === 1 ? `Removed the ${which[0]}` : `Removed the ${s.tests.length} ${which[1]}`;
       return s.kept != null ? `${removed}, kept ${s.kept}` : removed;
     }
     case "llm_fix": {

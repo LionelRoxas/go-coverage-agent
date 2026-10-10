@@ -28,6 +28,7 @@ export const ATTEMPT_LABEL: Record<string, string> = {
   test_failure: "Tests failed",
   no_gain: "No new coverage",
   guard_rejected: "Blocked by safety rules",
+  no_assertions: "Tests without assertions",
   llm_error: "Model error",
   llm_timeout: "Groq timed out",
   llm_unavailable: "Groq unreachable",
@@ -42,6 +43,7 @@ export const REJECTION_LABEL: Record<string, string> = {
   test_failure: "Tests failed",
   no_gain: "No new coverage",
   guard_rejected: "Blocked by safety rules",
+  no_assertions: "Tests without assertions",
   llm_error: "Model error",
   llm_timeout: "Groq timed out",
   llm_unavailable: "Groq unreachable",
@@ -56,6 +58,7 @@ export const CHECK_LABEL: Record<string, string> = {
   vet_error: "go vet failed",
   no_gain: "No new coverage",
   guard_rejected: "Rejected by the safety guard",
+  no_assertions: "Tests without assertions (no t.Error or t.Fatal)",
   llm_error: "Model error",
   llm_timeout: "Groq timed out",
   llm_unavailable: "Groq unreachable",
@@ -76,6 +79,7 @@ export const FIX_GIVEN: Record<string, string> = {
   test_failure: "the failing tests",
   no_gain: "the no-new-coverage result",
   guard_rejected: "the safety guard's rejection",
+  no_assertions: "the tests without assertions",
 };
 
 // ① … ⑳ for step numbers; plain digits after that.

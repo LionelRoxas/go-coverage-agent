@@ -268,6 +268,7 @@ describe("reduce: attempt trace", () => {
     const item = s.iterations[0].items[0];
     expect(s.maxFixAttempts).toBeUndefined();
     expect(item.steps.map((st) => st.source.type)).toEqual(["writer", "prune"]);
+    expect(item.steps[1].source).toEqual({ type: "prune", tests: [], kept: undefined }); // no reason: failing tests
     expect(item.steps[1].check).toEqual({ kind: "accepted", output: "", failedTests: [] });
     expect(item.tests).toEqual([]);
     expect(item.percentBefore).toBeUndefined();

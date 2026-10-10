@@ -141,6 +141,47 @@ describe("Timeline attempt trace", () => {
     expect(screen.getByText("Tests failed")).toBeInTheDocument(); // a panic has no per-test FAIL lines to count
   });
 
+  it("tells tests removed for having no assertions apart from failing tests, and what the fixer was given", () => {
+    let n = 0;
+    const e = (type: string, data: Record<string, unknown>): JobEvent => ({ seq: n++, ts: 1, type, data: { index: 1, file: "a.go", ...data } });
+    const silent = "tests that check nothing (TestB: no t.Error*/t.Fatal* call and t passed to no helper); they are removed and the remaining tests are checked again";
+    const { unmount } = renderRun([
+      e("job_started", { repo_path: "r", target_coverage: 80, model: "m", options: { max_fix_attempts: 2 } }),
+      e("iteration_started", { percent: 0 }),
+      e("plan_created", { items: [{ file: "a.go", functions: ["A"], uncovered_statements: 1 }] }),
+      e("candidate_generated", { code: "func TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}\nfunc TestC(t *testing.T) {}\n" }),
+      e("validation_result", { kind: "no_assertions", output: silent, failed_tests: [], no_assertions: ["TestB"] }),
+      e("tests_pruned", { tests: ["TestB"], reason: "no_assertions" }),
+      e("validation_result", { kind: "test_failure", output: "--- FAIL: TestC (0.00s)\nFAIL", failed_tests: ["TestC"] }),
+      e("tests_pruned", { tests: ["TestC"] }),
+      e("validation_result", { kind: "accepted", output: "", failed_tests: [] }),
+      e("candidate_accepted", { tests: ["TestA"], percent: 50, gain: 50 }),
+    ]);
+    expect(within(steps()[0]).getByText("Tests without assertions (no t.Error or t.Fatal)")).toBeInTheDocument();
+    expect(within(steps()[0]).getByText(silent)).toBeInTheDocument();
+    expect(within(steps()[1]).getByText("Removed the test without assertions, kept 2")).toBeInTheDocument();
+    expect(within(steps()[2]).getByText("Removed the failing test, kept 1")).toBeInTheDocument();
+    expect(screen.getByText("3 attempts · removed 2 tests")).toBeInTheDocument();
+    unmount();
+
+    n = 0;
+    const all = "no new Test function checks its result (TestA: no t.Error*/t.Fatal* call and t passed to no helper). Every Test function must check its result with t.Error/t.Errorf/t.Fatal/t.Fatalf";
+    renderRun([
+      e("job_started", { repo_path: "r", target_coverage: 80, model: "m", options: { max_fix_attempts: 1 } }),
+      e("iteration_started", { percent: 0 }),
+      e("plan_created", { items: [{ file: "a.go", functions: ["A"], uncovered_statements: 1 }] }),
+      e("candidate_generated", { code: "func TestA(t *testing.T) {}\n" }),
+      e("validation_result", { kind: "no_assertions", output: all, failed_tests: [], no_assertions: ["TestA"] }),
+      e("fix_attempt", { attempt: 1, kind: "no_assertions" }),
+      e("candidate_generated", { code: "func TestA(t *testing.T) { t.Fatal() }\n" }),
+      e("validation_result", { kind: "no_assertions", output: all, failed_tests: [], no_assertions: ["TestA"] }),
+      e("candidate_rejected", { reason: "no_assertions" }),
+    ]);
+    expect(screen.getByText("Rewritten by the LLM fixer (fix 1 of 1), given the tests without assertions from ①")).toBeInTheDocument();
+    expect(screen.getByText(/rejected after attempt 2: Tests without assertions\./)).toBeInTheDocument();
+    expect(screen.queryByText(/failing test/)).not.toBeInTheDocument();
+  });
+
   it("shows two duplicate-name auto-fixes", () => {
     renderRun(constraintsRenamed);
     expect(screen.getByText("4 attempts · 2 auto-fixes · removed 1 test")).toBeInTheDocument();

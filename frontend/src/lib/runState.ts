@@ -12,7 +12,8 @@ export type Check = { kind: string; output: string; failedTests: string[] };
 export type StepSource =
   | { type: "writer"; outputTokens?: number }
   | { type: "auto_fix"; description: string }
-  | { type: "prune"; tests: string[]; kept?: number }
+  // reason "no_assertions": the tests checked nothing (no t.Error/t.Fatal); otherwise they failed
+  | { type: "prune"; tests: string[]; kept?: number; reason?: "no_assertions" }
   | { type: "llm_fix"; attempt: number; max?: number; given: string; givenStep?: number; outputTokens?: number };
 // One attempt: a version of the test code plus the result of checking it (no check yet while it runs).
 export type Step = { source: StepSource; code?: string; testCount?: number; check?: Check };
@@ -244,7 +245,8 @@ export function reduce(state: RunState, ev: RunAction): RunState {
         const tests: string[] = d.tests ?? [];
         const before = last(i.steps)?.testCount;
         const kept = before != null && before > tests.length ? before - tests.length : undefined;
-        return { ...i, steps: [...i.steps, { source: { type: "prune", tests, kept }, testCount: kept }] };
+        const reason = d.reason === "no_assertions" ? { reason: "no_assertions" as const } : {};
+        return { ...i, steps: [...i.steps, { source: { type: "prune", tests, kept, ...reason }, testCount: kept }] };
       });
     case "fix_attempt":
       return { ...withItem(s, d.index, d.file, (i) => ({
