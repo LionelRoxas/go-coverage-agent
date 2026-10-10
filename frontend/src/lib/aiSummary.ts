@@ -4,13 +4,16 @@ import type { CostUsd, SummaryGenerated } from "./types";
 
 export const AI_NOTE = "AI-written from this run's measured data.";
 export const EMPTY_PART = "Nothing in this part could be checked against the run's data.";
+export const DISAGREEMENTS = "Prediction disagreements (not confirmed bugs: the prediction or the code is wrong)";
 
 /** One rule for every amount: 4 decimals below $1, 2 from $1 up (as report.py). */
 export const usd = (v: number) => `$${v < 1 ? v.toFixed(4) : v.toFixed(2)}`;
 
-/** The run's cost (what the text talks about), the summary call's, and both together. */
+/** The run's cost (what the text talks about), this summary call's, and both together. The labels say the scope: after
+ *  Write again the header's token total also counts earlier summary calls, which this line does not. Same text as
+ *  cost_line in backend/app/summary/report.py (SUMMARY.md). */
 export const costLine = (c: CostUsd) =>
-  `Run cost ${usd(c.run)} · summary ${usd(c.summary)} · total ${usd(c.total)} (input ${usd(c.input)}, output ${usd(c.output)})`;
+  `Run cost ${usd(c.run)} · this summary call ${usd(c.summary)} · run + this call ${usd(c.total)} (input ${usd(c.input)}, output ${usd(c.output)})`;
 
 /** "83.33 %" (also with a no-break space) as "83.33%"; the backend already does this for new summaries. */
 export const tidy = (text: string) => text.replace(/(\d)[ \u00a0\u202f]+%/g, "$1%");
@@ -46,6 +49,7 @@ export function toMarkdown(ai: SummaryGenerated, { repo, model, generatedAt }: {
   add(t.where_tests_live, "**Where the tests live:** ");
   bullets("Gaps", t.gaps.map((g) => `\`${g.file}\`: ${g.detail}`));
   bullets("Suspected bugs", t.suspected_bugs);
+  bullets(DISAGREEMENTS, ai.disagreements ?? []); // deterministic, from the run (older payloads lack it)
   add(t.rejected_or_failed, "**Rejected or failed:** ");
   add(t.how_to_run, "**How to run:** ");
   bullets("Next steps", t.next_steps);

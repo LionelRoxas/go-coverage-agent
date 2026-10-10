@@ -1,5 +1,5 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
-from app.models import (BusinessSummary, RunSummary, SummaryGap, SuspectedBug, TechnicalSummary, TestScenario,
+from app.models import (BusinessSummary, RunSummary, SuspectedBug, TechnicalSummary, TestScenario,
                         TestSnippet, TokenUsage)
 
 EFFORT = {"writer": "medium", "fixer": "medium", "summarizer": "medium"}

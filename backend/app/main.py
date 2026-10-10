@@ -51,7 +51,8 @@ def create_app(settings: Settings | None = None, manager: JobManager | None = No
     @app.middleware("http")
     async def _block_cross_origin_writes(request: Request, call_next):
         origin = request.headers.get("origin")
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and origin is not None                 and origin not in settings.cors_origins:
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and origin is not None \
+                and origin not in settings.cors_origins:
             return JSONResponse({"error": {"code": "forbidden_origin", "message": "Cross-origin request blocked."}},
                                 status_code=403)
         return await call_next(request)

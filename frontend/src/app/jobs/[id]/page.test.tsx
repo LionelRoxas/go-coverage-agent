@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateMetadata } from "./layout";
 import JobPage from "./page";
 import { api, ApiError } from "@/lib/api";
+import { statsSummary } from "@/lib/fixtures/aiSummary";
 
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "gone" }) }));
 vi.mock("@/lib/api", async (orig) => {
@@ -152,6 +153,31 @@ describe("JobPage", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 
+  it("shows one token total, with the summary call broken out, in the header and the result card", async () => {
+    vi.mocked(api.job).mockResolvedValue({} as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    const send = (seq: number, type: string, data: object) =>
+      act(() => FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq, ts: 1, type, data }) }));
+    send(0, "job_started", { repo_path: "stats", target_coverage: 80, options: { write_summary: true }, model: "m" });
+    send(1, "llm_call", { index: 1, file: "a.go", role: "writer", prompt_tokens: 300_000, completion_tokens: 37_700,
+      total_tokens: 337_700 });
+    expect(await screen.findByText(/337\.7k tokens$/)).toBeInTheDocument();
+    send(2, "job_completed", { stop_reason: "target_reached", message: "Reached the 80% coverage target.", target: 80,
+      baseline_percent: 0, final_percent: 81, iterations: [], test_files: [], tests_added: [], suspected_bugs: [], per_file: [],
+      tokens: { prompt_tokens: 300_000, completion_tokens: 37_700 }, duration_s: 5 });
+    send(3, "llm_request", { role: "summarizer", reasoning_effort: "medium" });
+    send(4, "summary_generated", { ...statsSummary, tokens: { prompt_tokens: 10_000, completion_tokens: 3_700, total_tokens: 13_700 } });
+    expect(await screen.findByText(/351\.4k tokens \(337\.7k run \+ 13\.7k summary\)$/)).toBeInTheDocument();
+    const card = screen.getByText("Tokens").nextSibling;
+    expect(card).toHaveTextContent("351.4k337.7k run + 13.7k summary");
+    // Write again: a second summary call adds to the summary part, in the header and the card alike
+    send(5, "llm_request", { role: "summarizer", reasoning_effort: "medium" });
+    send(6, "summary_generated", { ...statsSummary, tokens: { prompt_tokens: 10_000, completion_tokens: 3_700, total_tokens: 13_700 } });
+    expect(await screen.findByText(/365\.1k tokens \(337\.7k run \+ 27\.4k across 2 summaries\)$/)).toBeInTheDocument();
+    expect(screen.getByText("Tokens").nextSibling).toHaveTextContent("365.1k337.7k run + 27.4k across 2 summaries");
+  });
+
   it("drops the live activity line once the run has a summary, so the result is not said twice", async () => {
     vi.mocked(api.job).mockResolvedValue({} as never);
     render(<JobPage />);
@@ -167,6 +193,32 @@ describe("JobPage", () => {
     expect(await screen.findByText("Completed")).toBeInTheDocument();
     expect(screen.getAllByText("Reached the 80% coverage target.")).toHaveLength(1);
     expect(document.querySelector('[aria-live="polite"]')).toBeNull();
+  });
+
+  it.each([
+    ["with", [{ file: "ttest.go", functions: ["TTest"], test: "TestTTest_Edge", lines: ["TestTTest_Edge: t_test.go:4: got 1, want 0"] }]],
+    ["with an empty list of", []],
+    ["without (older run)", undefined],
+  ] as const)("shows the prediction disagreements section only when there are some (%s disagreements)", async (_, disagreements) => {
+    vi.mocked(api.job).mockResolvedValue({} as never);
+    render(<JobPage />);
+    await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+    act(() => {
+      const send = (seq: number, type: string, data: object) =>
+        FakeEventSource.last!.onmessage!({ data: JSON.stringify({ seq, ts: 1, type, data }) });
+      send(0, "job_started", { repo_path: "stats", target_coverage: 80, options: {}, model: "m" });
+      send(1, "job_completed", { stop_reason: "target_reached", message: "Reached the 80% coverage target.", target: 80,
+        baseline_percent: 0, final_percent: 81, iterations: [], test_files: [], tests_added: [], suspected_bugs: [], per_file: [],
+        tokens: { prompt_tokens: 1, completion_tokens: 1 }, duration_s: 5, ...(disagreements ? { disagreements } : {}) });
+    });
+    expect(await screen.findByText("Completed")).toBeInTheDocument();
+    const heading = screen.queryByRole("heading", { name: /^Prediction disagreements/ });
+    if (disagreements?.length) {
+      expect(heading).toHaveTextContent("Prediction disagreements (1)");
+      expect(screen.getByText("t_test.go:4: got 1, want 0")).toBeInTheDocument();
+    } else {
+      expect(heading).not.toBeInTheDocument();
+    }
   });
 
   // A failed run's message is in the failure card and a cancelled run's in its summary, so neither keeps the line.

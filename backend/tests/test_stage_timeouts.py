@@ -86,7 +86,7 @@ async def test_a_baseline_timeout_names_the_stage(monkeypatch, tmp_path, slow, w
     (repo / "go.mod").write_text("module example.com/m\n")
     (repo / "m.go").write_text("package m\n")
     settings = Settings(repos_dir=tmp_path / "repos", work_dir=tmp_path / "work", output_dir=tmp_path / "out")
-    monkeypatch.setattr(baseline_setup, "GoTools", lambda root, s, cancel: FakeTools(slow, s))
+    monkeypatch.setattr(baseline_setup, "GoTools", lambda root, s, cancel, tmp_dir=None: FakeTools(slow, s))
 
     async def emit(t, d): pass
 

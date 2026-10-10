@@ -10,14 +10,14 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Coroutine
 
 from app.agents.context import ContextTooLarge
-from app.agents.history import AttemptRecord, attempt_record
+from app.agents.history import AttemptRecord, attempt_record, observed_lines
 from app.agents.planner import plan
 from app.agents.repair import clean_imports, mechanical_repair
 from app.engine.policy import StopPolicy, stop_message
 from app.llm.client import (LLM_CALL, Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal,
                             LLMOutputTooLarge, LLMTimeout, LLMTransportError, LLMUnavailable, OnRequest)
-from app.models import (CoverageReport, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem, StopReason,
-                        Summary, SuspectedBug, TestSnippet, TokenUsage)
+from app.models import (CoverageReport, Disagreement, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem,
+                        StopReason, Summary, SuspectedBug, TestSnippet, TokenUsage)
 from app.validator import ValidationKind, ValidationResult
 from app.workspace import Workspace, test_path_for
 
@@ -26,6 +26,11 @@ MAX_MECHANICAL_REPAIRS = 3
 OUTAGE_BACKOFF_S = 15.0  # wait after the first Groq transport failure in a row; doubles per failure, up to the cap
 OUTAGE_BACKOFF_MAX_S = 120.0
 log = logging.getLogger(__name__)
+
+
+def _event(d: Disagreement) -> dict[str, Any]:
+    """A disagreement as its event shows it: where it happened tells how, and the outcome is not known yet."""
+    return d.model_dump(exclude={"pruned", "outcome"})
 
 
 class Cancelled(Exception):
@@ -86,6 +91,7 @@ class Orchestrator:
         self.tests_added: list[str] = []
         self.test_files: list[str] = []
         self.bugs: list[SuspectedBug] = []
+        self.disagreements: list[Disagreement] = []  # failing tests pruned (prediction vs implementation)
         self.index = 0
 
     async def run(self, baseline: CoverageReport) -> Summary:
@@ -123,7 +129,7 @@ class Orchestrator:
             written: list[_Written] | list[None] = (await self._write_round(items) if self.parallel
                                                     else [None] * len(items))
             refused: LLMBudgetExhausted | None = None
-            for item, answer in zip(items, written):  # validation: one item at a time, in plan order
+            for item, answer in zip(items, written, strict=False):  # validation: one item at a time, in plan order
                 if answer is not None and isinstance(answer.error, LLMBudgetExhausted) and answer.error.local:
                     # Refused before it was sent (budget reserved by the round's other requests): skip it, check
                     # the answers already paid for, then stop for the budget.
@@ -347,6 +353,7 @@ class Orchestrator:
         snip: TestSnippet | None = None
         half = transport = False
         history: list[AttemptRecord] = []  # every check of this candidate, oldest first, for the Fixer
+        mine: list[Disagreement] = []  # disagreements first recorded by this attempt; their outcome is set at its end
         try:
             try:
                 # render_context (inside agents.write) is where ContextTooLarge is actually raised
@@ -368,10 +375,22 @@ class Orchestrator:
                 attempts = repairs = 0
                 while not result.accepted:
                     self._check()
-                    if result.kind is ValidationKind.TEST_FAILURE:
+                    free = result.no_assertions if result.kind is ValidationKind.NO_ASSERTIONS else []
+                    if free and len(free) < len(result.new_tests):  # all of them: the Fixer is told to assert
+                        await self.emit("tests_pruned", {**base, "tests": free, "reason": "no_assertions"})
+                        result = await self._validate(
+                            base, validator.prune_and_check(test_file, free, self.report, result.new_tests))
+                        history.append(attempt_record(f"prune of [{', '.join(free)}] (no assertions)", result,
+                                                      pruned=free, pruned_reason=ValidationKind.NO_ASSERTIONS.value))
+                        if result.accepted:
+                            break
+                    # A timed-out or killed run (cut_short) names no reliable failures: no prune, no disagreements.
+                    if result.kind is ValidationKind.TEST_FAILURE and not result.cut_short:
                         doomed = [n for n in result.failed_tests if n in result.new_tests]
                         if doomed and len(doomed) == len(result.failed_tests) and len(doomed) < len(result.new_tests):
-                            await self.emit("tests_pruned", {**base, "tests": doomed})
+                            found = self._disagreements(item, doomed, result.output, mine)
+                            await self.emit("tests_pruned", {**base, "tests": doomed,
+                                                             "disagreements": [_event(d) for d in found]})
                             result = await self._validate(
                                 base, validator.prune_and_check(test_file, doomed, self.report, result.new_tests))
                             history.append(attempt_record(f"prune of [{', '.join(doomed)}]", result, pruned=doomed))
@@ -391,7 +410,12 @@ class Orchestrator:
                     if attempts >= self.opts.max_fix_attempts:
                         break
                     attempts += 1
-                    await self.emit("fix_attempt", {**base, "attempt": attempts, "kind": result.kind.value})
+                    fixing: dict[str, Any] = {**base, "attempt": attempts, "kind": result.kind.value}
+                    failing = [n for n in result.failed_tests if n in result.new_tests]
+                    if result.kind is ValidationKind.TEST_FAILURE and failing and not result.cut_short:  # no prune
+                        found = self._disagreements(item, failing, result.output, mine, pruned=False)
+                        fixing["disagreements"] = [_event(d) for d in found]
+                    await self.emit("fix_attempt", fixing)
                     ws.restore(snap)
                     snip = await self._call("fixer", item, self.deps.agents.fix(
                         item, inputs, snip, result, list(history), on_request=self._on_request("fixer", item, attempts)))
@@ -426,6 +450,11 @@ class Orchestrator:
                 self.test_files.append(test_file)
             if snip is not None:
                 self.bugs.extend(snip.suspected_bugs)
+            for d in mine:  # a test of that name in the accepted code was rewritten after it failed (it may now
+                if d.test in result.new_tests:  # expect the code's value). Only upgrades: once a test is kept, a
+                    d.outcome = "kept"  # later attempt that prunes the same failure does not remove it from the suite
+                elif d.outcome == "not_accepted":
+                    d.outcome = "dropped"
             accepted: dict[str, Any] = {**base, "test_file": test_file, "tests": result.new_tests,
                                         "percent": self.report.percent, "gain": gain}
             if snip is not None and snip.suspected_bugs:  # where each claim came from, to drop any Go refuted later
@@ -445,6 +474,25 @@ class Orchestrator:
         await self.emit("candidate_rejected", {**base, "reason": result.kind.value})
         return False
 
+    def _disagreements(self, item: PlanItem, tests: list[str], output: str, mine: list[Disagreement],
+                       pruned: bool = True) -> list[Disagreement]:
+        """Each failing new test that Go named as failing (never a guess after a timeout or kill: see cut_short) about
+        to be pruned (or, when no prune applies, sent to the Fixer), with its observed
+        got/want lines: the model's prediction and the code disagree, and nobody has decided which is wrong.
+        Recorded once per (file, test, lines) for the report; a new record starts as `not_accepted`. The record (new,
+        or the one an earlier attempt made of the same observation) joins `mine`, whose outcome the attempt upgrades when
+        its candidate is accepted (not_accepted -> kept/dropped, dropped -> kept; kept stays kept)."""
+        functions = [k.label() for k in item.functions]
+        found = [Disagreement(file=item.file, functions=functions, test=t, lines=observed_lines(output, t),
+                              pruned=pruned, outcome="not_accepted") for t in tests]
+        for d in found:
+            record = next((o for o in self.disagreements if (o.file, o.test, o.lines) == (d.file, d.test, d.lines)), None)
+            if record is None:
+                self.disagreements.append(record := d)
+            if not any(m is record for m in mine):
+                mine.append(record)
+        return found
+
     def _summary(self, reason: StopReason, detail: str, duration: float, minutes: int = 0) -> Summary:
         before = {f.file: f.percent for f in self.baseline.files}
         per_file = sorted((FileDelta(file=f.file, before=before.get(f.file, 0.0), after=f.percent)
@@ -453,6 +501,7 @@ class Orchestrator:
             stop_reason=reason, message=stop_message(reason, self.request, detail, minutes=minutes),
             target=self.request.target_coverage, baseline_percent=self.baseline.percent,
             final_percent=self.report.percent, iterations=self.iterations, test_files=sorted(self.test_files),
-            tests_added=self.tests_added, suspected_bugs=self.bugs, per_file=per_file, tokens=self.tokens,
+            tests_added=self.tests_added, suspected_bugs=self.bugs, disagreements=self.disagreements,
+            per_file=per_file, tokens=self.tokens,
             duration_s=round(duration, 1),
         )

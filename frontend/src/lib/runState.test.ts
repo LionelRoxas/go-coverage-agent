@@ -268,6 +268,7 @@ describe("reduce: attempt trace", () => {
     const item = s.iterations[0].items[0];
     expect(s.maxFixAttempts).toBeUndefined();
     expect(item.steps.map((st) => st.source.type)).toEqual(["writer", "prune"]);
+    expect(item.steps[1].source).toEqual({ type: "prune", tests: [], kept: undefined }); // no reason: failing tests
     expect(item.steps[1].check).toEqual({ kind: "accepted", output: "", failedTests: [] });
     expect(item.tests).toEqual([]);
     expect(item.percentBefore).toBeUndefined();
@@ -443,7 +444,11 @@ describe("the end-of-run AI summary", () => {
     s = reduce(s, ev("summary_generated", generated, 2010));
     expect(s.aiSummary).toEqual({ status: "done", result: generated, generatedAt: 2010 });
     expect(summaryWaiting(s)).toBe(false);
-    expect(s.tokens).toBe(5430);
+    expect([s.tokens, s.summaryTokens, s.summaryCalls]).toEqual([1000, 4430, 1]); // the summary call is kept apart
+    s = reduce(s, { type: "summary_requested" }); // Write again
+    s = reduce(s, ev("llm_request", { role: "summarizer", reasoning_effort: "medium" }, 3000));
+    s = reduce(s, ev("summary_generated", generated, 3010));
+    expect([s.tokens, s.summaryTokens, s.summaryCalls]).toEqual([1000, 8860, 2]); // both calls count
   });
 
   it("records a failure and keeps an earlier summary", () => {

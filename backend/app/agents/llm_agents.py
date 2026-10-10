@@ -7,7 +7,8 @@ from functools import cache
 from pathlib import Path
 from typing import Sequence
 
-from app.agents.context import ContextInputs, ContextTooLarge, render_context
+from app.agents.context import (REJECTED_SNIPPET, TEST_OUTPUT, ContextInputs, ContextTooLarge, data_block,
+                                render_context)
 from app.agents.history import AttemptRecord, render_history
 from app.llm.client import LLMClient, OnRequest, estimate_tokens
 from app.models import PlanItem, RunSummary, TestSnippet, TokenUsage
@@ -20,6 +21,8 @@ _DECL_NAME = re.compile(r"^(?:func\s+(?:\([^)]*\)\s*)?|type\s+|var\s+|const\s+)(
 _WORD = re.compile(r"\w+")
 PRUNED_NO_GAIN = ("Removing the failing tests left no new coverage: the tests that reached the uncovered lines were the "
                   "ones that failed. Keep them and correct their expected values (observed values are in the history).")
+PRUNED_SILENT_NO_GAIN = ("Removing the tests without assertions ({names}) left no new coverage: they were the ones that "
+                         "reached the uncovered lines. Keep them and make each check its results with t.Error/t.Fatal.")
 
 
 _HEADER = re.compile(r"\A<!--.*?-->\s*", re.S)
@@ -62,7 +65,7 @@ def _relevant_parts(snippet: TestSnippet, result: ValidationResult, limit: int,
     if not starts:
         return code if len(code) <= limit else None
     starts[0] = 0
-    chunks = [code[a:b].strip("\n") for a, b in zip(starts, starts[1:] + [len(code)])]
+    chunks = [code[a:b].strip("\n") for a, b in zip(starts, starts[1:] + [len(code)], strict=True)]
     named = set(result.failed_tests) | set(result.error_decls) | set(_WORD.findall(result.output)) | set(extra)
     pointed = [c for c in chunks if (m := _DECL_NAME.match(c.lstrip())) and m.group(1) in named]
     kept: list[str] = []
@@ -138,15 +141,19 @@ class Agents:
         if result.kind is ValidationKind.NO_GAIN and pruned and any(
                 r.kind == ValidationKind.TEST_FAILURE.value and set(r.failed_tests) & set(pruned) for r in earlier):
             goal += f" {PRUNED_NO_GAIN}"
+        elif result.kind is ValidationKind.NO_GAIN and pruned and current is not None \
+                and current.pruned_reason == ValidationKind.NO_ASSERTIONS.value:
+            goal += f" {PRUNED_SILENT_NO_GAIN.format(names=', '.join(pruned))}"
         full_history, short_history = render_history(earlier), render_history(earlier, minimal=True)
 
         def task(code: str | None, output: str, past: str, with_plan: bool = True) -> str:
-            shown = (f"```go\n{code}\n```" if code is not None
+            shown = (data_block(REJECTED_SNIPPET, f"```go\n{code}\n```") if code is not None
                      else "(the rejected code is omitted to fit the prompt; write a fresh replacement)")
+            checked = data_block(TEST_OUTPUT, f"```\n{output}\n```")  # go test / compiler output: data only
             return (f"{past + chr(10) * 2 if past else ''}"
                     f"## Rejected snippet (kind: {result.kind.value})\nImports you declared: {imports}\n"
                     f"{plan_block if with_plan else ''}{shown}\n\n"
-                    f"## Validator output\n```\n{output}\n```\n\n"
+                    f"## Validator output\n{checked}\n\n"
                     f"## Task\n{goal}")
 
         return [

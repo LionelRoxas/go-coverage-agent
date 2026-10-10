@@ -1,9 +1,10 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
+import pytest
 from app.models import BusinessSummary, RunSummary, SummaryGap, SuspectedBug, TechnicalSummary
 from app.summary.facts import CostFacts, FileFact, LowFile, RunFacts, TokenFacts
 from pathlib import Path
 
-from app.summary.grounding import _Checker, ground, number_tokens, tidy
+from app.summary.grounding import FALLBACK_NOTE, _Checker, fill_empty, ground, number_tokens, tidy
 
 
 def facts(**kw) -> RunFacts:
@@ -256,3 +257,77 @@ def test_the_live_summary_is_grounded_and_tidied():
     assert dropped == 0
     assert out.business.headline == "Coverage rose from 1.43% to 83.33%, exceeding the 80% goal."
     assert "\u202f%" not in out.model_dump_json()
+
+
+def test_prediction_disagreements_are_a_grounded_count():
+    text = "7 failing tests disagreed with the model's prediction and were left for review."
+    out, dropped = ground(summary(technical={"rejected_or_failed": text}), facts(prediction_disagreements=7))
+    assert dropped == 0 and out.technical.rejected_or_failed == text
+    _, dropped = ground(summary(technical={"rejected_or_failed": text}), facts())
+    assert dropped == 1
+
+
+def test_assertion_free_removals_are_a_grounded_count():
+    text = "7 tests without assertions were removed."
+    out, dropped = ground(summary(technical={"rejected_or_failed": text}), facts(pruned_no_assertions=7))
+    assert dropped == 0 and out.technical.rejected_or_failed == text
+    _, dropped = ground(summary(technical={"rejected_or_failed": text}), facts())
+    assert dropped == 1
+
+
+REQUIRED = {"business": ["headline", "outcome", "efficiency", "recommendation"],
+            "technical": ["headline", "what_was_tested", "where_tests_live", "rejected_or_failed", "how_to_run"]}
+
+
+@pytest.mark.parametrize("part,name", [(p, n) for p, names in REQUIRED.items() for n in names])
+def test_an_emptied_required_field_gets_deterministic_text_from_the_facts(part, name):
+    """Every sentence of the field is ungrounded, so grounding empties it; the fallback fills it, marked as such,
+    and leaves the other fields alone. The fallback itself passes the grounding check."""
+    s = summary(**{part: {name: "It saved 40 hours of work."}})
+    grounded, dropped = ground(s, facts())
+    assert dropped == 1 and getattr(getattr(grounded, part), name) == ""
+    out, filled = fill_empty(grounded, facts())
+    text = getattr(getattr(out, part), name)
+    assert filled == [f"{part}.{name}"] and text.endswith(FALLBACK_NOTE)
+    assert out.model_copy(update={part: getattr(out, part).model_copy(update={name: ""})}) == grounded
+    again, dropped = ground(out, facts())
+    assert dropped == 0 and again == out
+
+
+def test_fallback_texts_name_the_facts():
+    empty = summary(business={n: "" for n in REQUIRED["business"]},
+                    technical={n: "" for n in REQUIRED["technical"]})
+    out, filled = fill_empty(empty, facts())
+    assert len(filled) == 9
+    assert out.technical.where_tests_live.startswith("The generated tests are saved in output/e2de1ca387cb/tests.")
+    assert out.business.headline.startswith("Coverage went from 0% to 81.07% against a goal of 80%.")
+    assert "$0.0674" in out.business.efficiency and "175,023 tokens" in out.business.efficiency
+    assert out.technical.what_was_tested.startswith("The new tests raise coverage in mean.go, norm.go.")
+    assert "$" not in fill_empty(empty, facts(cost_usd=None))[0].business.efficiency
+
+
+def test_a_grounded_summary_needs_no_fallback():
+    s = summary()
+    assert fill_empty(s, facts()) == (s, [])
+
+
+def test_the_live_summarys_empty_where_tests_live_is_filled():
+    """run_fc080d7fc500 shipped `where_tests_live: ""` (blind review W7)."""
+    import json
+    data = json.loads((LIVE / "ai_summary.json").read_text("utf-8"))
+    written = RunSummary.model_validate({"business": data["business"], "technical": data["technical"]})
+    out, filled = fill_empty(ground(written, live_facts())[0], live_facts())
+    assert filled == ["technical.where_tests_live"]
+    assert out.technical.where_tests_live.startswith("The generated tests are saved in output/fc080d7fc500/tests.")
+
+
+def test_fallback_note_names_both_reasons_a_field_is_filled():
+    """The note covers a field the model left empty and one the fact check emptied, in the same exact words."""
+    assert FALLBACK_NOTE == ("(Written from the run's data, because the AI text for this part was empty or could "
+                             "not be verified.)")
+    left_empty, filled_a = fill_empty(summary(technical={"how_to_run": ""}), facts())
+    grounded, _ = ground(summary(technical={"how_to_run": "It saved 40 hours of work."}), facts())
+    emptied, filled_b = fill_empty(grounded, facts())
+    assert filled_a == filled_b == ["technical.how_to_run"]
+    assert left_empty.technical.how_to_run == emptied.technical.how_to_run
+    assert left_empty.technical.how_to_run.endswith(FALLBACK_NOTE)

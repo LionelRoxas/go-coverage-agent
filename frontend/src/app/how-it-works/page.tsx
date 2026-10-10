@@ -30,12 +30,12 @@ const STEPS: Step[] = [
   },
   {
     title: "Try them out",
-    plain: "It runs the new tests for real. They must be valid code the computer accepts, pass twice in a row, and run code that no test ran before. Tests that would use the network or start other programs are refused by a best-effort filter before they run.",
+    plain: "It runs the new tests for real. They must be valid code the computer accepts, each must actually check a result, they must pass twice in a row, and together they must run code that no earlier test ran. Tests that would use the network or start other programs are refused by a best-effort filter before they run.",
     more: "validate",
   },
   {
     title: "Keep, repair or undo",
-    plain: "Tests that fail are dropped if the rest still work. Small slips are fixed automatically without AI; harder ones go back to the AI, with everything tried so far, for up to 2 more tries. If nothing works, the change is undone, so the project is never left broken.",
+    plain: "Tests that fail, or that check nothing, are dropped if the rest still work. When a test fails because the AI expected a different answer than the code gives, the run lists it so a person can decide which one is wrong. Small slips are fixed automatically without AI; harder ones go back to the AI, with everything tried so far, for up to 2 more tries. If nothing works, the change is undone, so the project is never left broken.",
     more: "keep",
   },
 ];
@@ -191,13 +191,14 @@ export default function HowItWorksPage() {
               </li>
             ))}
           </ul>
-          <p className="text-sm text-muted">Whatever the reason, the tests it already kept stay.</p>
+          <p className="text-sm text-muted">Whatever the reason, the tests it already kept stay. Each one is saved the moment it is kept, so even a crash does not lose them.</p>
         </section>
         <section aria-labelledby="trust-heading" className="space-y-4">
           <h2 id="trust-heading" className={h2}>Can I trust the number?</h2>
           <ul className="space-y-3 leading-relaxed text-muted">
             <li>Only tests that pass, twice in a row, are kept.</li>
-            <li>A new test also has to run at least one piece of code that no earlier test ran. One that only repeats what is already checked adds nothing, so it isn’t kept.</li>
+            <li>Each new batch of tests also has to run at least one piece of code that no earlier test ran. A batch that only repeats what is already checked adds nothing, so it isn’t kept.</li>
+            <li>A test that runs code but never checks the result is not kept either.</li>
             <li>A failing test is dropped or undone, so it never counts toward the number.</li>
             <li>The result was also checked independently: an earlier stats run (which reached 80.51%) had its kept tests re-run in a fresh copy of the project. They all passed and measured 80.5%.</li>
           </ul>

@@ -3,9 +3,10 @@
 import { useId, useState } from "react";
 import { GroqWait } from "@/components/GroqWait";
 import {
-  ATTEMPT_LABEL, checkLabel, circled, count, DEFERRED_LABEL, delta, FIX_GIVEN, parseTestFailures, pct, REJECTION_LABEL,
+  ATTEMPT_LABEL, checkLabel, circled, count, DEFERRED_LABEL, delta, FIX_GIVEN, observedLine, parseTestFailures, pct,
+  REJECTION_LABEL,
 } from "@/lib/format";
-import type { Check, ItemView, IterationView, Step } from "@/lib/runState";
+import type { Check, ItemView, IterationView, PrunedFailure, Step } from "@/lib/runState";
 import { Button, cardClass, codeBlockClass, EmptyState } from "./ui";
 
 const SHOWN_FUNCTIONS = 3;
@@ -71,7 +72,9 @@ function sourceLine(step: Step): string {
     case "auto_fix": // StepView shows the same text with the prefix in the accent colour
       return s.description ? `Auto-fixed, no LLM call: ${s.description}` : "Auto-fixed, no LLM call";
     case "prune": {
-      const removed = s.tests.length === 1 ? "Removed the failing test" : `Removed the ${s.tests.length} failing tests`;
+      const which = s.reason === "no_assertions" ? ["test", "tests"].map((w) => `${w} without assertions`)
+        : ["failing test", "failing tests"];
+      const removed = s.tests.length === 1 ? `Removed the ${which[0]}` : `Removed the ${s.tests.length} ${which[1]}`;
       return s.kept != null ? `${removed}, kept ${s.kept}` : removed;
     }
     case "llm_fix": {
@@ -106,6 +109,25 @@ function TestFailures({ output }: { output: string }) {
         <summary className="cursor-pointer text-xs text-muted hover:text-text">Raw output</summary>
         <pre className={OUTPUT_PRE}>{output}</pre>
       </details>
+    </div>
+  );
+}
+
+// A failing-test prune: what go test observed in each removed test, where the model's prediction and the code disagree.
+function PrunedFailures({ found }: { found: PrunedFailure[] }) {
+  return (
+    <div className="mt-1 text-xs">
+      <p className="text-muted">Prediction disagreements (what the code returned):</p>
+      <ul className="mt-1 space-y-1" aria-label="Prediction disagreements">
+        {found.map((f) => (
+          <li key={f.test}>
+            <span className="break-all font-mono">{f.test}</span>
+            {f.lines.length > 0
+              ? f.lines.map((line, k) => <span key={k} className="block break-words pl-3 font-mono text-muted">{observedLine(f.test, line)}</span>)
+              : <span className="block pl-3 text-muted">No assertion lines in the output.</span>}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -159,6 +181,9 @@ function StepView({ step, n, item, next }: { step: Step; n: number; item: ItemVi
         )}
       </div>
       {step.source.type === "prune" && <p className="text-xs text-muted">Same code minus the removed tests.</p>}
+      {step.source.type === "prune" && step.source.disagreements && step.source.disagreements.length > 0 && (
+        <PrunedFailures found={step.source.disagreements} />
+      )}
       {showCode && step.code != null && (
         <pre id={codeId} className={`mt-1 max-h-80 ${codeBlockClass()}`}>{step.code}</pre>
       )}

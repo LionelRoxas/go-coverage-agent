@@ -8,6 +8,18 @@ export const duration = (s: number) =>
 export const tokens = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 
+/** Every token a run spent: its own calls plus its AI summary calls, broken out once there is a summary call, e.g.
+ *  "351.4k tokens (337.7k run + 13.7k summary)". The header and the result card both use it. */
+export const tokenBreakdown = (run: number, summary = 0, summaryCalls = 1) =>
+  summary > 0
+    ? `${tokens(run)} run + ${tokens(summary)} ${summaryCalls > 1 ? `across ${summaryCalls} summaries` : "summary"}`
+    : undefined;
+
+export const tokenLabel = (run: number, summary = 0, summaryCalls = 1) => {
+  const parts = tokenBreakdown(run, summary, summaryCalls);
+  return `${tokens(run + summary)} tokens${parts ? ` (${parts})` : ""}`;
+};
+
 export const STOP_REASON_LABEL: Record<StopReason, string> = {
   target_reached: "Target reached",
   marginal_gains: "Diminishing returns",
@@ -28,6 +40,7 @@ export const ATTEMPT_LABEL: Record<string, string> = {
   test_failure: "Tests failed",
   no_gain: "No new coverage",
   guard_rejected: "Blocked by safety rules",
+  no_assertions: "Tests without assertions",
   llm_error: "Model error",
   llm_timeout: "Groq timed out",
   llm_unavailable: "Groq unreachable",
@@ -42,6 +55,7 @@ export const REJECTION_LABEL: Record<string, string> = {
   test_failure: "Tests failed",
   no_gain: "No new coverage",
   guard_rejected: "Blocked by safety rules",
+  no_assertions: "Tests without assertions",
   llm_error: "Model error",
   llm_timeout: "Groq timed out",
   llm_unavailable: "Groq unreachable",
@@ -51,11 +65,12 @@ export const REJECTION_LABEL: Record<string, string> = {
 
 // One-line verdict for a check of one attempt (validation_result kind). test_failure is counted by checkLabel.
 export const CHECK_LABEL: Record<string, string> = {
-  accepted: "Passed: compiles, go vet clean, tests pass twice, adds new coverage",
+  accepted: "Passed: compiles, go vet clean, every test asserts, tests pass twice, adds new coverage",
   compile_error: "Didn't compile",
   vet_error: "go vet failed",
   no_gain: "No new coverage",
   guard_rejected: "Rejected by the safety guard",
+  no_assertions: "Tests without assertions (no t.Error or t.Fatal)",
   llm_error: "Model error",
   llm_timeout: "Groq timed out",
   llm_unavailable: "Groq unreachable",
@@ -76,7 +91,29 @@ export const FIX_GIVEN: Record<string, string> = {
   test_failure: "the failing tests",
   no_gain: "the no-new-coverage result",
   guard_rejected: "the safety guard's rejection",
+  no_assertions: "the tests without assertions",
 };
+
+// The run page's "Prediction disagreements" section: what a pruned failing test means, in one plain sentence.
+export const DISAGREEMENT_NOTE =
+  "The model predicted one value and the code returned another, and at that point the failing test was removed " +
+  "(or, when every new test failed, sent to the Fixer). Nothing decided which is right: worth a human look, " +
+  "because either the prediction or the code is wrong.";
+// What happened to the test then, and what became of its candidate (as backend/app/summary/report.py HOW / OUTCOME).
+export const disagreementHow = (pruned?: boolean) =>
+  pruned === false ? "Sent to the Fixer when it failed" : "Removed when it failed";
+export const DISAGREEMENT_OUTCOME: Record<string, string> = {
+  kept: "a test of this name was kept after a fix and may now expect the code's value",
+  dropped: "not in the accepted tests",
+  not_accepted: "its attempt was not accepted",
+};
+// A go test line without its leading top-level test name, which the entry already shows: "TestX/sub: f.go:3: …"
+// becomes "/sub: f.go:3: …", "TestX: f.go:3: …" becomes "f.go:3: …".
+export function observedLine(test: string, line: string): string {
+  if (line.startsWith(`${test}: `)) return line.slice(test.length + 2);
+  if (line.startsWith(`${test}/`)) return line.slice(test.length);
+  return line;
+}
 
 // ① … ⑳ for step numbers; plain digits after that.
 export const circled = (n: number) => (n >= 1 && n <= 20 ? String.fromCodePoint(0x2460 + n - 1) : `(${n})`);

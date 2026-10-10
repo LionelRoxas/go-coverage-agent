@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Sequence
 
+from app.agents.context import TEST_OUTPUT, data_block
 from app.llm.client import estimate_tokens
 from app.validator import ValidationKind, ValidationResult
 
@@ -14,6 +15,7 @@ HISTORY_TOKENS = 1500  # the whole rendered history
 LINES_PER_TEST = 3
 CONTINUATION_LINES = 2  # of a multi-line failure message (e.g. got:/want: lines)
 ERROR_LINES = 3
+DISAGREEMENT_LINE_CHARS = 300  # one observed line of a failing test (pruned or handed to the Fixer), for review
 HEADER = ("## Earlier attempts for these functions\n"
           "Oldest first; each was rejected. In a test failure, the observed value is what the code actually does.\n")
 
@@ -29,6 +31,7 @@ class AttemptRecord:
     failed_tests: tuple[str, ...] = ()
     lines: tuple[str, ...] = ()
     pruned: tuple[str, ...] = ()
+    pruned_reason: str = ""  # "no_assertions" when `pruned` were removed for checking nothing, else they failed
     assertions: bool = False  # `lines` are per-test assertion or panic lines, each naming its test
 
     @property
@@ -57,6 +60,20 @@ def failure_lines(output: str) -> list[str]:
     """Each failing test's first assertion (or panic) lines, prefixed with the (sub)test name, once each
     (`go test -count=2` repeats every failure), with up to CONTINUATION_LINES deeper-indented continuation lines
     joined by ` | `. Interleaved across failing tests, so every test's first line comes before any test's second."""
+    per_test = failures_by_test(output)
+    lines: list[str] = []
+    for rank in range(LINES_PER_TEST):
+        lines += [found[rank] for found in per_test.values() if rank < len(found)]
+    return lines
+
+
+def observed_lines(output: str, test: str, limit: int = DISAGREEMENT_LINE_CHARS) -> list[str]:
+    """The first assertion (or panic) lines of one failing top-level test (got/want), each clipped to `limit`."""
+    return [_clip(line, limit) for line in failures_by_test(output).get(test, [])]
+
+
+def failures_by_test(output: str) -> dict[str, list[str]]:
+    """The lines `failure_lines` reports, per top-level test, in order of first failure."""
     per_test: dict[str, list[str]] = {}
     current = ""
     raw_lines = output.splitlines()
@@ -80,10 +97,7 @@ def failure_lines(output: str) -> list[str]:
         found = per_test.setdefault(current.split("/")[0], [])
         if len(found) < LINES_PER_TEST and not any(line in v for v in per_test.values()):
             found.append(line)
-    lines: list[str] = []
-    for rank in range(LINES_PER_TEST):
-        lines += [found[rank] for found in per_test.values() if rank < len(found)]
-    return lines
+    return {test: found for test, found in per_test.items() if found}
 
 
 def _key_lines(result: ValidationResult) -> tuple[list[str], bool]:
@@ -97,10 +111,11 @@ def _key_lines(result: ValidationResult) -> tuple[list[str], bool]:
     return meaningful[:limit], False
 
 
-def attempt_record(source: str, result: ValidationResult, pruned: Sequence[str] = ()) -> AttemptRecord:
+def attempt_record(source: str, result: ValidationResult, pruned: Sequence[str] = (),
+                   pruned_reason: str = "") -> AttemptRecord:
     lines, assertions = _key_lines(result)
     return AttemptRecord(source=source, kind=result.kind.value, failed_tests=tuple(result.failed_tests),
-                         lines=tuple(lines), pruned=tuple(pruned), assertions=assertions)
+                         lines=tuple(lines), pruned=tuple(pruned), pruned_reason=pruned_reason, assertions=assertions)
 
 
 def render_history(records: Sequence[AttemptRecord], max_tokens: int = HISTORY_TOKENS, minimal: bool = False) -> str:
@@ -118,7 +133,8 @@ def render_history(records: Sequence[AttemptRecord], max_tokens: int = HISTORY_T
         body = "\n".join(records[i].render(i + 1) for i in kept)
         omitted = len(records) - len(kept)
         note = f"({omitted} other earlier attempt{'s' if omitted != 1 else ''} omitted)\n" if omitted else ""
-        return f"{HEADER}{note}{body}".rstrip("\n")
+        # the records quote go test / compiler output: data from the repository under test, never instructions
+        return f"{HEADER}{note}{data_block(TEST_OUTPUT, body)}"
 
     while estimate_tokens(build()) > max_tokens:
         droppable = [i for i in kept if i not in pinned]

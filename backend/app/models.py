@@ -97,9 +97,11 @@ class SuspectedBug(BaseModel):
 class TestSnippet(BaseModel):
     __test__ = False
     test_plan: list[TestScenario] = Field(description="What you decided to test and why, one entry per scenario")
+    # suspected_bugs comes before code, so the strict schema asks for the claims first and the code can leave
+    # those cases out (the prompts' rule: never assert behaviour you report in suspected_bugs)
+    suspected_bugs: list[SuspectedBug] = Field(description="Behaviour that looks wrong in the source; empty if none")
     imports: list[str] = Field(description="Import paths the new code needs, e.g. ['testing', 'math']")
     code: str = Field(description="ONLY new top-level Go declarations: Test functions and helpers. No package clause, no imports.")
-    suspected_bugs: list[SuspectedBug] = Field(description="Behaviour that looks wrong in the source; empty if none")
 
 
 # --- End-of-run AI summary (strict schema: every field required) ---
@@ -201,6 +203,20 @@ class IterationRecord(BaseModel):
     deferred: int = 0  # items that met a Groq outage: neither accepted nor rejected, planned again later
 
 
+class Disagreement(BaseModel):
+    """A new test that failed because the value the model predicted and the value the code returned differ; at that
+    point it was pruned (or, when every new test failed, sent to the Fixer). Either may be wrong; it is reported for
+    a person to look at, not as a bug."""
+    file: str  # the target source file
+    functions: list[str]  # the planned functions of the item
+    test: str  # the removed top-level Test function
+    lines: list[str] = Field(default_factory=list)  # its first got/want (or panic) lines from `go test`, clipped
+    pruned: bool = True  # removed so the rest could be kept; False: every new test failed and all went to the Fixer
+    # what became of the candidate: "kept" (the accepted code has a test of this name, rewritten after it failed:
+    # it may now expect the code's value), "dropped" (accepted without it), "not_accepted"; "" in older reports
+    outcome: str = ""
+
+
 class FileDelta(BaseModel):
     file: str
     before: float
@@ -217,6 +233,8 @@ class Summary(BaseModel):
     test_files: list[str]
     tests_added: list[str]
     suspected_bugs: list[SuspectedBug]
+    # failing new tests pruned or sent to the Fixer during the run (older reports lack it); never confirmed bugs
+    disagreements: list[Disagreement] = Field(default_factory=list)
     per_file: list[FileDelta]
     tokens: TokenUsage
     duration_s: float

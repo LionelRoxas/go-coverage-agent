@@ -12,8 +12,11 @@ export type Check = { kind: string; output: string; failedTests: string[] };
 export type StepSource =
   | { type: "writer"; outputTokens?: number }
   | { type: "auto_fix"; description: string }
-  | { type: "prune"; tests: string[]; kept?: number }
+  // reason "no_assertions": the tests checked nothing (no t.Error/t.Fatal); otherwise they failed
+  // disagreements: per failing test, what go test observed (its got/want lines); older logs lack it
+  | { type: "prune"; tests: string[]; kept?: number; reason?: "no_assertions"; disagreements?: PrunedFailure[] }
   | { type: "llm_fix"; attempt: number; max?: number; given: string; givenStep?: number; outputTokens?: number };
+export type PrunedFailure = { test: string; lines: string[] };
 // One attempt: a version of the test code plus the result of checking it (no check yet while it runs).
 export type Step = { source: StepSource; code?: string; testCount?: number; check?: Check };
 
@@ -63,7 +66,9 @@ export type RunState = {
   history: { label: string; percent: number }[];
   iterations: IterationView[];
   activity: string;
-  tokens: number;
+  tokens: number; // the run's own LLM calls (the last llm_call's running total)
+  summaryTokens: number; // every AI summary call written so far (summary_generated), kept apart from the run's
+  summaryCalls: number;
   summary?: Summary;
   writeSummary?: boolean; // job_started options.write_summary; older logs lack it
   aiSummary?: AiSummaryView;
@@ -71,6 +76,11 @@ export type RunState = {
   // A rate-limit wait of one of several requests sent together (PARALLEL_WRITERS), until that item's next request
   rateLimited?: { file: string; seconds: number; reason: string };
 };
+
+/** The run's own tokens: its Summary's once it has one (what the result card and the AI summary's facts use), else
+ *  the running total of its LLM calls. */
+export const runTokens = (s: RunState) =>
+  s.summary ? s.summary.tokens.prompt_tokens + s.summary.tokens.completion_tokens : s.tokens;
 
 export const initialState: RunState = {
   lastSeq: -1,
@@ -82,6 +92,8 @@ export const initialState: RunState = {
   iterations: [],
   activity: "Connecting…",
   tokens: 0,
+  summaryTokens: 0,
+  summaryCalls: 0,
 };
 
 function withIteration(s: RunState, index: number, fn: (it: IterationView) => IterationView): RunState {
@@ -244,7 +256,10 @@ export function reduce(state: RunState, ev: RunAction): RunState {
         const tests: string[] = d.tests ?? [];
         const before = last(i.steps)?.testCount;
         const kept = before != null && before > tests.length ? before - tests.length : undefined;
-        return { ...i, steps: [...i.steps, { source: { type: "prune", tests, kept }, testCount: kept }] };
+        const reason = d.reason === "no_assertions" ? { reason: "no_assertions" as const } : {};
+        const found = Array.isArray(d.disagreements)
+          ? { disagreements: d.disagreements.map((x: PrunedFailure) => ({ test: x.test, lines: x.lines ?? [] })) } : {};
+        return { ...i, steps: [...i.steps, { source: { type: "prune", tests, kept, ...reason, ...found }, testCount: kept }] };
       });
     case "fix_attempt":
       return { ...withItem(s, d.index, d.file, (i) => ({
@@ -275,7 +290,7 @@ export function reduce(state: RunState, ev: RunAction): RunState {
                aiSummary: { status: s.writeSummary ? "waiting" : s.writeSummary === false ? "off" : "none" },
                percent: d.final_percent, activity: d.message };
     case "summary_generated":
-      return { ...s, tokens: s.tokens + (d.tokens?.total_tokens ?? 0),
+      return { ...s, summaryTokens: s.summaryTokens + (d.tokens?.total_tokens ?? 0), summaryCalls: s.summaryCalls + 1,
                aiSummary: { status: "done", result: d as SummaryGenerated, generatedAt: ev.ts } };
     case "summary_failed":
       return { ...s, aiSummary: { ...s.aiSummary, status: "failed", pending: undefined,

@@ -14,6 +14,17 @@ export type CoverageReport = {
 
 export type Scenario = { scenario: string; target: string };
 export type SuspectedBug = { function: string; description: string };
+/**
+ * A new test that failed because the value the model predicted and the value the code returned differ; at that point it
+ * was pruned (or, when every new test failed, sent to the Fixer). Either may be wrong. `lines`: its first got/want (or panic) lines from go test, clipped.
+ */
+export type Disagreement = {
+  file: string; functions: string[]; test: string; lines: string[];
+  /** false: every new test failed and all went to the Fixer (no prune). Older runs lack it (a prune). */
+  pruned?: boolean;
+  /** "kept" | "dropped" | "not_accepted"; "" or missing in older runs. */
+  outcome?: string;
+};
 
 export type StopReason =
   | "target_reached"
@@ -34,6 +45,8 @@ export type Summary = {
   test_files: string[];
   tests_added: string[];
   suspected_bugs: SuspectedBug[];
+  /** Older runs lack it. */
+  disagreements?: Disagreement[];
   per_file: { file: string; before: number; after: number }[];
   tokens: { prompt_tokens: number; completion_tokens: number };
   duration_s: number;
@@ -73,6 +86,11 @@ export type SummaryGenerated = {
   tokens: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
   /** Only when GROQ_PRICE_*_PER_M are set. */
   cost_usd?: CostUsd;
+  /** The run's prediction disagreements, one line each, written by the backend (not the model). Older payloads lack it. */
+  disagreements?: string[];
+  /** Required paragraphs the model left empty or grounding emptied ("technical.where_tests_live"), filled by the backend
+   * from the run's data; their text ends with a note saying so. Older payloads lack it. */
+  fallback_fields?: string[];
 };
 
 export type StartJobBody = { repo_path: string; target_coverage: number; options?: Partial<JobOptions> };

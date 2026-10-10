@@ -55,3 +55,21 @@ async def test_duplicate_coverage_is_no_gain(make_ws, tools_for):
     again = snip(GOOD.replace("TestAbs", "TestAbsAgain"))
     r = await v.validate("calc_test.go", "calc", again, first.report)
     assert r.kind is ValidationKind.NO_GAIN
+
+
+SILENT = 'func TestSqrtSilent(t *testing.T) {\n\t_, _ = Sqrt(9)\n\tt.Run("neg", func(st *testing.T) { Sqrt(-1) })\n}'
+
+
+async def test_assertion_free_test_is_reported_then_pruned(make_ws, tools_for):
+    ws, v, baseline = await setup(make_ws, tools_for)
+    r = await v.validate("calc_test.go", "calc", snip(GOOD + "\n\n" + SILENT), baseline)
+    assert r.kind is ValidationKind.NO_ASSERTIONS and r.no_assertions == ["TestSqrtSilent"], r.output
+    r = await v.prune_and_check("calc_test.go", r.no_assertions, baseline, r.new_tests)
+    assert r.accepted and r.new_tests == ["TestAbs"]
+    assert "TestSqrtSilent" not in (ws.read("calc_test.go") or "")
+
+
+async def test_only_assertion_free_tests_are_rejected(make_ws, tools_for):
+    _, v, baseline = await setup(make_ws, tools_for)
+    r = await v.validate("calc_test.go", "calc", snip(SILENT), baseline)
+    assert r.kind is ValidationKind.NO_ASSERTIONS and "Every Test function must check its result" in r.output

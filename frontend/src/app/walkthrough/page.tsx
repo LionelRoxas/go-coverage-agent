@@ -119,10 +119,11 @@ type Gate = { id: string; name: string; what: ReactNode; rejects?: string };
 
 const GATES: Gate[] = [
   { id: "imports", name: "Clean import paths", what: <>Spaces, quotes and backslashes around each import path are stripped from every answer. No AI; when it changes something it is reported as a <C>mechanical_repair</C> with repair number 0. It never rejects.</> },
-  { id: "guard", name: "Safety guard", what: <>Imports must be valid paths from the standard library or this module. <C>os/exec</C>, <C>net</C> and <C>net/…</C>, <C>syscall</C>, <C>unsafe</C>, <C>plugin</C>, <C>runtime/cgo</C>, <C>runtime/debug</C> and <C>C</C> are refused. The code may not contain a package or import clause, <C>StartProcess</C>, <C>/proc/</C>, build tags, <C>{"//go:"}</C> directives or <C>#cgo</C>; it must hold at least one <C>TestXxx</C> and stay under 40,000 bytes. It also refuses converting <C>math.NaN()</C> or <C>math.Inf()</C> to an integer type, which gives different results on x86 and ARM. Comments and strings are blanked before the keyword checks.</>, rejects: "guard_rejected" },
+  { id: "guard", name: "Safety guard", what: <>Imports must be valid paths from the standard library or this module. <C>os/exec</C>, <C>net</C> and <C>net/…</C>, <C>crypto/tls</C>, <C>log/syslog</C>, <C>golang.org/x/net/…</C>, <C>syscall</C>, <C>unsafe</C>, <C>plugin</C>, <C>runtime/cgo</C>, <C>runtime/debug</C> and <C>C</C> are refused. The code may not contain a package or import clause, <C>func init</C> or <C>TestMain</C>, <C>StartProcess</C>, <C>/proc/</C>, a string with the word <C>environ</C>, <C>{'filepath.Join("/", …)'}</C>, a file operation on an absolute path, build tags, <C>{"//go:"}</C> directives or <C>#cgo</C>; it must hold at least one <C>TestXxx</C> and stay under 40,000 bytes. It also refuses converting <C>math.NaN()</C> or <C>math.Inf()</C> to an integer type, which gives different results on x86 and ARM. Comments and strings are blanked before the keyword checks.</>, rejects: "guard_rejected" },
   { id: "merge", name: "Merge", what: <><C>gohelper merge</C> appends the new declarations to <C>&lt;source&gt;_test.go</C> (creating it if needed). It never edits existing declarations, refuses a duplicate name, de-duplicates imports, drops unused ones and runs gofmt.</>, rejects: "compile_error" },
   { id: "compile", name: "Compile", what: <><C>go test -count=1 -run=^$</C> builds the test binaries without running anything.</>, rejects: "compile_error" },
   { id: "vet", name: "Vet", what: <><C>go vet</C> must be clean.</>, rejects: "vet_error" },
+  { id: "asserts", name: "Assertions", what: <><C>gohelper asserts</C> scans the snippet right after the merge; its verdict applies here, once the code compiles and vets, so a compile error is reported first. Every new <C>TestXxx</C> must call <C>t.Error*</C>/<C>t.Fatal*</C> (also in its <C>t.Run</C> subtests) or pass <C>t</C> to a helper. Tests that check nothing are pruned when others remain (<C>tests_pruned</C> with reason <C>no_assertions</C>, shown as “Removed the test without assertions”); otherwise the Fixer is told to assert.</>, rejects: "no_assertions" },
   { id: "test", name: "Run twice", what: <><C>go test -count=2 -covermode=set -coverprofile -timeout=60s</C>. Running twice catches flaky tests. Failing test names are read from the <C>--- FAIL</C> lines.</>, rejects: "test_failure" },
   { id: "coverage", name: "Coverage gain", what: <>The set of covered blocks after must be a strict superset of the set before: something gained, nothing lost.</>, rejects: "no_gain" },
 ];
@@ -174,7 +175,7 @@ const m = "font-mono text-[0.8125rem]";
 
 const KEEP = [
   { term: <span className={`${m} text-accent`}>accepted</span>, text: <>The tests stay and coverage goes up: <C>candidate_accepted</C> with the test names, the new percentage and the gain. The target is checked right away.</> },
-  { term: <span className={m}>test_failure, some new tests</span>, text: <>When only new tests failed, and not all of them, <C>gohelper prune</C> removes just those (and any import they alone used); the rest go through compile, vet, run and coverage again. Free: <C>tests_pruned</C>.</> },
+  { term: <span className={m}>test_failure, some new tests</span>, text: <>When only new tests failed, and not all of them, one <C>gohelper prune</C> call removes all of them at once (and any import they alone used); the rest go through compile, vet, run and coverage again. Free: <C>tests_pruned</C>. Each removed test (and, when every new test failed, each one sent to the Fixer) is reported as a prediction disagreement (its got/want lines in the trace, the run result and <C>report.json</C>, with what became of it): the model’s prediction and the code differ, and a person decides which is wrong.</> },
   { term: <span className={m}>compile_error, fixable</span>, text: <>Mechanical repair, no AI, up to 3 per target: add a forgotten standard-library import; drop the package’s own qualifier (<C>stats.Mean</C> becomes <C>Mean</C>); rename a duplicate <C>Test…</C>, <C>Benchmark…</C> or <C>Fuzz…</C> to <C>_2</C>, <C>_3</C>. Example functions are left to the Fixer: <C>ExampleX_2</C> is a malformed name for go vet, and an Example without <C>{"// Output:"}</C> never runs. The snapshot is restored and the repaired code re-validated: <C>mechanical_repair</C>.</> },
   { term: <span className={m}>anything else</span>, text: <>The Fixer: the snapshot is restored and Groq (<C>medium</C> effort) gets the rejected code, the validator output, the imports and test plan it declared, and the history of every earlier check of this target. Up to 2 attempts (<C>max_fix_attempts</C>, 0 to 4), each re-validated through every gate: <C>fix_attempt</C>.</> },
   { term: <span className={`${m} text-danger`}>still failing</span>, text: <>The snapshot is restored exactly (test file, <C>go.mod</C>, <C>go.sum</C>) and each function in the target counts one failure. After 2 failures the planner skips it: <C>candidate_rejected</C> with the reason.</> },
@@ -316,9 +317,9 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
           <H3>Call the Writer</H3>
           <p>One request to Groq: <C>openai/gpt-oss-120b</C>, reasoning effort <C>medium</C> (<C>high</C> is accepted but was measured as too slow), temperature 0.2, and a strict JSON schema, so the answer always has this shape:</p>
           <Pre>{`{ "test_plan":      [{"scenario": "empty input returns EmptyInputErr", "target": "Mean"}],
+  "suspected_bugs": [],
   "imports":        ["testing", "math"],
-  "code":           "func TestMean(t *testing.T) { … }",
-  "suspected_bugs": [] }`}</Pre>
+  "code":           "func TestMean(t *testing.T) { … }" }`}</Pre>
           <p>The output allowance, <C>max_completion_tokens</C>, is the model’s maximum of 65,536, lowered to the key’s tokens-per-minute limit minus the prompt and a 256-token margin (at least 1,024) when that is smaller, so a long answer is not cut off mid-JSON.</p>
           <H3>When the answer goes wrong</H3>
           <ul className="list-disc space-y-1.5 pl-5 marker:text-muted">
@@ -374,14 +375,16 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
         <Section id="results">
           <H3>Files on your machine</H3>
           <Pre>{`./output/<job id>/
-  tests/         every accepted test file, at its path in the repo (the seed file is left out)
+  tests/         every accepted test file, at its path in the repo, copied when it is accepted
+                 (the seed file is left out)
   report.json    stop reason and message, baseline → final %, every round, per-file before/after,
                  tests added, possible bugs, tokens, duration,
                  the AI summary (ai_summary)
   SUMMARY.md     the AI summary as Markdown (when one was written)
-  events.jsonl   every event, one JSON object per line, including the final one`}</Pre>
+  events.jsonl   every event, one JSON object per line, appended as it happens
+                 (a run killed mid-way reloads as Interrupted, with its accepted tests)`}</Pre>
           <H3>The AI summary</H3>
-          <p>After the result is shown, one more model call (the Summarizer) gets the run’s measured facts as JSON: coverage, rounds, time, tokens, an estimated cost when prices are set, rejected targets, the least-covered files and suspected bugs. It returns two summaries, one for stakeholders and one for engineering teams. A deterministic grounding check then drops any sentence whose numbers, files or test names are not in those facts; suspected bugs are copied from the facts, not written by the model. The job stays busy until the summary is written, so a new run can’t start until then, and Cancel stops only the summary. It is skipped when Groq was unreachable at the end (<C>llm_unavailable</C>); Write again on the run page asks for a new one. Turn it off with <C>write_summary: false</C> or the checkbox in the advanced options.</p>
+          <p>After the result is shown, one more model call (the Summarizer) gets the run’s measured facts as JSON: coverage, rounds, time, tokens, an estimated cost when prices are set, rejected targets, the least-covered files and suspected bugs. It returns two summaries, one for stakeholders and one for engineering teams. A deterministic grounding check then drops any sentence whose numbers, files or test names are not in those facts; suspected bugs are copied from the facts, not written by the model. A required paragraph that the model left empty, or that the check emptied, gets plain text built from the facts, marked as such. The job stays busy until the summary is written, so a new run can’t start until then, and Cancel stops only the summary. It is skipped when Groq was unreachable at the end (<C>llm_unavailable</C>); Write again on the run page asks for a new one. Turn it off with <C>write_summary: false</C> or the checkbox in the advanced options.</p>
           <H3>The job page</H3>
           <p>It renders entirely from the events: the coverage meter with the target marker, coverage per round as a chart, the Activity list with every numbered attempt and its errors, the generated test files with syntax highlighting, coverage by file, and possible bugs the model reported.</p>
           <H3>One candidate in the event stream</H3>

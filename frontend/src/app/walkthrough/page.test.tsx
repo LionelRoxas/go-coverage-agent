@@ -35,7 +35,7 @@ describe("WalkthroughPage", () => {
   it("shows the validation gates in order", () => {
     render(<WalkthroughPage />);
     const gates = within(screen.getByTestId("gate-chain")).getAllByRole("listitem").map((li) => li.getAttribute("data-gate"));
-    expect(gates).toEqual(["imports", "guard", "merge", "compile", "vet", "test", "coverage"]);
+    expect(gates).toEqual(["imports", "guard", "merge", "compile", "vet", "asserts", "test", "coverage"]);
   });
 
   const section = (id: string) => document.querySelector(`section[id="${id}"]`) as HTMLElement;

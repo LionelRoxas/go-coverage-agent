@@ -14,7 +14,16 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27", "ruff>=0.17"]
+
+[tool.ruff]
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B"]  # ruff's long-standing defaults plus flake8-bugbear
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_parallel_writers.py" = ["F811"]  # the `ws` fixture is imported from test_orchestrator and used as a parameter
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -57,7 +57,7 @@ async def prepare(job_id: str, request: JobRequest, settings: Settings, llm: LLM
         module, go_version = read_module_info(ws.root)
     except (ValueError, OSError) as e:  # UnicodeDecodeError is a ValueError
         raise JobFailed("invalid_repo", f"go.mod could not be read: {e}") from e
-    tools = GoTools(ws.root, settings, cancel)
+    tools = GoTools(ws.root, settings, cancel, tmp_dir=ws.scratch / "gotmp")  # removed with the job's work folder
     try:
         packages = await tools.list_packages(request.options.exclude_patterns)
     except GoToolError as e:

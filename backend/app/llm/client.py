@@ -223,7 +223,7 @@ class GroqLLM:
                         model=self.s.groq_model,
                         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                         response_format=response_format,
-                        reasoning_effort=effort,
+                        reasoning_effort=effort,  # noqa: B023 — the lambda is called within this iteration
                         temperature=0.2,
                         **completion_allowance(),
                     ))

@@ -15,6 +15,7 @@ from typing import Any, Iterator, Literal
 
 from app.models import BusinessSummary, RunSummary, SummaryGap, TechnicalSummary
 from app.summary.facts import RunFacts
+from app.summary.report import usd
 
 Kind = Literal["currency", "percent", "duration", "multiplier", "tokens", "count"]
 
@@ -164,7 +165,7 @@ class _Checker:
         counts = {float(n) for n in (
             f.rounds, f.targets_accepted, f.targets_rejected, f.targets_deferred, f.failed_llm_calls, f.first_check_passes, f.llm_fixes, f.mechanical_repairs,
             f.duplicate_test_renames, f.helper_collision_fixes, f.no_gain_rejections,
-            f.pruned_tests, f.llm_timeouts, f.rate_limit_waits, f.tests_added_count, f.test_files_count,
+            f.pruned_tests, f.pruned_no_assertions, f.prediction_disagreements, f.llm_timeouts, f.rate_limit_waits, f.tests_added_count, f.test_files_count,
             len(f.lowest_files), *f.rejected_reasons.values(), *(c.calls for c in f.llm_calls),
             *(low.uncovered_statements for low in f.lowest_files))} | tokens
         self.pools: dict[Kind, set[float]] = {
@@ -244,3 +245,57 @@ def ground(summary: RunSummary, facts: RunFacts) -> tuple[RunSummary, int]:
         suspected_bugs=[f"{bug.function}: {bug.description}" for bug in facts.suspected_bugs],
         rejected_or_failed=para(t.rejected_or_failed), how_to_run=para(t.how_to_run), next_steps=items(t.next_steps))
     return RunSummary(business=business, technical=technical), dropped
+
+
+# Deterministic text for a required paragraph the model left empty or grounding emptied; built only from the facts.
+FALLBACK_NOTE = "(Written from the run's data, because the AI text for this part was empty or could not be verified.)"
+
+
+def _pct(value: float) -> str:
+    return f"{value:g}%"
+
+
+def _fallbacks(f: RunFacts) -> dict[str, dict[str, str]]:
+    change = f"Coverage went from {_pct(f.baseline_percent)} to {_pct(f.final_percent)}"
+    cost = f" Its estimated cost was {usd(f.cost_usd.total_usd)}." if f.cost_usd is not None else ""
+    improved = [d.file for d in sorted(f.per_file, key=lambda d: (d.before - d.after, d.file)) if d.after > d.before]
+    tested = (f"The new tests raise coverage in {', '.join(improved[:5])}{' and other files' if improved[5:] else ''}."
+              if improved else "No source file gained coverage.")
+    copy = (f"Copy the contents of {f.tests_dir} into the module root of {f.repo}, keeping sub-folders, so each test "
+            "file sits next to its source file.")
+    return {
+        "business": {
+            "headline": f"{change} against a goal of {_pct(f.goal_percent)}.",
+            "outcome": f"The run stopped after {f.rounds} rounds: {f.stop_message}",
+            "efficiency": f"The run took {f.duration_min} minutes and used {f.tokens.total:,} tokens.{cost}",
+            "recommendation": ("Have a person review the generated tests before relying on them: they record what "
+                               "the code does today."),
+        },
+        "technical": {
+            "headline": f"{change}, with {f.tests_added_count} new tests in {f.test_files_count} test files.",
+            "what_was_tested": tested,
+            "where_tests_live": f"The generated tests are saved in {f.tests_dir}. {copy}",
+            "rejected_or_failed": (
+                f"Targets accepted: {f.targets_accepted}; rejected: {f.targets_rejected}. Fixer calls: {f.llm_fixes}; "
+                f"mechanical repairs: {f.mechanical_repairs}; failing tests pruned: {f.pruned_tests}; tests removed "
+                f"for checking nothing: {f.pruned_no_assertions}; prediction disagreements: "
+                f"{f.prediction_disagreements}."),
+            "how_to_run": f"{copy} Then run `go test ./...` and `go test -cover ./...` there.",
+        },
+    }
+
+
+def fill_empty(summary: RunSummary, facts: RunFacts) -> tuple[RunSummary, list[str]]:
+    """The summary with every empty required paragraph filled with deterministic text from the facts, ending in
+    FALLBACK_NOTE so a reader can tell it apart, and the filled fields ("technical.where_tests_live")."""
+    filled: list[str] = []
+    parts: dict[str, Any] = {}
+    for part, texts in _fallbacks(facts).items():
+        model = getattr(summary, part)
+        updates = {}
+        for name, text in texts.items():
+            if not getattr(model, name).strip():
+                updates[name] = f"{text} {FALLBACK_NOTE}"
+                filled.append(f"{part}.{name}")
+        parts[part] = model.model_copy(update=updates)
+    return RunSummary(**parts), filled

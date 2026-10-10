@@ -187,11 +187,17 @@ def is_excluded(rel_dir: str, patterns: list[str]) -> bool:
 
 
 class GoTools:
-    def __init__(self, root: Path, settings: Settings, cancel: asyncio.Event | None = None):
+    def __init__(self, root: Path, settings: Settings, cancel: asyncio.Event | None = None,
+                 tmp_dir: Path | None = None):
+        """`tmp_dir`: Go's temporary build directories (GOTMPDIR) go here instead of /tmp, so the ones a killed
+        build leaves behind are removed with the job's work folder."""
         self.root = root.resolve()
         self.settings = settings
         self.cancel = cancel
         self._env = go_env(settings)
+        if tmp_dir is not None:
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            self._env["GOTMPDIR"] = str(tmp_dir)
 
     async def _run(self, argv: list[str], timeout: float | None = None,
                    max_chars: int | None = None) -> CommandResult:
@@ -249,3 +255,7 @@ class GoTools:
 
     async def prune(self, test_file: str, names: list[str]) -> CommandResult:
         return await self._run(["gohelper", "prune", test_file, *names])
+
+    async def asserts(self, go_file: Path) -> CommandResult:
+        """`gohelper asserts`: a JSON list of the file's Test functions that never check a result."""
+        return await self._run(["gohelper", "asserts", str(go_file)])

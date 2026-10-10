@@ -19,6 +19,20 @@ services:
       - ${HOST_REPOS_DIR:-./my-repos}:/host-repos:ro   # your own Go projects, READ-ONLY (jobs work on a copy)
       - ./output:/output
       - gocache:/home/app/.cache
+    # Hardening (mirrored by `make test-integration`): generated tests run in this container as uid 1000.
+    cap_drop: [ALL]                            # no Linux capabilities are needed
+    security_opt: ["no-new-privileges:true"]   # no privilege gain through setuid binaries
+    pids_limit: 4096                           # caps fork bombs; counts threads, not just processes: go runs one
+                                               # compile/test binary per CPU at once, each with several threads
+                                               # (about 100 on 12 CPUs for stats), so this leaves room on big hosts
+    mem_limit: 4g                              # headroom for go build/test on a module like montanaflynn/stats
+    read_only: true                            # read-only root filesystem: only the mounts above and below are writable
+    # tmpfs pages count against mem_limit: 0.5 + 2 GB at most, leaving about 1.5 GB for go build/test and the API.
+    # A full /work ends the run as workspace_full; raise its size together with mem_limit for a larger module.
+    tmpfs:
+      - /tmp:exec,size=512m                    # uploads spool here; Go's temp dirs go to the job's folder (GOTMPDIR)
+      - /work:exec,uid=1000,gid=1000,size=2g   # per-run copies of the repo, their scratch and Go temp dirs ($WORK)
+    restart: unless-stopped                    # comes back after a crash or a Docker restart; `docker compose down` stops it
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
@@ -32,6 +46,9 @@ services:
         NEXT_PUBLIC_API_URL: "http://localhost:${BACKEND_PORT:-8000}"
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    cap_drop: [ALL]                            # no Linux capabilities are needed
+    security_opt: ["no-new-privileges:true"]   # no privilege gain through setuid binaries
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
