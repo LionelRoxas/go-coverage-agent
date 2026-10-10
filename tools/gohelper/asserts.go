@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -23,72 +24,117 @@ func isTestName(name string) bool {
 	return unicode.IsUpper(r) || unicode.IsDigit(r) || r == '_'
 }
 
-// isTestingT reports whether a parameter type is *<pkg>.T (*testing.T under any import name).
+// isTestingT reports whether a type is *<pkg>.T or <pkg>.TB (testing.T / testing.TB under any import name).
 func isTestingT(expr ast.Expr) bool {
-	star, ok := expr.(*ast.StarExpr)
-	if !ok {
-		return false
+	want := "TB"
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr, want = star.X, "T"
 	}
-	sel, ok := star.X.(*ast.SelectorExpr)
+	sel, ok := expr.(*ast.SelectorExpr)
 	if !ok {
 		return false
 	}
 	_, ok = sel.X.(*ast.Ident)
-	return ok && sel.Sel.Name == "T"
+	return ok && sel.Sel.Name == want
 }
 
-func tParams(ft *ast.FuncType, into map[string]bool) {
+// scope returns the names visible inside a function: the enclosing ones, minus those its parameters shadow,
+// plus its own testing.T / testing.TB parameters.
+func scope(outer map[string]bool, ft *ast.FuncType) map[string]bool {
+	names := maps.Clone(outer)
 	if ft == nil || ft.Params == nil {
-		return
+		return names
 	}
 	for _, field := range ft.Params.List {
-		if !isTestingT(field.Type) {
+		for _, n := range field.Names {
+			delete(names, n.Name)
+			if n.Name != "_" && isTestingT(field.Type) {
+				names[n.Name] = true
+			}
+		}
+	}
+	return names
+}
+
+func tracked(names map[string]bool, e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && names[id.Name]
+}
+
+// bind updates names for `lhs := rhs`, `lhs = rhs` or `var lhs = rhs`: an alias of a tracked value is tracked
+// (tb := t, var tb testing.TB = t), and a new declaration of anything else shadows the name (x := errors.New("x")).
+func bind(names map[string]bool, lhs, rhs []ast.Expr, declares bool) {
+	for i, l := range lhs {
+		id, ok := l.(*ast.Ident)
+		if !ok || id.Name == "_" {
 			continue
 		}
-		for _, n := range field.Names {
-			if n.Name != "_" {
-				into[n.Name] = true
-			}
+		if len(lhs) == len(rhs) && tracked(names, rhs[i]) {
+			names[id.Name] = true
+		} else if declares {
+			delete(names, id.Name)
 		}
 	}
 }
 
-// asserts reports whether a test body checks something: it calls Error/Errorf/Fatal/Fatalf/Fail/FailNow on its
-// *testing.T parameter or on the *testing.T parameter of a closure inside it (t.Run subtests, whatever the
-// parameter is called), or it passes one of those values to another function (a helper).
-func asserts(fd *ast.FuncDecl) bool {
-	names := map[string]bool{}
-	tParams(fd.Type, names)
-	ast.Inspect(fd.Body, func(n ast.Node) bool {
-		if lit, ok := n.(*ast.FuncLit); ok {
-			tParams(lit.Type, names)
-		}
-		return true
-	})
-	if len(names) == 0 {
-		return false
-	}
+// checks walks a function body in source order with the testing.T values in scope. It reports an assertion
+// when one of them has Error/Errorf/Fatal/Fatalf/Fail/FailNow selected (called, or taken as a method value such
+// as `check := t.Errorf`), is passed to a function (a helper), or is stored in a composite literal (`h{t: t}`).
+// A function literal is walked with its own scope, so the `*testing.T` parameter of one closure never makes an
+// unrelated `x.Error()` elsewhere count.
+func checks(body ast.Node, names map[string]bool) bool {
 	found := false
-	ast.Inspect(fd.Body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || found {
-			return !found
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
 		}
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && failMethods[sel.Sel.Name] {
-			if id, ok := sel.X.(*ast.Ident); ok && names[id.Name] {
-				found = true
-				return false
+		switch x := n.(type) {
+		case *ast.FuncLit:
+			found = checks(x.Body, scope(names, x.Type))
+			return false
+		case *ast.AssignStmt: // the right-hand side is evaluated before the names it declares exist
+			found = anyChecks(names, x.Rhs) || anyChecks(names, x.Lhs)
+			bind(names, x.Lhs, x.Rhs, x.Tok == token.DEFINE)
+			return false
+		case *ast.ValueSpec:
+			found = anyChecks(names, x.Values)
+			lhs := make([]ast.Expr, len(x.Names))
+			for i, id := range x.Names {
+				lhs[i] = id
+			}
+			bind(names, lhs, x.Values, true)
+			return false
+		case *ast.SelectorExpr:
+			found = failMethods[x.Sel.Name] && tracked(names, x.X)
+		case *ast.CallExpr:
+			for _, arg := range x.Args {
+				found = found || tracked(names, arg)
+			}
+		case *ast.CompositeLit:
+			for _, el := range x.Elts {
+				if kv, ok := el.(*ast.KeyValueExpr); ok {
+					el = kv.Value
+				}
+				found = found || tracked(names, el)
 			}
 		}
-		for _, arg := range call.Args {
-			if id, ok := arg.(*ast.Ident); ok && names[id.Name] {
-				found = true
-				return false
-			}
-		}
-		return true
+		return !found
 	})
 	return found
+}
+
+func anyChecks(names map[string]bool, exprs []ast.Expr) bool {
+	for _, e := range exprs {
+		if checks(e, names) {
+			return true
+		}
+	}
+	return false
+}
+
+// asserts reports whether a test body checks something with its testing.T (see checks).
+func asserts(fd *ast.FuncDecl) bool {
+	return checks(fd.Body, scope(map[string]bool{}, fd.Type))
 }
 
 // AssertionFree lists, in source order, the top-level Test functions of a Go file that never check a result.
