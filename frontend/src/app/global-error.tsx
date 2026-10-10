@@ -35,7 +35,7 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
         <title>Something went wrong · Go Coverage Agent</title>
         <main className={`${containerClass} py-12 sm:py-16`}>
           <StatusPanel tone="danger" role="alert" title="Something went wrong" actions={actions}>
-            <p>The app failed while it was being shown. Runs keep going on the backend; trying again usually brings it back.</p>
+            <p>The app hit an error. Runs on the backend are not affected. Try again.</p>
             {error.digest && <p className="font-mono text-xs">Error reference: {error.digest}</p>}
           </StatusPanel>
         </main>

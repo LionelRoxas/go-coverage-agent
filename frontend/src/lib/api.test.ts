@@ -59,7 +59,7 @@ describe("api.uploadRepo", () => {
   });
 
   it.each([
-    ["onerror", "unreachable", /Can't reach the backend/],
+    ["onerror", "unreachable", /Can't reach the backend at .*If you changed BACKEND_PORT, rebuild the frontend/],
     ["onabort", "aborted", /stopped before it finished/],
     ["ontimeout", "timeout", /took longer than 10 minutes/],
   ] as const)("rejects readably on %s", async (handler, code, message) => {

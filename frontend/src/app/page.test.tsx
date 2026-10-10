@@ -87,7 +87,7 @@ describe("SetupPage", () => {
     expect(header.textContent).not.toMatch(/autonomously|LLM/);
     // the proof uses the real run 0e1f8bf7442a (output/0e1f8bf7442a/report.json)
     expect(within(header).getByRole("img", { name: /22 rounds.*17\.2%.*100%/ })).toBeInTheDocument();
-    expect(header).toHaveTextContent("Measured on montanaflynn/stats: 0% to 100% of the code tested in 22 rounds, about 10 minutes.");
+    expect(header).toHaveTextContent("Measured on montanaflynn/stats: 0% to 100% of the code tested in 22 rounds (goal 100%, up to 30 rounds), about 10 minutes.");
     expect(within(header).getByRole("link", { name: "How it works" })).toHaveAttribute("href", "/how-it-works");
     expect(header.compareDocumentPosition(stepper()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await screen.findByText(/Selected:/);

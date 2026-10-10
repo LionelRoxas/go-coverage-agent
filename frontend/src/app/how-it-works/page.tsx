@@ -15,7 +15,7 @@ type Step = { title: string; plain: string; more: SectionId };
 const STEPS: Step[] = [
   {
     title: "Make a safe copy and measure",
-    plain: "It works on a copy of your project, so your own files are never changed. It removes the copy’s existing tests, so it starts from zero and the result shows only what this tool wrote. Then it measures how much of the code is checked.",
+    plain: "It works on a copy of your project, so your own files are never changed. It removes the copy’s existing tests, so it starts from (nearly) zero and the result shows only what this tool wrote. Then it measures how much of the code is checked.",
     more: "prepare",
   },
   {
@@ -30,7 +30,7 @@ const STEPS: Step[] = [
   },
   {
     title: "Try them out",
-    plain: "It runs the new tests for real. They must be valid code the computer accepts, pass twice in a row, and run code that no test ran before. Tests that would use the network or start other programs are refused before they run.",
+    plain: "It runs the new tests for real. They must be valid code the computer accepts, pass twice in a row, and run code that no test ran before. Tests that would use the network or start other programs are refused by a best-effort filter before they run.",
     more: "validate",
   },
   {
@@ -42,17 +42,17 @@ const STEPS: Step[] = [
 
 const STOPS = [
   { rule: "It reached the goal", why: "Coverage hit the target you set (80% unless you change it)." },
-  { rule: "The last rounds added very little", why: "Two rounds in a row each raised coverage by less than 1% (for example, from 60% to 60.5%)." },
+  { rule: "The last rounds added very little", why: "Two rounds in a row each raised coverage by less than 1 percentage point (for example, from 60% to 60.5%)." },
   { rule: "It ran out of rounds (20 by default)", why: "A round is one pass through steps 2 to 5. A round in which the AI service could not be reached does not count." },
-  { rule: "It used up its AI budget", why: "Each run, and each day, has a limit on how much AI it may use." },
+  { rule: "It used up its AI budget", why: "A run may spend 1M tokens and the app 2M a day (both configurable)." },
   { rule: "Nothing is left that it can work on", why: "Every remaining gap was tried twice without success, or is too big to send in one go." },
   { rule: "The AI service could not be reached", why: "Groq, the AI service, did not answer for 10 minutes in a row. Until then it keeps waiting a little longer each time and tries the same gaps again; they never count as failed. The tests kept so far are saved." },
 ];
 
 const RESULTS = [
   { id: "stats", name: "stats", what: "a statistics library", goal: 80, from: 0, to: 81.07, label: "0% → 81.1%", detail: "11 rounds, about 5 minutes" },
-  { id: "stats-100", name: "stats", what: "a statistics library", goal: 100, from: 0, to: 100, label: "0% → 100%", detail: "22 rounds, about 10 minutes" },
-  { id: "btree", name: "btree", what: "a data-structure library", goal: 100, from: 0, to: 87.09, label: "0% → 87.1%", detail: "stopped when new rounds added very little (11 rounds, about 6 minutes)" },
+  { id: "stats-100", name: "stats", what: "a statistics library", goal: 100, from: 0, to: 100, label: "0% → 100%", detail: "22 rounds, about 10 minutes (round limit raised to 30)" },
+  { id: "btree", name: "btree", what: "a data-structure library", goal: 100, from: 0, to: 87.09, label: "0% → 87.1%", detail: "stopped when new rounds added very little, under 0.5 points each, a setting lowered from 1 (11 rounds, about 6 minutes)" },
 ];
 
 // Ten "lines of code", eight of them run by a test. Widths vary so it reads as code, not a progress bar.
@@ -103,7 +103,7 @@ export default function HowItWorksPage() {
           Software teams write small automatic checks, called tests, that prove their code works.
         </p>
         <h1 className={statementTitleClass}>
-          This tool writes those checks for a project written in Go (a programming language) by itself, keeps only the ones that actually work, and stops when enough of the code is checked.
+          This tool writes those checks for a project written in Go (a programming language) by itself, keeps only the ones that pass, and stops when enough of the code is checked.
         </h1>
       </section>
 
@@ -111,7 +111,7 @@ export default function HowItWorksPage() {
         <div className="space-y-3">
           <h2 id="coverage-heading" className={h2}>What “coverage” means</h2>
           <p className="leading-relaxed text-muted">
-            Coverage is the share of the code’s lines that the tests actually run. 80% means 8 in 10 lines are run by at least one test.
+            Coverage is the share of the code’s statements (roughly, lines) that the tests actually run. 80% means 8 in 10 are run by at least one test.
             The other 2 could be broken and no test would notice. Code with no tests at all still counts in the total, so nothing is hidden.
           </p>
         </div>

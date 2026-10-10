@@ -91,7 +91,7 @@ describe("HowItWorksPage", () => {
     const stats100 = screen.getByTestId("result-stats-100");
     expect(stats100).toHaveTextContent("goal 100%");
     expect(stats100).toHaveTextContent("0% → 100%");
-    expect(stats100).toHaveTextContent("22 rounds, about 10 minutes");
+    expect(stats100).toHaveTextContent("22 rounds, about 10 minutes (round limit raised to 30)");
     const btree = screen.getByTestId("result-btree");
     expect(btree).toHaveTextContent("0% → 87.1%");
     expect(btree).toHaveTextContent("stopped when new rounds added very little");

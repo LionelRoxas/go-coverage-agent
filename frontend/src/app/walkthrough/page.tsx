@@ -192,8 +192,8 @@ const STOP_RULES = [
 
 const MEASURED = [
   { repo: "montanaflynn/stats, goal 80%", job: "e2de1ca387cb", cov: "0.0% → 81.07%", rounds: 11, time: "310 s", tokens: "175,023", kept: "31 / 0" },
-  { repo: "montanaflynn/stats, goal 100%", job: "0e1f8bf7442a", cov: "0.0% → 100.0%", rounds: 22, time: "612 s", tokens: "403,322", kept: "64 / 1" },
-  { repo: "google/btree, goal 100%", job: "80a576a4d3ad", cov: "0.0% → 87.09%", rounds: 11, time: "350 s", tokens: "306,562", kept: "6 / 5" },
+  { repo: "montanaflynn/stats, goal 100%, up to 30 rounds, min gain 0.5", job: "0e1f8bf7442a", cov: "0.0% → 100.0%", rounds: 22, time: "612 s", tokens: "403,322", kept: "64 / 1" },
+  { repo: "google/btree, goal 100%, min gain 0.5", job: "80a576a4d3ad", cov: "0.0% → 87.09%", rounds: 11, time: "350 s", tokens: "306,562", kept: "6 / 5" },
   { repo: "montanaflynn/stats, goal 80%", job: "89eb53b5907e", cov: "0.0% → 80.51%", rounds: 15, time: "287 s", tokens: "184,926", kept: "41 / 4" },
 ];
 
@@ -204,7 +204,7 @@ const GLOSSARY: { term: string; def: ReactNode }[] = [
   { term: "Round", def: "One pass of plan, write, validate and keep, repair or undo. Called an iteration in the code, the events and the API." },
   { term: "Target", def: "One planned unit of work: up to 5 functions from one source file and at most 100 uncovered statements, unless one function alone is bigger." },
   { term: "Candidate", def: "The tests the model wrote for one target, as they go through the gates." },
-  { term: "Writer and Fixer", def: "The two AI roles. The Writer writes new tests; the Fixer repairs a rejected candidate. Nothing else uses AI." },
+  { term: "Writer, Fixer and Summarizer", def: "The three AI roles. The Writer writes new tests; the Fixer repairs a rejected candidate; after the run, the Summarizer writes the AI summary. Nothing else uses AI." },
   { term: "AI model", def: <>An AI that writes text and code, run by the company Groq: <C>openai/gpt-oss-120b</C>.</> },
   { term: "Reasoning effort", def: "How long the model thinks before answering: low, medium or high. Both roles use medium." },
   { term: "Token", def: "The unit AI use is measured and limited in; roughly 3.5 characters of text." },
@@ -238,7 +238,8 @@ export default function WalkthroughPage() {
   "options": { "max_iterations": 20, "min_gain": 1.0, "patience": 2,
                "targets_per_iteration": 3, "max_fix_attempts": 2,
                "delete_existing_tests": true, "max_llm_tokens": 1000000,
-               "exclude_patterns": ["examples/**", "testdata/**"] } }`}</Pre>
+               "exclude_patterns": ["examples/**", "testdata/**"],
+               "write_summary": true } }`}</Pre>
           <H3>Checks before anything starts</H3>
           <p>Each refusal comes back as <C>{`{"error": {"code", "message"}}`}</C>:</p>
           <ul className="list-disc space-y-1 pl-5 marker:text-muted">
@@ -318,7 +319,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
   "imports":        ["testing", "math"],
   "code":           "func TestMean(t *testing.T) { … }",
   "suspected_bugs": [] }`}</Pre>
-          <p>The output allowance, <C>max_completion_tokens</C>, is the model’s maximum of 65,536, lowered to the key’s tokens-per-minute limit minus the prompt (at least 1,024) when that is smaller, so a long answer is not cut off mid-JSON.</p>
+          <p>The output allowance, <C>max_completion_tokens</C>, is the model’s maximum of 65,536, lowered to the key’s tokens-per-minute limit minus the prompt and a 256-token margin (at least 1,024) when that is smaller, so a long answer is not cut off mid-JSON.</p>
           <H3>When the answer goes wrong</H3>
           <ul className="list-disc space-y-1.5 pl-5 marker:text-muted">
             <li><strong className="font-semibold">Cut off</strong> (finish reason <C>length</C>): retried one effort lower, <C>medium</C> to <C>low</C>. Cut off at <C>low</C>, the first half of the target’s functions is retried right away; the rest stay in the pool for a later round. A single function is skipped for good (<C>too_large</C>).</li>
@@ -364,8 +365,8 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
         <Section id="stop">
           <p>After every round, <C>iteration_completed</C> records the start and end percentage and how many targets were accepted and rejected; then the stop rules are checked. If none applies, the next round plans from the new coverage report.</p>
           <Rules head={["Stop reason", "When"]} rows={STOP_RULES} />
-          <p>Whatever the reason, accepted tests are kept. The last event is <C>job_completed</C>, <C>job_cancelled</C>, or <C>job_failed</C> when setup could not finish.</p>
-          <Where code={["backend/app/engine/orchestrator.py", "backend/app/engine/policy.py", "backend/app/jobs.py"]} events={["iteration_completed", "job_completed", "job_cancelled", "job_failed"]} />
+          <p>Whatever the reason, accepted tests are kept. The run itself ends with <C>job_completed</C>, <C>job_cancelled</C>, or <C>job_failed</C> when setup could not finish. Unless the AI summary is turned off, a summarizer <C>llm_request</C> and then <C>summary_generated</C> or <C>summary_failed</C> follow (see the AI summary under Results).</p>
+          <Where code={["backend/app/engine/orchestrator.py", "backend/app/engine/policy.py", "backend/app/jobs.py"]} events={["iteration_completed", "job_completed", "job_cancelled", "job_failed", "summary_generated", "summary_failed"]} />
         </Section>
 
         <Section id="results">
@@ -373,8 +374,12 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
           <Pre>{`./output/<job id>/
   tests/         every accepted test file, at its path in the repo (the seed file is left out)
   report.json    stop reason and message, baseline → final %, every round, per-file before/after,
-                 tests added, possible bugs, tokens, duration
+                 tests added, possible bugs, tokens, duration,
+                 the AI summary (ai_summary)
+  SUMMARY.md     the AI summary as Markdown (when one was written)
   events.jsonl   every event, one JSON object per line, including the final one`}</Pre>
+          <H3>The AI summary</H3>
+          <p>After the result is shown, one more model call (the Summarizer) gets the run’s measured facts as JSON: coverage, rounds, time, tokens, an estimated cost when prices are set, rejected targets, the least-covered files and suspected bugs. It returns two summaries, one for stakeholders and one for engineering teams. A deterministic grounding check then drops any sentence whose numbers, files or test names are not in those facts; suspected bugs are copied from the facts, not written by the model. The job stays busy until the summary is written, so a new run can’t start until then, and Cancel stops only the summary. It is skipped when Groq was unreachable at the end (<C>llm_unavailable</C>); Write again on the run page asks for a new one. Turn it off with <C>write_summary: false</C> or the checkbox in the advanced options.</p>
           <H3>The job page</H3>
           <p>It renders entirely from the events: the coverage meter with the target marker, coverage per round as a chart, the Activity list with every numbered attempt and its errors, the generated test files with syntax highlighting, coverage by file, and possible bugs the model reported.</p>
           <H3>One candidate in the event stream</H3>
@@ -385,7 +390,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
 {"seq": 8, "type": "candidate_accepted",  "data": {"index": 1, "file": "load.go", "test_file": "load_test.go",
                                                   "tests": ["TestLoadRawData"], "percent": 3.69, "gain": 3.69}}`}</Pre>
           <H3>Measured results</H3>
-          <p>Developer-plan Groq key, default options, each project’s own tests deleted first, so every run starts at 0.0%. The goal is in the first column. The btree run stopped with <C>marginal_gains</C>: the last 2 rounds each added less than 0.5 percentage points. The last row is the run whose tests were re-checked below.</p>
+          <p>Developer-plan Groq key, default options except where the first column says otherwise, each project’s own tests deleted first, so every run starts at 0.0%. The goal is in the first column. The btree run stopped with <C>marginal_gains</C>: the last 2 rounds each added less than its 0.5-point minimum gain. The last row is the run whose tests were re-checked below.</p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[34rem] text-left text-sm">
               <thead className="text-xs text-muted">
@@ -414,7 +419,7 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
           </div>
           <p>The tests from run 89eb53b5907e were copied into a fresh clone of stats with its tests deleted; <C>go vet</C> was clean, every test passed, and plain Go measured 80.5%. An earlier run on a free-trial key (8K tokens per minute) reached 69.0% in about 28 minutes, mostly waiting on rate limits.</p>
           <p>Why the semver sample starts at 1.4% and not 0%: a package’s <C>init()</C> functions run when the package loads, so their statements (version.go:83 and constraints.go:206) count as covered before any test exists. That is true and measured, not an error. For this reason the results above use runs that started at exactly 0%.</p>
-          <Where code={["backend/app/engine/run.py", "frontend/src/app/jobs/[id]/page.tsx", "README.md"]} events={["job_completed"]} />
+          <Where code={["backend/app/engine/run.py", "backend/app/jobs.py", "backend/app/summary/grounding.py", "frontend/src/app/jobs/[id]/page.tsx", "README.md"]} events={["job_completed", "summary_generated"]} />
         </Section>
 
         <Section id="coverage">
