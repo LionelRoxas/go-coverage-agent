@@ -564,6 +564,7 @@ volumes: { gocache: {} }
 
 - **Multi-stage:** a `golang:<pinned>` stage builds `gohelper`. The final `python:3.12-slim` stage gets `/usr/local/go` copied in, plus `git`.
 - **Non-root `app` user:** `/home/app/.cache`, `/work` and `/output` are created and chowned in the image, so the named volume inherits ownership.
+- **Hardening:** the default `runtime` stage installs the venv without dev dependencies and ships no tests; `/app` and `/opt/venv` are root-owned and read-only to `app` (a separate `test` stage carries dev deps and tests). Compose drops all capabilities and sets no-new-privileges on both services; the backend also gets `pids_limit: 512`, `mem_limit: 4g` and a read-only root filesystem with tmpfs `/tmp` (exec) and `/work`.
 - **Entrypoint:** if the bind-mounted `/output` or `/repos` isn't writable by `app` (a Linux UID mismatch), it logs a clear instruction. On Docker Desktop for Mac, bind mounts are writable.
 - Multi-arch base images, so it runs natively on Apple Silicon.
 

@@ -221,17 +221,21 @@ Advanced settings (Groq timeout and output cap, outage window, per-stage Go time
 
 ```bash
 make test   # everything: Go helper, backend unit + integration (in Docker), frontend; or test-go, test-backend, test-integration, test-frontend
+make lint   # ruff (backend, in Docker), eslint + tsc --noEmit (frontend); or lint-backend, lint-frontend
 ```
 
-CI (`.github/workflows/ci.yml`) runs these targets plus `make build-frontend`. Without `make` (Git Bash; Go runs in Docker):
+CI (`.github/workflows/ci.yml`) runs these targets, the lint targets and `make build-frontend`. Backend tests run in the image's `test` stage (`gca-backend-test`: dev dependencies and tests); the default `runtime` stage that compose runs has neither. `test-integration` runs the container with the same hardening as compose (below). Without `make` (Git Bash; Go runs in Docker):
 
 ```bash
 export MSYS_NO_PATHCONV=1
 docker run --rm -v "$PWD/tools/gohelper:/src" -w /src golang:1.27-bookworm sh -c "go vet ./... && go test ./..."
-docker build -f backend/Dockerfile --build-arg GO_IMAGE=golang:1.27-bookworm -t gca-backend .
-docker run --rm gca-backend uv run --no-sync pytest
-docker run --rm --env-file .env.example -v "$PWD/backend/tests/fixtures:/host-repos:ro" gca-backend uv run --no-sync pytest -m integration
-cd frontend && npm ci && npm test
+docker build -f backend/Dockerfile --build-arg GO_IMAGE=golang:1.27-bookworm --target test -t gca-backend-test .
+docker run --rm gca-backend-test pytest
+docker run --rm --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 512 --memory 4g --read-only \
+  --tmpfs /tmp:exec --tmpfs /work:exec,uid=1000,gid=1000 --tmpfs /home/app/.cache:exec,uid=1000,gid=1000 \
+  --env-file .env.example -v "$PWD/backend/tests/fixtures:/host-repos:ro" gca-backend-test pytest -m integration
+docker run --rm gca-backend-test ruff check --no-cache .
+cd frontend && npm ci && npm test && npm run lint && npx tsc --noEmit
 ```
 
 **Security scanning (GitHub Actions):** CodeQL (`codeql.yml`, security-extended queries for Python, TypeScript, Go and the workflows), Trivy (`trivy.yml`, dependencies, secrets and Dockerfile misconfigurations in the repo plus the built backend image; report-only), and Dependabot (`.github/dependabot.yml`, weekly grouped updates). Findings appear under the repository's Security tab.
@@ -247,7 +251,7 @@ The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` i
 - **Strict acceptance:** vet clean, tests pass twice, covered blocks strictly grow. Coverage never regresses.
 - **Token economy:** mechanical errors (forgotten imports, reused names) are repaired without an LLM call, and the planner packs up to 5 functions / 100 uncovered statements of one file into each call.
 - **The model predicts expected values; the Go runtime decides.** I considered a "record mode" where the LLM only chooses inputs and the system runs the function to capture the outputs as expected values. It would remove wrong-prediction failures and fixer calls, but every test would then agree with the code by construction and could never catch a bug. I kept the prediction as a weak, independent oracle: when it disagrees with the code, the Fixer adopts the observed value unless it contradicts the function's documentation, in which case the case is dropped and reported as a suspected bug. Suspected bugs are leads, not verdicts: a refuted one (stats `Mode`, run f910d155f3cd) once reached the report, so claims the runtime disproves are now dropped.
-- **Defense in depth, not a sandbox:** non-root user, env allowlist (the key is not passed to test processes), a best-effort import guard, timeouts with process-group kill, loopback-only ports, no Docker socket mount.
+- **Defense in depth, not a sandbox:** non-root user that cannot write the app code or its Python environment (both root-owned; the root filesystem is read-only), all capabilities dropped, no-new-privileges, pids and memory limits, env allowlist (the key is not passed to test processes), a best-effort import guard, timeouts with process-group kill, loopback-only ports, no Docker socket mount.
 
 ## What I would do differently in production
 
@@ -263,7 +267,7 @@ The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` i
 
 ## Limitations
 
-- Generated tests run inside the backend container with its privileges. They cannot modify your code (`HOST_REPOS_DIR` is read-only), but they could read the backend's environment (including `GROQ_API_KEY`, via `/proc`), write to the app's own folders, start processes or reach the network. The import guard is easy to bypass (string concatenation, reflection).
+- Generated tests run inside the backend container as the same user (uid 1000) as the API server. They cannot modify your code (`HOST_REPOS_DIR` is read-only) or the app itself: the app code and its Python environment are owned by root and the root filesystem is read-only, compose drops all capabilities, sets no-new-privileges and limits the container to 512 processes and 4 GB of memory. They could still read the backend's environment (including `GROQ_API_KEY`, via `/proc`), write to the app's data folders (`/repos`, `/output`, `/work`, the Go cache), start processes within those limits, and reach the network (outbound access is open). A separate runner per test run, with no network and without the key, is production work (above). The import guard is easy to bypass (string concatenation, reflection).
 - **Privacy:** the functions under test and related declarations (your source code) are sent to Groq in each prompt. The New run flow does not show this notice; the How it works and Walkthrough pages describe it.
 - Expected values for floating-point code are partly characterization tests: the Fixer may adopt an observed value, so real bugs can be encoded rather than flagged. Review generated assertions before trusting them.
 - Single-user by design: no accounts, and history lives in `./output`.
