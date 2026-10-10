@@ -196,6 +196,8 @@ docker run --rm --env-file .env.example -v "$PWD/backend/tests/fixtures:/host-re
 cd frontend && npm ci && npm test
 ```
 
+**Security scanning (GitHub Actions):** CodeQL (`codeql.yml`, security-extended queries for Python, TypeScript, Go and the workflows), Trivy (`trivy.yml`, dependencies, secrets and Dockerfile misconfigurations in the repo plus the built backend image; report-only), and Dependabot (`.github/dependabot.yml`, weekly grouped updates). Findings appear under the repository's Security tab.
+
 ## Why Groq instead of a local model
 
 The brief allows a hosted LLM as well as LocalAI/Ollama. `openai/gpt-oss-120b` is an open-weight model, the same family Ollama ships as `gpt-oss:20b`, served fast on Groq: a stats run to 80% takes about 5 minutes. CPU-only inference on a Mac without a GPU would be far slower (I did not measure it). The trade-off is that you need a key (or the `.env` I send) and the code under test is sent to Groq (see [Limitations](#limitations)). Pointing it at a local OpenAI-compatible endpoint would mean replacing the Groq client; that is listed as future work.
