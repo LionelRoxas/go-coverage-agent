@@ -175,7 +175,7 @@ const m = "font-mono text-[0.8125rem]";
 
 const KEEP = [
   { term: <span className={`${m} text-accent`}>accepted</span>, text: <>The tests stay and coverage goes up: <C>candidate_accepted</C> with the test names, the new percentage and the gain. The target is checked right away.</> },
-  { term: <span className={m}>test_failure, some new tests</span>, text: <>When only new tests failed, and not all of them, <C>gohelper prune</C> removes just those (and any import they alone used); the rest go through compile, vet, run and coverage again. Free: <C>tests_pruned</C>.</> },
+  { term: <span className={m}>test_failure, some new tests</span>, text: <>When only new tests failed, and not all of them, <C>gohelper prune</C> removes just those (and any import they alone used); the rest go through compile, vet, run and coverage again. Free: <C>tests_pruned</C>. Each removed test is reported as a prediction disagreement (its got/want lines in the trace, the run result and <C>report.json</C>): the model’s prediction and the code differ, and a person decides which is wrong.</> },
   { term: <span className={m}>compile_error, fixable</span>, text: <>Mechanical repair, no AI, up to 3 per target: add a forgotten standard-library import; drop the package’s own qualifier (<C>stats.Mean</C> becomes <C>Mean</C>); rename a duplicate <C>Test…</C>, <C>Benchmark…</C> or <C>Fuzz…</C> to <C>_2</C>, <C>_3</C>. Example functions are left to the Fixer: <C>ExampleX_2</C> is a malformed name for go vet, and an Example without <C>{"// Output:"}</C> never runs. The snapshot is restored and the repaired code re-validated: <C>mechanical_repair</C>.</> },
   { term: <span className={m}>anything else</span>, text: <>The Fixer: the snapshot is restored and Groq (<C>medium</C> effort) gets the rejected code, the validator output, the imports and test plan it declared, and the history of every earlier check of this target. Up to 2 attempts (<C>max_fix_attempts</C>, 0 to 4), each re-validated through every gate: <C>fix_attempt</C>.</> },
   { term: <span className={`${m} text-danger`}>still failing</span>, text: <>The snapshot is restored exactly (test file, <C>go.mod</C>, <C>go.sum</C>) and each function in the target counts one failure. After 2 failures the planner skips it: <C>candidate_rejected</C> with the reason.</> },
@@ -317,9 +317,9 @@ gohelper symbols .  → [{"name": "EmptyInputErr", "kind": "var", "file": "error
           <H3>Call the Writer</H3>
           <p>One request to Groq: <C>openai/gpt-oss-120b</C>, reasoning effort <C>medium</C> (<C>high</C> is accepted but was measured as too slow), temperature 0.2, and a strict JSON schema, so the answer always has this shape:</p>
           <Pre>{`{ "test_plan":      [{"scenario": "empty input returns EmptyInputErr", "target": "Mean"}],
+  "suspected_bugs": [],
   "imports":        ["testing", "math"],
-  "code":           "func TestMean(t *testing.T) { … }",
-  "suspected_bugs": [] }`}</Pre>
+  "code":           "func TestMean(t *testing.T) { … }" }`}</Pre>
           <p>The output allowance, <C>max_completion_tokens</C>, is the model’s maximum of 65,536, lowered to the key’s tokens-per-minute limit minus the prompt and a 256-token margin (at least 1,024) when that is smaller, so a long answer is not cut off mid-JSON.</p>
           <H3>When the answer goes wrong</H3>
           <ul className="list-disc space-y-1.5 pl-5 marker:text-muted">
