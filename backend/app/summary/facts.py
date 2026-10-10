@@ -74,6 +74,9 @@ class RunFacts(BaseModel):
     mechanical_repairs: int
     pruned_tests: int  # failing new tests removed so the rest could be kept
     pruned_no_assertions: int = 0  # new tests removed because they checked nothing (no t.Error/t.Fatal)
+    # failing tests pruned where the model's expected value and the code's differ (Summary.disagreements); a count
+    # for review, never confirmed bugs
+    prediction_disagreements: int = 0
     # PARALLEL_WRITERS comparisons: whether the run's writer requests went out together, and the costs of stale context
     parallel_writers: bool = False
     duplicate_test_renames: int = 0  # Test functions renamed mechanically because the name was already declared
@@ -286,6 +289,7 @@ def build_facts(summary: Summary, events: Sequence[Event], *, repo: str, model: 
                          if d.get("reason") != "no_assertions"),
         pruned_no_assertions=sum(len(d.get("tests", [])) for d in by_type.get("tests_pruned", [])
                                  if d.get("reason") == "no_assertions"),
+        prediction_disagreements=len(summary.disagreements),
         parallel_writers=bool((started.get("options") or {}).get("parallel_writers", False)),
         duplicate_test_renames=sum(str(d.get("description", "")).startswith("renamed duplicate test")
                                    for d in by_type.get("mechanical_repair", [])),

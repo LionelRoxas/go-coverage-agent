@@ -258,6 +258,14 @@ def test_the_live_summary_is_grounded_and_tidied():
     assert "\u202f%" not in out.model_dump_json()
 
 
+def test_prediction_disagreements_are_a_grounded_count():
+    text = "7 failing tests disagreed with the model's prediction and were left for review."
+    out, dropped = ground(summary(technical={"rejected_or_failed": text}), facts(prediction_disagreements=7))
+    assert dropped == 0 and out.technical.rejected_or_failed == text
+    _, dropped = ground(summary(technical={"rejected_or_failed": text}), facts())
+    assert dropped == 1
+
+
 def test_assertion_free_removals_are_a_grounded_count():
     text = "7 tests without assertions were removed."
     out, dropped = ground(summary(technical={"rejected_or_failed": text}), facts(pruned_no_assertions=7))

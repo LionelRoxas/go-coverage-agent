@@ -137,7 +137,59 @@ async def test_prunes_failing_new_tests_without_calling_fixer(ws):
     summary = await orch.run(report(set()))
     assert v.pruned == [["TestBad"]] and agents.fix_kinds == []
     assert summary.tests_added == ["TestGood"]
-    assert ("tests_pruned", {"index": 1, "file": "a.go", "tests": ["TestBad"]}) in events
+    [pruned] = [d for t, d in events if t == "tests_pruned"]
+    assert pruned["tests"] == ["TestBad"] and (pruned["index"], pruned["file"]) == (1, "a.go")
+
+
+TTEST_OUTPUT = """--- FAIL: TestTTest_ErrorsAndEdgeCases (0.00s)
+    --- FAIL: TestTTest_ErrorsAndEdgeCases/equal_means (0.00s)
+        ttest_test.go:41: t statistic = 0.5477225575051661, want 0
+--- FAIL: TestTTest_ErrorsAndEdgeCases (0.00s)
+    --- FAIL: TestTTest_ErrorsAndEdgeCases/equal_means (0.00s)
+        ttest_test.go:41: t statistic = 0.5477225575051661, want 0
+FAIL
+"""
+
+
+async def test_a_pruned_failing_test_is_recorded_as_a_prediction_disagreement(ws):
+    failing = ValidationResult(ValidationKind.TEST_FAILURE, TTEST_OUTPUT, failed_tests=["TestTTest_ErrorsAndEdgeCases"],
+                               new_tests=["TestGood", "TestTTest_ErrorsAndEdgeCases"])
+    v = FakeValidator(ws, [failing], prune_results=[accepted({"A:1"}, tests=["TestGood"])])
+    orch, events = run(ws, v, FakeAgents([GOOD]), target=25)
+    summary = await orch.run(report(set()))
+    expected = {"file": "a.go", "functions": ["A"], "test": "TestTTest_ErrorsAndEdgeCases",
+                "lines": ["TestTTest_ErrorsAndEdgeCases/equal_means: ttest_test.go:41: t statistic = 0.5477225575051661, "
+                          "want 0"]}  # once, although -count=2 prints it twice
+    [pruned] = [d for t, d in events if t == "tests_pruned"]
+    assert pruned == {"index": 1, "file": "a.go", "tests": ["TestTTest_ErrorsAndEdgeCases"], "disagreements": [expected]}
+    assert [d.model_dump() for d in summary.disagreements] == [expected]
+    assert summary.tests_added == ["TestGood"]  # the disagreement is reported, not kept as a test
+
+
+async def test_disagreement_lines_are_capped(ws):
+    long = "--- FAIL: TestBad (0.00s)\n    a_test.go:3: got " + "x" * 1000 + ", want y\n"
+    failing = ValidationResult(ValidationKind.TEST_FAILURE, long, failed_tests=["TestBad"],
+                               new_tests=["TestGood", "TestBad"])
+    v = FakeValidator(ws, [failing], prune_results=[accepted({"A:1"}, tests=["TestGood"])])
+    orch, _ = run(ws, v, FakeAgents([GOOD]), target=25)
+    summary = await orch.run(report(set()))
+    [line] = summary.disagreements[0].lines
+    assert len(line) == 300 and line.startswith("TestBad: a_test.go:3: got xxx") and line.endswith("…")
+
+
+async def test_no_disagreements_when_every_test_passes(ws):
+    orch, events = run(ws, FakeValidator(ws, [accepted({"A:1"})]), FakeAgents([GOOD]), target=25)
+    summary = await orch.run(report(set()))
+    assert summary.disagreements == [] and "tests_pruned" not in [t for t, _ in events]
+
+
+async def test_assertion_free_removals_are_not_disagreements(ws):
+    v = FakeValidator(ws, [assertion_free(["TestNoCheck"], ["TestGood", "TestNoCheck"])],
+                      prune_results=[accepted({"A:1"}, tests=["TestGood"])])
+    orch, events = run(ws, v, FakeAgents([GOOD]), target=25)
+    summary = await orch.run(report(set()))
+    assert v.pruned == [["TestNoCheck"]] and summary.disagreements == []
+    assert all("disagreements" not in d for t, d in events if t == "tests_pruned")
 
 
 async def test_fixer_then_rejection_rolls_back_and_eventually_gives_up(ws):

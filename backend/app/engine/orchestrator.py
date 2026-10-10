@@ -10,14 +10,14 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Coroutine
 
 from app.agents.context import ContextTooLarge
-from app.agents.history import AttemptRecord, attempt_record
+from app.agents.history import AttemptRecord, attempt_record, observed_lines
 from app.agents.planner import plan
 from app.agents.repair import clean_imports, mechanical_repair
 from app.engine.policy import StopPolicy, stop_message
 from app.llm.client import (LLM_CALL, Emit, LLMBudgetExhausted, LLMCancelled, LLMError, LLMFatal,
                             LLMOutputTooLarge, LLMTimeout, LLMTransportError, LLMUnavailable, OnRequest)
-from app.models import (CoverageReport, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem, StopReason,
-                        Summary, SuspectedBug, TestSnippet, TokenUsage)
+from app.models import (CoverageReport, Disagreement, FileDelta, FuncKey, IterationRecord, JobRequest, PlanItem,
+                        StopReason, Summary, SuspectedBug, TestSnippet, TokenUsage)
 from app.validator import ValidationKind, ValidationResult
 from app.workspace import Workspace, test_path_for
 
@@ -86,6 +86,7 @@ class Orchestrator:
         self.tests_added: list[str] = []
         self.test_files: list[str] = []
         self.bugs: list[SuspectedBug] = []
+        self.disagreements: list[Disagreement] = []  # failing tests pruned (prediction vs implementation)
         self.index = 0
 
     async def run(self, baseline: CoverageReport) -> Summary:
@@ -380,7 +381,9 @@ class Orchestrator:
                     if result.kind is ValidationKind.TEST_FAILURE:
                         doomed = [n for n in result.failed_tests if n in result.new_tests]
                         if doomed and len(doomed) == len(result.failed_tests) and len(doomed) < len(result.new_tests):
-                            await self.emit("tests_pruned", {**base, "tests": doomed})
+                            found = self._disagreements(item, doomed, result.output)
+                            await self.emit("tests_pruned", {**base, "tests": doomed,
+                                                             "disagreements": [d.model_dump() for d in found]})
                             result = await self._validate(
                                 base, validator.prune_and_check(test_file, doomed, self.report, result.new_tests))
                             history.append(attempt_record(f"prune of [{', '.join(doomed)}]", result, pruned=doomed))
@@ -454,6 +457,17 @@ class Orchestrator:
         await self.emit("candidate_rejected", {**base, "reason": result.kind.value})
         return False
 
+    def _disagreements(self, item: PlanItem, tests: list[str], output: str) -> list[Disagreement]:
+        """Each failing test about to be pruned, with its observed got/want lines: the model's prediction and the
+        code disagree, and nobody has decided which is wrong. Recorded once per (file, test, lines) for the report."""
+        functions = [k.label() for k in item.functions]
+        found = [Disagreement(file=item.file, functions=functions, test=t, lines=observed_lines(output, t))
+                 for t in tests]
+        for d in found:
+            if not any((o.file, o.test, o.lines) == (d.file, d.test, d.lines) for o in self.disagreements):
+                self.disagreements.append(d)
+        return found
+
     def _summary(self, reason: StopReason, detail: str, duration: float, minutes: int = 0) -> Summary:
         before = {f.file: f.percent for f in self.baseline.files}
         per_file = sorted((FileDelta(file=f.file, before=before.get(f.file, 0.0), after=f.percent)
@@ -462,6 +476,7 @@ class Orchestrator:
             stop_reason=reason, message=stop_message(reason, self.request, detail, minutes=minutes),
             target=self.request.target_coverage, baseline_percent=self.baseline.percent,
             final_percent=self.report.percent, iterations=self.iterations, test_files=sorted(self.test_files),
-            tests_added=self.tests_added, suspected_bugs=self.bugs, per_file=per_file, tokens=self.tokens,
+            tests_added=self.tests_added, suspected_bugs=self.bugs, disagreements=self.disagreements,
+            per_file=per_file, tokens=self.tokens,
             duration_s=round(duration, 1),
         )

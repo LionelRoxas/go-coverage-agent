@@ -1,6 +1,7 @@
 # AI-generated with Claude Code from a human-approved spec and plan; each task independently AI-reviewed; integrated and verified by Lionel Derrick Roxas.
 """SUMMARY.md. frontend/src/lib/aiSummary.test.ts checks the same payload against the same Markdown."""
-from app.summary.report import EMPTY, to_markdown, usd
+from app.models import Disagreement
+from app.summary.report import DISAGREEMENTS, EMPTY, disagreement_line, to_markdown, usd
 
 PAYLOAD = {
     "business": {"headline": "Coverage rose from 0% to 81.1%.", "outcome": "The 80% goal was reached.",
@@ -57,6 +58,24 @@ Run cost $0.0674 · summary $0.0014 · total $0.0688 (input $0.0130, output $0.0
 def test_markdown_has_both_sections_the_note_and_skips_empty_parts():
     generated_at = 1791547516.4  # 2026-10-09 UTC
     assert to_markdown(PAYLOAD, repo="stats", model="openai/gpt-oss-120b", generated_at=generated_at) == EXPECTED
+
+
+def test_disagreements_are_listed_after_suspected_bugs_and_never_as_bugs():
+    line = disagreement_line(Disagreement(file="ttest.go", functions=["TTest", "Float64Data.TTest"],
+                                          test="TestTTest_Edge", lines=["TestTTest_Edge/a: x_test.go:4: got 1, want 0",
+                                                                        "TestTTest_Edge/b: x_test.go:9: got 2, want 3"]))
+    assert line == ("`TestTTest_Edge` (ttest.go: TTest, Float64Data.TTest): TestTTest_Edge/a: x_test.go:4: got 1, want 0"
+                    " | TestTTest_Edge/b: x_test.go:9: got 2, want 3")
+    empty_lines = Disagreement(file="a.go", functions=["A"], test="TestA")
+    assert disagreement_line(empty_lines) == "`TestA` (a.go: A): no assertion output"
+    payload = {**PAYLOAD, "technical": {**PAYLOAD["technical"], "suspected_bugs": ["Mean: odd"]},
+               "disagreements": [line]}
+    md = to_markdown(payload, repo="stats", model="openai/gpt-oss-120b", generated_at=1791547516.4)
+    assert f"**Suspected bugs**\n\n- Mean: odd\n\n**{DISAGREEMENTS}**\n\n- {line}\n\n**How to run:**" in md
+    assert "not confirmed bugs" in DISAGREEMENTS
+    empty = to_markdown({**PAYLOAD, "disagreements": []}, repo="stats", model="openai/gpt-oss-120b",
+                        generated_at=1791547516.4)
+    assert empty == EXPECTED  # none (or an older payload without the key): no section
 
 
 def test_markdown_without_cost():

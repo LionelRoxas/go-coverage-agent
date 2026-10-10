@@ -164,7 +164,7 @@ class _Checker:
         counts = {float(n) for n in (
             f.rounds, f.targets_accepted, f.targets_rejected, f.targets_deferred, f.failed_llm_calls, f.first_check_passes, f.llm_fixes, f.mechanical_repairs,
             f.duplicate_test_renames, f.helper_collision_fixes, f.no_gain_rejections,
-            f.pruned_tests, f.pruned_no_assertions, f.llm_timeouts, f.rate_limit_waits, f.tests_added_count, f.test_files_count,
+            f.pruned_tests, f.pruned_no_assertions, f.prediction_disagreements, f.llm_timeouts, f.rate_limit_waits, f.tests_added_count, f.test_files_count,
             len(f.lowest_files), *f.rejected_reasons.values(), *(c.calls for c in f.llm_calls),
             *(low.uncovered_statements for low in f.lowest_files))} | tokens
         self.pools: dict[Kind, set[float]] = {

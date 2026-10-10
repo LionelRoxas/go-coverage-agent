@@ -24,7 +24,7 @@ from app.llm.limits import RateLimiter, UsageLedger
 from app.models import Event, JobRequest, JobStatus, StopReason, Summary, TokenUsage
 from app.summary.facts import build_facts, cost_usd
 from app.summary.grounding import ground
-from app.summary.report import save, to_markdown
+from app.summary.report import disagreement_line, save, to_markdown
 
 log = logging.getLogger(__name__)
 _JOB_ID = re.compile(r"[0-9a-f]{12}")  # uuid4().hex[:12], as start() makes them
@@ -376,6 +376,7 @@ class JobManager:
         job.summary_tokens = job.summary_tokens.add(usage)
         grounded, dropped = ground(written, facts)
         payload: dict[str, Any] = {**grounded.model_dump(mode="json"), "dropped_sentences": dropped,
+                                   "disagreements": [disagreement_line(d) for d in summary.disagreements],
                                    "tokens": {"prompt_tokens": usage.prompt_tokens,
                                               "completion_tokens": usage.completion_tokens,
                                               "total_tokens": usage.total}}

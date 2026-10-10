@@ -178,6 +178,16 @@
    "file": "a.go",
    "tests": [
     "TestBad"
+   ],
+   "disagreements": [
+    {
+     "file": "a.go",
+     "functions": [
+      "A"
+     ],
+     "test": "TestBad",
+     "lines": []
+    }
    ]
   }
  ],

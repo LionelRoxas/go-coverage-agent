@@ -203,6 +203,15 @@ class IterationRecord(BaseModel):
     deferred: int = 0  # items that met a Groq outage: neither accepted nor rejected, planned again later
 
 
+class Disagreement(BaseModel):
+    """A failing new test removed so the rest of its candidate could be kept: the value the model predicted and the
+    value the code returned differ. Either may be wrong; it is reported for a person to look at, not as a bug."""
+    file: str  # the target source file
+    functions: list[str]  # the planned functions of the item
+    test: str  # the removed top-level Test function
+    lines: list[str] = Field(default_factory=list)  # its first got/want (or panic) lines from `go test`, clipped
+
+
 class FileDelta(BaseModel):
     file: str
     before: float
@@ -219,6 +228,8 @@ class Summary(BaseModel):
     test_files: list[str]
     tests_added: list[str]
     suspected_bugs: list[SuspectedBug]
+    # failing tests pruned during the run (older reports lack it); never confirmed bugs
+    disagreements: list[Disagreement] = Field(default_factory=list)
     per_file: list[FileDelta]
     tokens: TokenUsage
     duration_s: float

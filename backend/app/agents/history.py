@@ -15,6 +15,7 @@ HISTORY_TOKENS = 1500  # the whole rendered history
 LINES_PER_TEST = 3
 CONTINUATION_LINES = 2  # of a multi-line failure message (e.g. got:/want: lines)
 ERROR_LINES = 3
+DISAGREEMENT_LINE_CHARS = 300  # one observed line of a pruned test, as reported for review
 HEADER = ("## Earlier attempts for these functions\n"
           "Oldest first; each was rejected. In a test failure, the observed value is what the code actually does.\n")
 
@@ -59,6 +60,20 @@ def failure_lines(output: str) -> list[str]:
     """Each failing test's first assertion (or panic) lines, prefixed with the (sub)test name, once each
     (`go test -count=2` repeats every failure), with up to CONTINUATION_LINES deeper-indented continuation lines
     joined by ` | `. Interleaved across failing tests, so every test's first line comes before any test's second."""
+    per_test = failures_by_test(output)
+    lines: list[str] = []
+    for rank in range(LINES_PER_TEST):
+        lines += [found[rank] for found in per_test.values() if rank < len(found)]
+    return lines
+
+
+def observed_lines(output: str, test: str, limit: int = DISAGREEMENT_LINE_CHARS) -> list[str]:
+    """The first assertion (or panic) lines of one failing top-level test (got/want), each clipped to `limit`."""
+    return [_clip(line, limit) for line in failures_by_test(output).get(test, [])]
+
+
+def failures_by_test(output: str) -> dict[str, list[str]]:
+    """The lines `failure_lines` reports, per top-level test, in order of first failure."""
     per_test: dict[str, list[str]] = {}
     current = ""
     raw_lines = output.splitlines()
@@ -82,10 +97,7 @@ def failure_lines(output: str) -> list[str]:
         found = per_test.setdefault(current.split("/")[0], [])
         if len(found) < LINES_PER_TEST and not any(line in v for v in per_test.values()):
             found.append(line)
-    lines: list[str] = []
-    for rank in range(LINES_PER_TEST):
-        lines += [found[rank] for found in per_test.values() if rank < len(found)]
-    return lines
+    return {test: found for test, found in per_test.items() if found}
 
 
 def _key_lines(result: ValidationResult) -> tuple[list[str], bool]:

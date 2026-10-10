@@ -99,6 +99,17 @@ def test_runs_load_with_their_status_and_numbers(tmp_path, out):
     assert m.running() is None
 
 
+def test_disagreements_reload_and_older_reports_without_them_still_load(tmp_path, out):
+    found = {"file": "mean.go", "functions": ["Mean"], "test": "TestMean_Edge",
+             "lines": ["TestMean_Edge: mean_test.go:9: got 1, want 2"]}
+    write_run(out, "aaaaaaaaaaa1", run_events(("job_completed", summary_data())), ts=1000, report=summary_data())
+    write_run(out, "aaaaaaaaaaa2", run_events(("job_completed", summary_data())), ts=2000,
+              report={**summary_data(), "disagreements": [found]})
+    snaps = {j.id: j.snapshot() for j in manager_for(tmp_path).list()}
+    assert snaps["aaaaaaaaaaa1"]["status"] == "completed" and snaps["aaaaaaaaaaa1"]["summary"]["disagreements"] == []
+    assert snaps["aaaaaaaaaaa2"]["summary"]["disagreements"] == [found]
+
+
 def test_an_interrupted_folder_is_not_modified(tmp_path, out):
     folder = write_run(out, "bbbbbbbbbbb1", run_events(), tail='{"seq": 3, "ts": 1')
     before = {p.name: p.read_bytes() for p in folder.iterdir()}
