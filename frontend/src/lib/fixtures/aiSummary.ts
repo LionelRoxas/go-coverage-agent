@@ -7,7 +7,7 @@ import type { SummaryGenerated } from "../types";
 export const statsSummary: SummaryGenerated = {
   "business": {
     "headline": "The share of the stats code checked by tests rose from 0% to 81.1%, past the 80% goal.",
-    "outcome": "The run reached its goal in 11 rounds and stopped there. It added 109 tests in 29 test files, and each one passes and checks code that no other test reached.",
+    "outcome": "The run reached its goal in 11 rounds and stopped there. It added 109 tests in 29 test files; each batch of tests it kept passed and raised the share of the code tested.",
     "efficiency": "It took 5.2 minutes and about 175K tokens, roughly 2,159 tokens per percentage point gained, for an estimated $0.07. 27 of the 31 accepted drafts passed on their first check, so little was spent on repairs.",
     "risks": [
       "A few small parts of the library still have no tests at all, such as the code that clips, rescales and smooths values.",

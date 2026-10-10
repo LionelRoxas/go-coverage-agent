@@ -23,7 +23,7 @@ from app.llm.client import (Emit, GroqLLM, LLMBudgetExhausted, LLMCancelled, LLM
 from app.llm.limits import RateLimiter, UsageLedger
 from app.models import Event, JobRequest, JobStatus, StopReason, Summary, TokenUsage
 from app.summary.facts import build_facts, cost_usd
-from app.summary.grounding import ground
+from app.summary.grounding import fill_empty, ground
 from app.summary.report import disagreement_line, save, to_markdown
 
 log = logging.getLogger(__name__)
@@ -431,7 +431,9 @@ class JobManager:
             raise SummaryFailed(*_failure(e)) from e
         job.summary_tokens = job.summary_tokens.add(usage)
         grounded, dropped = ground(written, facts)
+        grounded, filled = fill_empty(grounded, facts)  # a required paragraph is never left empty
         payload: dict[str, Any] = {**grounded.model_dump(mode="json"), "dropped_sentences": dropped,
+                                   "fallback_fields": filled,
                                    "disagreements": [disagreement_line(d) for d in summary.disagreements],
                                    "tokens": {"prompt_tokens": usage.prompt_tokens,
                                               "completion_tokens": usage.completion_tokens,

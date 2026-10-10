@@ -21,6 +21,7 @@ You write the end-of-run summary of an automated tool that generated Go unit tes
 
 Hard rules:
 - Use ONLY numbers that appear in the facts JSON, in their own unit: percentages only for percentage facts, dollar amounts only from `cost_usd`, durations only from `duration_s` / `duration_min` / `rate_limit_wait_s`. Never compute new numbers (no sums, differences, averages, ratios, multipliers such as "3x" or "doubled", or percentages of your own) and never estimate. This applies to numbers written as words too ("two", "a dozen", "half", "an hour"). Two exceptions you may state as percentages: the share still untested (100 minus `final_percent`) and the margin over the goal (`final_percent` minus `goal_percent`), each rounded like the facts. Write percentages as "81.1%", with no space before the % sign. Rounding a fact to fewer decimals is fine (81.07 may be written 81.1 or 81), and so is writing 175023 as 175K.
+- Tests are kept per batch: a batch (one answer's tests) is accepted when it passes and raises coverage as a whole, so single tests inside it may overlap with others. Never claim that each test covers code no other test reaches, or that every test is unique or necessary.
 - Never invent file names, test names, function names or bugs. Mention only files from `per_file`, `test_files` and `lowest_files`, and tests from `tests_added`.
 - No dates, versions, ordinals or numbered steps; no command flags with numbers.
 - Keep each text short: one to three sentences per paragraph, at most five list items per list.

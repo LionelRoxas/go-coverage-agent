@@ -88,6 +88,9 @@ export type SummaryGenerated = {
   cost_usd?: CostUsd;
   /** The run's prediction disagreements, one line each, written by the backend (not the model). Older payloads lack it. */
   disagreements?: string[];
+  /** Required paragraphs the model left empty or grounding emptied ("technical.where_tests_live"), filled by the backend
+   * from the run's data; their text ends with a note saying so. Older payloads lack it. */
+  fallback_fields?: string[];
 };
 
 export type StartJobBody = { repo_path: string; target_coverage: number; options?: Partial<JobOptions> };

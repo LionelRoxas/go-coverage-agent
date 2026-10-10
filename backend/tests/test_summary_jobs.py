@@ -12,6 +12,7 @@ from app.jobs import JobConflict, JobManager, JobRejected
 from app.llm.client import LLMBudgetExhausted, LLMCancelled, LLMError, LLMTimeout
 from app.main import create_app
 from app.models import JobOptions, JobRequest, JobStatus, StopReason, Summary, TokenUsage
+from app.summary.grounding import FALLBACK_NOTE
 from app.summary.report import NOTE
 from tests.fakes import FakeLLM, run_summary
 
@@ -169,6 +170,19 @@ async def test_grounding_drops_invented_sentences(tmp_path):
     job = await run(m)
     data = job.events[-1].data
     assert data["business"]["headline"] == "Coverage rose from 0% to 80%." and data["dropped_sentences"] == 1
+
+
+async def test_an_emptied_required_field_is_filled_from_the_facts_and_named(tmp_path):
+    written = run_summary()
+    written.technical.where_tests_live = "They are in a folder with 37 files."  # ungrounded: grounding empties it
+    m, _ = setup(tmp_path, responses=[written])
+    job = await run(m)
+    data = job.events[-1].data
+    assert data["dropped_sentences"] == 1 and data["fallback_fields"] == ["technical.where_tests_live"]
+    assert data["technical"]["where_tests_live"].startswith(f"The generated tests are saved in output/{job.id}/tests.")
+    md = (tmp_path / job.id / "SUMMARY.md").read_text(encoding="utf-8")
+    assert f"**Where the tests live:** The generated tests are saved in output/{job.id}/tests." in md
+    assert FALLBACK_NOTE in md
 
 
 async def test_write_again_reopens_the_stream_and_replaces_the_summary(tmp_path):
