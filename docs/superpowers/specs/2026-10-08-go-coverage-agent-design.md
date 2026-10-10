@@ -519,6 +519,8 @@ Design intent: a calm, precise developer tool, not a generic dashboard. The visu
 
 One `EventSource` per job page, and a pure reducer `(state, event) -> state` that ignores already-seen `seq`. The same code serves live updates and replay. The reducer is what gets unit tested.
 
+When a live run's stream drops, the page asks for the job's snapshot again. If the run is no longer running (a backend restart reloads it as `interrupted`), the page stops reconnecting, settles the run (Interrupted, or finished once its end has been replayed) and hides Cancel. A run that is not running is replayed until its end (and its summary, when the snapshot reports one) has arrived, and at most twice more without a new event.
+
 ### 9.3 Quality bar
 
 Purposeful typography and spacing, a restrained palette, no gratuitous gradients or emoji, real empty/loading/error states, keyboard accessible, readable in light and dark. Every number on screen comes from a real event.
