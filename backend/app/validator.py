@@ -18,7 +18,7 @@ from app.workspace import Workspace
 
 _FAIL = re.compile(r"^\s*--- FAIL: (\S+)", re.M)
 # The test binary was cut short: `go test -timeout` ended it, or the kernel killed it (the OOM killer under mem_limit).
-_CUT_SHORT = re.compile(r"^panic: test timed out|signal: killed", re.M)
+_CUT_SHORT = re.compile(r"^panic: test timed out|^signal: killed\s*$", re.M)  # Go prints both on their own line
 # A write under /work (the repo copy, scratch, Go's $WORK) that hit the tmpfs size cap. The path keeps a test
 # that merely prints this error text (e.g. one about ENOSPC handling) from ending the job.
 _NO_SPACE = re.compile(r"(?:/work/|\$WORK/)\S*: no space left on device")

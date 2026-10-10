@@ -173,6 +173,12 @@ async def test_a_genuine_test_failure_is_not_cut_short(tmp_path):
     assert r.kind is ValidationKind.TEST_FAILURE and r.failed_tests == ["TestB"] and not r.cut_short
 
 
+async def test_a_failure_message_that_mentions_a_kill_is_not_cut_short(tmp_path):
+    tools = FakeTools(test_r=fail("--- FAIL: TestB (0.00s)\n    a_test.go:3: err = signal: killed, want nil\nFAIL"))
+    r = await make(tmp_path, tools).validate("a_test.go", "m", SNIP, prev())
+    assert r.kind is ValidationKind.TEST_FAILURE and r.failed_tests == ["TestB"] and not r.cut_short
+
+
 @pytest.mark.parametrize("out,timed_out", [
     ("--- FAIL: TestB (0.00s)\npanic: test timed out after 30s\nrunning tests:\n\tTestA (30s)\nFAIL\n", False),
     ("--- FAIL: TestB (0.00s)\nsignal: killed\nFAIL\n", False),  # the OOM killer under mem_limit
